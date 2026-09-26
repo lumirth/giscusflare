@@ -1,7 +1,5 @@
 # Source provenance
 
-Initial source: giscus-workers-v2 (2.0.0), supplied by the project owner. Its MIT license and attribution are retained. This adoption does not claim upstream Giscus parity or production readiness.
+The owner supplied `giscus-workers-v2` (2.0.0). Its untouched import is commit `5e62a02`; its MIT license and attribution are retained. The repository excludes credentials and local runtime databases.
 
-Selected improvements from giscus-workers 3 will be attributed as incorporated. Upstream source, especially vendored renderers, requires individual license review before reuse.
-
-No credentials, local runtime databases, or previous verification artifacts were imported.
+Giscus reference files and themes are pinned at `3d6430237108ca4ee3eb6a1a20595201c09c72d5`. See [third-party notices](../THIRD-PARTY-NOTICES.md) for licenses and asset origins. The imported README is retained as a historical document.

@@ -1,6 +1,6 @@
 # Architecture and design boundaries
 
-Giscusflare is a GitHub Discussions client and Cloudflare service. The standard presentation is a replaceable Giscus/GitHub Discussions interface. Kukas design, Toast semantics and site-specific icons do not belong in the core.
+giscusflare is a GitHub Discussions client and Cloudflare service. The standard presentation is a replaceable interface matching Giscus. Kukas design, Toast semantics and site-specific icons do not belong in the core.
 
 ## Ownership
 
@@ -26,8 +26,8 @@ The shared runtime defaults to focus/reconnect refresh when at least 60 seconds 
 
 Server policy independently clamps reply prefetch (20 by default, configurable through 100); a browser cannot relax it. Root pages remain bounded at 20, explicit reply pages at 50. Authentication polling has its own bounded security lifecycle and is not governed by feed freshness preferences. There is one engine for all Cloudflare tiers. These limits are conservative defaults, not a measured Free-tier capacity guarantee.
 
-## Presentation rebuild
+## Standard presentation
 
-The previous monolithic widget, DOM rearrangement hooks and rendering workaround were deleted. The replacement uses separate standard-view parts and the public conversation/interaction API. Its CSS is compiled from the pinned Giscus base/global styles and exact named themes; original Octicons provide the icons. Lit supplies keyed template updates in this optional presentation only. The independent example exercises the public boundary; it is not a Kukas design proposal.
+Standard-view parts use the public conversation and interaction APIs. Its CSS is compiled from the pinned Giscus base/global styles and exact named themes; original Octicons provide the icons. Lit supplies keyed template updates in this optional presentation only. The independent example demonstrates an alternative presentation using those APIs.
 
 Intentional differences must be recorded with their reason and verification in the presentation evidence. Current capability and deployment evidence belong in [STATUS](STATUS.md).

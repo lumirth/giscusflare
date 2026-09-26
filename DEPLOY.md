@@ -1,6 +1,6 @@
 # Deploy
 
-Check [Verification](VERIFICATION.md) for unresolved build failures. This package's initial Durable Object migration belongs on a new Worker. Keep an existing service's migration history intact.
+Check [Status](docs/STATUS.md) for release gaps. This package's initial Durable Object migration belongs on a new Worker. Keep an existing service's migration history intact.
 
 ## Choose a service address
 
@@ -8,7 +8,7 @@ Set `PUBLIC_ORIGIN` to one HTTPS origin, such as your Worker's `workers.dev` add
 
 ## Create a GitHub App
 
-Create an App with the repository permission **Discussions: Read and write**. Set its user-authorization callback to:
+Create an App with the repository permission **Discussions: Read and write**. Metadata read access is included by GitHub. To offer personal blocking, also request the user permission **Block users: Read and write**. Set its user-authorization callback to:
 
 ```text
 https://YOUR-COMMENTS-ORIGIN/auth/callback
@@ -57,15 +57,12 @@ Custom CSS can come from the comments service, an allowed website origin, or an 
 Use Node 22.16 or newer:
 
 ```sh
-npm install
-npm test
-npm run test:runtime
-pip install playwright==1.57.0
-python -m playwright install chromium
+npm ci
+npm run check:release
 # Perform and record browser acceptance from TESTING.md
 ```
 
-The package pins direct dependency versions. After a successful install, review and commit `package-lock.json`. Use `npm ci` for later installs.
+Commit dependency changes with the updated `package-lock.json`.
 
 [Testing](TESTING.md) explains what each command checks.
 

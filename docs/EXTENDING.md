@@ -1,6 +1,6 @@
 # Public APIs
 
-The API is experimental. Customization is build-time composition, not a remote plugin loader.
+The API is experimental. Custom presentations are ordinary build-time imports.
 
 ## Own the presentation
 
@@ -30,7 +30,7 @@ const mounted = mountPresentation(target, {service, config}, presentation);
 
 ## Model commands
 
-Read `runtime.controller.state` and subscribe to updates. Treat snapshots as immutable. Use `beginReply`, `beginEdit`, `closeEditor`, `setDraft`, `submit`, `setReaction`, `retryReaction`, `removeComment`, `moderateComment`, `changeDiscussion`, `blockAuthor`, `setOrder`, `refresh` and `revealReplies`. Arbitrary operation names and transport payloads are no longer a presentation API.
+Read `runtime.controller.state` and subscribe to updates. Treat snapshots as immutable. Use `beginReply`, `beginEdit`, `closeEditor`, `setDraft`, `submit`, `setReaction`, `retryReaction`, `removeComment`, `moderateComment`, `changeDiscussion`, `blockAuthor`, `setOrder`, `refresh` and `revealReplies`.
 
 `operationFor(kind, id)` exposes `pending`, `failed` or `uncertain` state. For composer operations, the ID is the draft name returned by `beginReply`/`beginEdit`, or `main`. Uncertain submission retries retain the original durable receipt key. Reaction intent remains separate from canonical server data.
 
@@ -56,6 +56,8 @@ Read `runtime.controller.state` and subscribe to updates. Treat snapshots as imm
 ## Rendering and lifecycle
 
 `createContentRenderer` sanitizes HTML and supports replaceable math/code behavior. Heavy math loads only when needed. `math:'source'` and `codeCopy:false` are explicit reduced profiles. A fully replaced `renderContent` is trusted application code and must return safe DOM.
+
+Keep the textarea and its surrounding decoration nodes stable during typing. WebKit can split native undo groups when nearby nodes are replaced, even if the textarea itself stays mounted.
 
 Appearance updates preserve runtime/draft identity. Discussion identity changes save and dispose the previous runtime. Disposal is idempotent. All subscriptions/bindings created by a presentation must be disposed with it. Frameworks managing their own lifecycle can use `createConversation` directly.
 

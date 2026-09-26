@@ -1,9 +1,6 @@
-# GitHub API capabilities for Giscusflare
+# GitHub API capabilities for giscusflare
 
-Type: research
-Status: resolved
-
-Checked 2026-09-26 against current official documentation and pinned Giscus source. This is a documentation/source review. No authenticated GitHub mutations were executed; successful operation through our deployed GitHub App remains an acceptance gate.
+Checked 2026-09-26 against current official documentation and pinned Giscus source. This is a documentation/source review. Real App-token results are recorded separately in [Status](STATUS.md).
 
 ## Public operation inventory
 
@@ -40,10 +37,4 @@ The API's existence is established. Its usability in our authentication model is
 
 [Personal blocking](https://docs.github.com/en/rest/users/blocking#block-a-user) supports GitHub App user tokens with a separate user permission. [Organization blocking](https://docs.github.com/en/rest/orgs/blocking#block-a-user-from-an-organization) supports user/installation tokens with a separate organization permission. These affect the account or organization, not just a blog comment thread.
 
-Accepted policy after Round 4: integrate blocking when the acting user/app grants permit it and the operation fits naturally into contextual comment/discussion controls. Explicitly identify whether it affects the personal account or organization. Use contextual GitHub action links when API support, deployment permissions, or the need for a broader administration workflow makes a handoff appropriate. Do not use standalone duplicate links or imply a handoff completed the operation. No public abuse-report submission API was established; [GitHub's reporting instructions](https://docs.github.com/en/communities/maintaining-your-safety-on-github/reporting-abuse-or-spam) use GitHub's own interface/forms, so retain that handoff.
-
-## Candidate implications
-
-The reviewed v2 candidate already has edit/delete/minimize/restore transport and permission checks. Its minimize reason is hardcoded OFF_TOPIC, deletion ignores returned parent state, and tests use simulated GitHub. Extend the conversation model and canonical reconciliation before presenting these as complete moderation support. Discussion deletion must have an explicit mapping policy so an automatic first-write path does not immediately recreate a deliberately removed thread.
-
-This inventory does not automatically turn every GitHub administration API into required widget functionality. It establishes the concrete author/conversation moderation set discussed with the user and the accepted contextual-action policy. App-issued user tokens are the required reader/moderator model; personal access tokens are not a fallback.
+Offer blocking through contextual comment/discussion controls when the acting user and App have permission. Explicitly identify whether it affects the personal account or organization. Use contextual GitHub action links when API support, deployment permissions, or the need for a broader administration workflow makes a handoff appropriate. Do not use standalone duplicate links or imply a handoff completed the operation. No public abuse-report submission API was established; [GitHub's reporting instructions](https://docs.github.com/en/communities/maintaining-your-safety-on-github/reporting-abuse-or-spam) use GitHub's own interface/forms, so retain that handoff.

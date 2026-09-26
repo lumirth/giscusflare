@@ -17,7 +17,7 @@ export function documentHTML(title: string, content: string, script: string, con
 }
 export function widgetHTML(widget: Widget, policy: RepositoryPolicy): Response {
   const custom = isNamedTheme(widget.theme) ? '' : widget.theme;
-  const response = documentHTML('Comments', `<div id="giscusflare"><p role="status">Loading comments...</p></div><noscript><a href="https://github.com/${escape(widget.repo)}/discussions" target="_blank" rel="noopener noreferrer">View discussions on GitHub</a></noscript>`, '/widget.js', { ...widget, defaultCommentOrder: policy.defaultCommentOrder }, widget.lang, custom ? 'preferred_color_scheme' : widget.theme, `<link data-theme-sheet rel="stylesheet" href="${custom ? escape(custom) : '/themes/'+escape(widget.theme)+'.css'}">`);
+  const response = documentHTML('Comments', `<div id="giscusflare"><div class="gsc-loading" role="status"><div class="gsc-loading-image" aria-hidden="true"></div><p class="gsc-loading-text">Loading comments…</p></div></div><noscript><a href="https://github.com/${escape(widget.repo)}/discussions" target="_blank" rel="noopener noreferrer">View discussions on GitHub</a></noscript>`, '/widget.js', { ...widget, defaultCommentOrder: policy.defaultCommentOrder }, widget.lang, custom ? 'preferred_color_scheme' : widget.theme, `<link data-theme-sheet rel="stylesheet" href="${custom ? escape(custom) : '/themes/'+escape(widget.theme)+'.css'}">`);
   return security(response, policy.origins.join(' '), [...policy.origins, ...policy.customThemeOrigins]);
 }
 export function json(value: unknown, status = 200, headers: HeadersInit = {}): Response {

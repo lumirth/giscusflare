@@ -170,7 +170,7 @@ export function createStandardPresentation(
           replying = model.editors.has("reply:" + c.id);
         return html`<article class="gsc-comment" id=${"comment-" + c.id}>
           <div
-            class=${"w-full min-w-0 rounded-md border " + (c.viewerDidAuthor ? "gsc-comment-author-is-viewer" : "")}
+            class=${"color-bg-primary w-full min-w-0 rounded-md border " + (c.viewerDidAuthor ? "gsc-comment-author-is-viewer" : "")}
           >
             <div class="gsc-header-with-actions">
               ${header(c, false)}${menu(c)}
@@ -237,6 +237,13 @@ export function createStandardPresentation(
           target.dir = /^(ar|he|fa|ur)(-|$)/.test(runtime.config.lang)
             ? "rtl"
             : "ltr";
+          if (!state.view && !state.error && !error && !runtime.session.error) {
+            render(html`<div class="gsc-loading" role="status">
+              <div class="gsc-loading-image" aria-hidden="true"></div>
+              <p class="gsc-loading-text">${t.loading}</p>
+            </div>`, root);
+            return;
+          }
           const writable =
             !state.view?.archived &&
             !state.view?.unavailable &&
@@ -270,19 +277,20 @@ export function createStandardPresentation(
                           )}</span
                         >`
                     : nothing
-                }<span class="text-xs color-text-secondary"
+                }<em class="text-sm color-text-secondary"
                   >– powered by
                   <a
+                    class="link-secondary"
                     href="https://github.com/lumirth/giscusflare"
                     target="_blank"
                     rel="noopener noreferrer"
-                    >Giscusflare</a
-                  ></span
+                    >giscusflare</a
+                  ></em
                 >
               </div>
-              <div class="BtnGroup" role="group" aria-label=${t.commentOrder}>
-                ${(["oldest", "newest"] as const).map((order) => html`<div class=${"BtnGroup-item " + (state.order === order ? "BtnGroup-item--selected" : "")}><button type="button" class="btn" aria-pressed=${String(state.order === order)} @click=${attempt(() => model.setOrder(order))}>${t[order]}</button></div>`)}
-              </div>
+              <ul class="BtnGroup gsc-right-header" aria-label=${t.commentOrder}>
+                ${(["oldest", "newest"] as const).map((order) => html`<li class=${"BtnGroup-item " + (state.order === order ? "BtnGroup-item--selected" : "")}><button type="button" class="btn" aria-pressed=${String(state.order === order)} @click=${attempt(() => model.setOrder(order))}>${t[order]}</button></li>`)}
+              </ul>
               ${discussion ? menu(discussion) : nothing}
             </div>
             <div class="gsc-timeline">
@@ -294,9 +302,7 @@ export function createStandardPresentation(
             html` ${
               runtime.config.reactionsEnabled
                 ? html`<section class="gsc-reactions">
-                    <div class="gsc-reactions-count">
-                      ${message(runtime.config.lang, "reactions", total)}
-                    </div>
+                    <h4 class="gsc-reactions-count"><a class="link-primary" href=${discussion?.url || "https://github.com/" + runtime.config.repo + "/discussions"} target="_blank" rel="noopener noreferrer">${message(runtime.config.lang, "reactions", total)}</a></h4>
                     <div class="gsc-discussion-reactions">
                       ${react(discussion || null, "bottom")}
                     </div>
@@ -319,7 +325,6 @@ export function createStandardPresentation(
                   </div>`
                 : nothing
             }
-            ${state.loading && !state.view ? html`<p class="gsc-loading-text" role="status">${t.loading}</p>` : nothing}
             ${!writable ? html`<p class="flash">${state.view?.unavailable ? t.discussionUnavailable : state.view?.archived ? t.archived : t.locked}</p>` : nothing}
             ${runtime.config.inputPosition === "top" && writable ? composer("main") : nothing}
             ${comments}

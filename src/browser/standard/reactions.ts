@@ -18,6 +18,7 @@ export const reactionEmoji: Readonly<Record<Reaction, string>> = {
 export const createReactions: ReactionFactory = ({ runtime, report }) => {
   const element = document.createElement("div");
   element.className = "gsc-reaction-group";
+  const smiley = icon("smiley");
   let input: ReactionInput = { subject: null, position: "bottom" },
     current: Reaction | undefined;
   let disposeMenu: () => void = () => {};
@@ -42,6 +43,9 @@ export const createReactions: ReactionFactory = ({ runtime, report }) => {
     const t = strings(runtime.config.lang),
       groups = input.subject?.reactionGroups || [],
       signedIn = runtime.session.signedIn;
+    // Treat the translation's link marker as a slot; never insert translation HTML.
+    const [beforeSignIn = "", signInLabel = t.signIn, afterSignIn = ""] =
+      message(runtime.config.lang, "signInToAddYourReaction").split(/<a>|<\/a>/);
     const id = input.subject?.id || "discussion",
       operation = runtime.controller.operationFor("reaction", id);
     const blocked =
@@ -58,13 +62,13 @@ export const createReactions: ReactionFactory = ({ runtime, report }) => {
             aria-label=${t.reactions}
             title=${t.reactions}
           >
-            ${icon("smiley")}
+            ${smiley}
           </summary>
           <div
-            class=${"color-border-primary color-text-secondary color-bg-overlay gsc-reactions-popover open left " + input.position}
+            class=${"color-border-primary color-text-secondary color-bg-overlay gsc-reactions-popover text-sm open left " + input.position}
           >
-            <p class="m-2 overflow-hidden text-ellipsis whitespace-nowrap">
-              ${signedIn ? (current ? reactionLabel(t, current) : message(runtime.config.lang, "pickYourReaction")) : html`<button type="button" class="color-text-link" @click=${() => runtime.session.signIn().catch(report)}>${t.signIn}</button>`}
+            <p class=${signedIn ? "m-2 overflow-hidden text-ellipsis whitespace-nowrap" : "m-2"}>
+              ${signedIn ? (current ? reactionLabel(t, current) : message(runtime.config.lang, "pickYourReaction")) : html`${beforeSignIn}<button type="button" class="color-text-link hover:underline" @click=${() => runtime.session.signIn().catch(report)}>${signInLabel}</button>${afterSignIn}`}
             </p>
             <div class="color-border-primary my-2 border-t"></div>
             <div class="m-2 gsc-emoji-grid">

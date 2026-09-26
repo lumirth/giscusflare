@@ -10,6 +10,14 @@ export const createComposer: ComposerFactory = ({ runtime, report }, name) => {
     "color-bg-primary color-border-primary gsc-comment-box" +
     (name.startsWith("reply:") ? " gsc-comment-box-is-reply" : "");
   form.dataset.composer = name;
+  // Keep decoration nodes stable while typing. Replacing siblings of the editor
+  // breaks native undo coalescing in WebKit, even when the textarea survives.
+  const icons = {
+    typography: icon("typography"),
+    markdown: icon("markdown"),
+    signOut: icon("sign-out"),
+    github: icon("mark-github"),
+  };
   let binding: ComposerBinding | undefined;
   let previewSignature = "",
     preview: Node | string = "";
@@ -70,7 +78,7 @@ export const createComposer: ComposerFactory = ({ runtime, report }, name) => {
               aria-pressed=${String(Boolean(state?.fixedWidth))}
               @click=${() => binding?.toggleFixedWidth()}
             >
-              ${icon("typography")}
+              ${icons.typography}
             </button>
           </div>
         </div>
@@ -94,7 +102,7 @@ export const createComposer: ComposerFactory = ({ runtime, report }, name) => {
                 rel="noopener noreferrer"
                 title=${t.markdown}
                 aria-label=${t.markdown}
-                >${icon("markdown")}</a
+                >${icons.markdown}</a
               >
             </div>
           </div>
@@ -107,7 +115,7 @@ export const createComposer: ComposerFactory = ({ runtime, report }, name) => {
         </div>
         ${state?.error ? html`<p class="color-text-danger px-2" role="alert">${state.error}</p>` : nothing}
         <div class="gsc-comment-box-bottom">
-          ${signedIn && !reply && !edit ? html`<button type="button" class="link-secondary text-sm inline-flex items-center gap-2" @click=${() => runtime.session.signOut().catch(report)}>${icon("sign-out")}${t.signOut}</button>` : nothing}
+          ${signedIn && !reply && !edit ? html`<button type="button" class="link-secondary text-sm inline-flex items-center gap-2" @click=${() => runtime.session.signOut().catch(report)}>${icons.signOut}${t.signOut}</button>` : nothing}
           <div class="gsc-comment-box-buttons">
             ${reply || edit ? html`<button type="button" class="btn ml-1" @click=${() => binding?.cancel()}>${t.cancel}</button>` : nothing}
             <button
@@ -115,7 +123,7 @@ export const createComposer: ComposerFactory = ({ runtime, report }, name) => {
               class="btn btn-primary inline-flex items-center ml-1 gap-2"
               ?disabled=${state?.pending || (signedIn && !runtime.controller.draft(name).trim())}
             >
-              ${signedIn ? nothing : icon("mark-github")}${signedIn ? (edit ? t.save : reply ? t.reply : t.post) : t.signIn}
+              ${signedIn ? nothing : icons.github}${signedIn ? (edit ? t.save : reply ? t.reply : t.post) : t.signIn}
             </button>
           </div>
         </div>`,

@@ -2,13 +2,13 @@
 
 This project rebuilds [giscus](https://github.com/giscus/giscus)'s GitHub Discussions comment model for Cloudflare Workers. It is independent of giscus, GitHub, and Cloudflare.
 
-The source depends on Hono, Valibot, and the Standard Schema specification package. TypeScript, esbuild, and Wrangler are build and development tools. The packaging script copies available dependency licenses into `licenses/` when installed packages are present.
+Runtime dependencies include Hono, Valibot, Standard Schema, DOMPurify, Lit and MathJax. TypeScript, esbuild, Tailwind and Wrangler support the build. Each dependency retains its package license.
 
-The project's license is in [LICENSE](LICENSE). The previous source archive is identified in [docs/PRIOR-RELEASE.json](docs/PRIOR-RELEASE.json).
+The project's license is in [LICENSE](LICENSE). The previous source archive is identified in [docs/PROVENANCE.md](docs/PROVENANCE.md).
 
 ## Giscus themes
 
-`vendor/giscus/themes` comes from Giscus at `3d6430237108ca4ee3eb6a1a20595201c09c72d5`. Its MIT license is retained in `vendor/giscus/LICENSE`; individual theme files retain Primer, Gruvbox and other author notices. The build adapts root selectors and omits externally hosted loading decorations. No separately licensed GitHub math renderer was copied.
+`vendor/giscus/themes` comes from Giscus at `3d6430237108ca4ee3eb6a1a20595201c09c72d5`. Its MIT license is retained in `vendor/giscus/LICENSE`; individual theme files retain Primer, Gruvbox and other author notices. The build adapts root selectors. Giscus's Mona loading animation and pagination decorations load from their original GitHub asset URLs. No separately licensed GitHub math renderer was copied.
 
 GitHub Octicons (GitHub, Inc.), MIT. The standard interface uses unchanged SVG assets from `@primer/octicons` 19.27.0. See https://github.com/primer/octicons/blob/main/LICENSE.
 

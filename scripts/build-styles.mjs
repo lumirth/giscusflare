@@ -24,8 +24,5 @@ export async function buildStyles() {
     }),
   ]).process(source, { from: "src/browser/standard/styles.css" });
   const sheet = postcss.parse(result.css);
-  sheet.walkDecls((decl) => {
-    if (/url\(["']?https?:/.test(decl.value)) decl.remove();
-  });
   await writeFile("public/widget.css", sheet.toString());
 }

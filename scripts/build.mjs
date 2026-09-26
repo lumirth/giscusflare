@@ -53,11 +53,9 @@ await mkdir('public/themes', {recursive:true});
 let nativeThemes='';
 for(const name of (await readdir('vendor/giscus/themes')).filter(n=>n.endsWith('.css'))){
   const source=postcss.parse(await readFile('vendor/giscus/themes/'+name,'utf8'));
-  // These upstream loading decorations fetch third-party assets; use local UI instead.
-  source.walkDecls(decl=>{if(decl.value.includes('url('))decl.remove();});
   const iframe=source.clone();iframe.walkRules(rule=>{rule.selectors=rule.selectors.map(s=>s.replace(/^main\b/, ':root'));});
   await writeFile('public/themes/'+name,iframe.toString());
-  source.walkRules(rule=>{rule.selectors=rule.selectors.map(s=>`.giscusflare[data-theme="${name.slice(0,-4)}"]`+(s.startsWith('main')?s.slice(4):' '+s));});
+  source.walkRules(rule=>{rule.selectors=rule.selectors.map(s=>`.giscusflare[data-theme="${name.slice(0,-4)}"]`+(/^(main|html|body|:root|:host)(?=$|[\s.:#\[])/.test(s)?s.replace(/^(main|html|body|:root|:host)/,''):' '+s));});
   nativeThemes+=source.toString()+'\n';
 }
 await writeFile('public/native.css', sheet.toString()+'\n'+nativeThemes);

@@ -11,11 +11,15 @@
 Use the actual browser against the staging fixture and compare with giscus.app. Verify:
 
 - Signed-out bottom composer, one main sign-in action, contextual reaction sign-in, all eight original emoji reactions.
-- Desktop and narrow layouts, light/dark themes, focused textarea/Markdown surface, unclipped Octicons.
+- Desktop and narrow layouts; light, dark, dimmed, borderless and colored themes; focused textarea/Markdown surface, unclipped Octicons.
 - Type with real keyboard input, switch Preview/Write, undo/redo, react and refresh; keep textarea identity, selection and writing intact.
 - Rapid reaction toggles, local pending feedback, canonical result and error recovery.
 - Replies beyond the initial buffer, cancelled/reopened reply draft, root/reply edits, sort changes.
 - Native and iframe authentication, same-window return and optional popup, return location, origin enforcement.
 - Independent public-API example without loading the standard presentation/style.
 
-The previous Python component harnesses and copy-era lexical checks were removed. Their assumptions about private DOM and exact source spelling are not the new contract. Regression coverage belongs to domain behavior, shared interactions, package boundaries and actual browser observations.
+## Native undo regression
+
+Compare typing a full phrase and pressing Undo in a plain textarea and the standard composer. Both should undo the typing run. Repeat after Preview/Write, then Redo. Use keyboard input rather than assigning `.value` or pasting the whole phrase.
+
+The presentation test rejects child-node replacements during ordinary typing. This catches a WebKit regression where rebuilding adjacent SVG icons split undo into individual characters despite retaining the textarea. Actual browser testing remains necessary for native editing behavior.

@@ -1,15 +1,12 @@
-# Giscusflare acceptance reference
-
-Type: research
-Status: resolved
+# giscusflare acceptance reference
 
 Source inspection of upstream Giscus at `3d6430237108ca4ee3eb6a1a20595201c09c72d5`, available in the reviewed port checkout. This records source-visible capabilities, not completed browser/GitHub acceptance. Port changes are present in that checkout; do not treat port-specific transport/build changes as upstream architecture requirements.
 
-| Area | Source-visible upstream behavior | Giscusflare acceptance implication |
+| Area | Source-visible upstream behavior | giscusflare acceptance implication |
 | --- | --- | --- |
 | Identity | GitHub sign-in, session exchange, sign-out and host messages | Preserve identity/permissions; own session implementation and migration are allowed. |
 | Writing | Comment/reply creation; mapped discussion created on first comment or reaction; explicit-number mapping never creates a replacement | Verify mapping continuity, author identity, retries and first-write concurrency. |
-| Editor | Write/Preview, fixed-width-font toggle, autoresizing input, Ctrl/Cmd+Enter, cancel reply, Markdown help, top/bottom placement | These are actual default capabilities, not optional polish to omit from a minimal rebuild. |
+| Editor | Write/Preview, fixed-width-font toggle, autoresizing input, Ctrl/Cmd+Enter, cancel reply, Markdown help, top/bottom placement | Include these in the default presentation. |
 | Rich content | GitHub `bodyHTML`; preview through contextual GFM `/markdown`; shared HTML enhancement | Foundational pipeline covering preview and published content consistently. |
 | Content structures | Headings, emphasis, lists, quotes, tables, details, inline/block code, emoji and task-list styling | Verify a representative corpus; task-list appearance does not imply persistent checkbox editing. |
 | Code | GitHub syntax-token styling, injected copy controls and feedback | Preserve highlighting and copy behavior; upstream is not evidence of a particular local highlighter library. |
@@ -21,7 +18,7 @@ Source inspection of upstream Giscus at `3d6430237108ca4ee3eb6a1a20595201c09c72d
 | Exceptional states | Loading/errors/not-found/rate-limit/locked; deleted/minimized notices; deleted-author fallback | Model these explicitly, including state changes while a reader composes. Closed/answered/accepted-answer state support was not established. |
 | Editing/moderation | Inspected widget displays edited/deleted/minimized states but has no discovered edit/delete/minimize action implementation; GitHub links provide access | Candidate in-widget editing/deletion/moderation are enhancements, not proven upstream parity requirements. Decide what to expose in the standard interface. |
 | Localization/themes | Dictionaries/fallback/pluralization, localized dates, RTL and auto-direction input; varied named themes and live custom CSS | Include localization and actual theme behavior in parity scope; do not claim unchanged third-party selector compatibility. |
-| Host integration | Six mapping modes, strict hashes, repo/category/backlinks; lazy/resizing iframe, clipboard permission, metadata/errors/session/config messages | Familiar contracts where useful, documented new APIs where better. Direct-in-page mode is an accepted Giscusflare addition. |
+| Host integration | Six mapping modes, strict hashes, repo/category/backlinks; lazy/resizing iframe, clipboard permission, metadata/errors/session/config messages | Familiar contracts where useful, documented new APIs where better. Direct-in-page mode is an accepted giscusflare addition. |
 
 ## Source pointers
 
@@ -32,6 +29,6 @@ Source inspection of upstream Giscus at `3d6430237108ca4ee3eb6a1a20595201c09c72d
 
 Use this inventory to construct actual acceptance fixtures. Absence of an implementation in this inspection is not a claim about all GitHub features or every later Giscus version.
 
-## Expanded scope after the interview
+## Additional moderation scope
 
-The user wants fuller author/moderation actions wherever the GitHub API permits them. Their absence from pinned Giscus no longer implies deferral. See [current API and token evidence](GITHUB-API.md). API support must be verified using the deployed app and acting user, particularly for native upvotes.
+giscusflare includes author and moderation actions supported by GitHub App user tokens. See [current API and token evidence](GITHUB-API.md). API support must be verified using the deployed app and acting user, particularly for native upvotes.

@@ -8,7 +8,7 @@ const config={repo:'example/comments',repoId:'',category:'Announcements',categor
 test('standard signed-out structure matches Giscus: bottom composer, one sign-in, upstream icons',async()=>{
  const target=document.getElementById('comments');const mounted=mountComments(target,{service:'https://comments.example',config});await new Promise(r=>setTimeout(r,20));
  const buttons=[...target.querySelectorAll('button')];assert.equal(buttons.filter(b=>b.textContent.trim()==='Sign in with GitHub'&&!b.closest('.gsc-reactions-menu')).length,1);
- assert.equal(target.querySelector('.gsc-main').lastElementChild.dataset.composer,'main');assert.equal(target.querySelector('textarea').disabled,true);assert.ok(target.querySelector('.btn-primary .octicon'));assert.ok(target.querySelector('.gsc-reactions-button svg.octicon'));
+ assert.equal(target.querySelector('.gsc-main').lastElementChild.dataset.composer,'main');assert.equal(target.querySelector('textarea').disabled,true);assert.ok(target.querySelector('.btn-primary .octicon'));assert.ok(target.querySelector('.gsc-reactions-button svg.octicon'));assert.equal(target.querySelector('.gsc-reactions-popover p').textContent.trim(),'Sign in to add your reaction.');
  mounted.controller.setDraft('main','Retained draft');mounted.update({theme:'dark'});assert.equal(mounted.controller.draft(),'Retained draft');assert.equal(target.dataset.theme,'dark');
  mounted.update({term:'another'});assert.equal(mounted.config.term,'another');assert.equal(mounted.controller.draft(),'');mounted.dispose();mounted.dispose();assert.equal(target.children.length,0);
 });
@@ -63,4 +63,26 @@ test('changing a model draft updates custom composer markup without an unrelated
  const runtime=createConversation({service:'https://comments.example',config,draftRecovery:false});
  const form=document.createElement('form'),textarea=document.createElement('textarea');form.append(textarea);document.body.append(form);
  const binding=bindComposer(runtime,'main',{form,textarea});runtime.controller.setDraft('main','Externally restored text');assert.equal(textarea.value,'Externally restored text');binding.dispose();runtime.dispose();form.remove();
+});
+
+test('typing does not replace composer children, preserving WebKit undo grouping',async()=>{
+ const target=document.createElement('div');document.body.append(target);
+ const mounted=mountComments(target,{service:'https://comments.example',config,draftRecovery:false});mounted.session.setSession('c'.repeat(43));await new Promise(r=>setTimeout(r,20));
+ const textarea=target.querySelector('textarea'), form=textarea.closest('form');
+ const records=[];const observer=new window.MutationObserver(items=>records.push(...items));observer.observe(form,{subtree:true,childList:true});
+ for(const letter of 'A complete phrase.'){textarea.value+=letter;textarea.dispatchEvent(new window.Event('input'));}
+ await new Promise(r=>setTimeout(r,0));
+ assert.equal(records.length,0,'even replacing sibling SVG nodes breaks WebKit native undo coalescing');
+ observer.disconnect();mounted.dispose();target.remove();
+});
+
+test('initial load shows the Giscus animation without placeholder counts or editors',async()=>{
+ const target=document.createElement('div');document.body.append(target);
+ const original=globalThis.fetch;let release;
+ globalThis.fetch=()=>new Promise(resolve=>{release=()=>resolve(new Response(JSON.stringify({discussion:null,viewer:null,archived:false,nextCursor:null})));});
+ const mounted=mountComments(target,{service:'https://comments.example',config,draftRecovery:false});
+ assert.ok(target.querySelector('.gsc-loading-image'));assert.equal(target.querySelector('textarea'),null);assert.equal(target.querySelector('.gsc-comments-count'),null);
+ await new Promise(r=>setTimeout(r,0));release();await new Promise(r=>setTimeout(r,20));
+ assert.equal(target.querySelector('.gsc-loading-image'),null);assert.ok(target.querySelector('textarea'));
+ mounted.dispose();target.remove();globalThis.fetch=original;
 });

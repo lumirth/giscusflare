@@ -8,7 +8,6 @@ body {
   color: var(--color-fg-default, var(--color-text-primary));
 }
 .giscusflare {
-  font-family: var(--font-family-default);
   font-size: 16px;
   line-height: 1.5;
   color: var(--color-fg-default, var(--color-text-primary));
@@ -31,7 +30,7 @@ body {
   margin: 0 0 8px 8px;
 }
 .gsc-comment-author-is-viewer {
-  border-color: var(--color-accent-muted, var(--color-border-primary));
+  border-color: var(--color-accent-muted, var(--color-box-border-info));
 }
 .gsc-actions {
   position: relative;
@@ -57,7 +56,7 @@ summary.gsc-reactions-button:focus-visible {
   inset-inline-end: 0;
   top: 100%;
   width: 220px;
-  border: 1px solid;
+  border: 1px solid var(--color-border-default, var(--color-border-primary));
   border-radius: 6px;
   padding: 4px 0;
   z-index: 30;
@@ -70,14 +69,17 @@ summary.gsc-reactions-button:focus-visible {
   text-align: start;
   padding: 6px 12px;
 }
+.gsc-action-menu > a {
+  color: inherit;
+}
 .gsc-action-menu > *:hover {
-  background: var(--color-neutral-muted);
+  background: var(--color-neutral-muted, var(--color-bg-tertiary));
   text-decoration: none;
 }
 .gsc-replies-more-icon .octicon {
   width: 100%;
   transform: rotate(90deg);
-  fill: var(--color-border-muted);
+  fill: var(--color-border-muted, var(--color-border-secondary));
 }
 .gsc-reaction-group {
   display: flex;
@@ -137,9 +139,9 @@ summary.gsc-reactions-button:focus-visible {
   inset-inline-end: 8px;
   top: 8px;
   padding: 6px;
-  border: 1px solid var(--color-border-default);
+  border: 1px solid var(--color-border-default, var(--color-border-primary));
   border-radius: 6px;
-  background: var(--color-canvas-default);
+  background: var(--color-canvas-default, var(--color-bg-primary));
 }
 .markdown .giscus-math[data-display="block"] {
   overflow-x: auto;
@@ -147,11 +149,11 @@ summary.gsc-reactions-button:focus-visible {
 .action-dialog {
   max-width: min(560px, calc(100% - 32px));
   width: 100%;
-  border: 1px solid var(--color-border-default);
+  border: 1px solid var(--color-border-default, var(--color-border-primary));
   border-radius: 6px;
   padding: 20px;
-  background: var(--color-canvas-overlay);
-  color: var(--color-fg-default);
+  background: var(--color-canvas-overlay, var(--color-bg-overlay));
+  color: var(--color-fg-default, var(--color-text-primary));
 }
 .action-dialog::backdrop {
   background: #0006;
@@ -168,9 +170,9 @@ summary.gsc-reactions-button:focus-visible {
 .action-dialog input,
 .action-dialog textarea,
 .action-dialog select {
-  border: 1px solid var(--color-border-default);
+  border: 1px solid var(--color-border-default, var(--color-border-primary));
   border-radius: 6px;
-  background: var(--color-canvas-inset);
+  background: var(--color-canvas-inset, var(--color-bg-canvas-inset));
   padding: 8px;
 }
 .dialog-actions {
@@ -180,7 +182,7 @@ summary.gsc-reactions-button:focus-visible {
 }
 .dialog-actions button {
   padding: 6px 12px;
-  border: 1px solid var(--color-border-default);
+  border: 1px solid var(--color-border-default, var(--color-border-primary));
   border-radius: 6px;
 }
 .dialog-actions .primary {
