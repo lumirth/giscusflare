@@ -74,3 +74,7 @@ Use this level for a changed editor, reaction affordance or author header. For a
 The shared controller accepts `setOrder({ reaction: 'THUMBS_UP' })` (or another GitHub reaction). This is opt-in: the standard presentation still offers Oldest/Newest. The controller fetches every root page before ranking, sorts by the selected reaction count descending, and resolves ties by creation date and ID. Replies retain their conversational order. Reaction clicks update counts in place; ordering changes on a fresh ranked read rather than moving the clicked comment away.
 
 GitHub exposes no comment reaction-order query. A ranked read therefore costs one request per root page and may be slow for large discussions. There is no extra background poll; the host's fetching policy still applies. Switching order cancels the previous read. A repeated/incomplete cursor fails instead of presenting a partial ranking as complete.
+
+The OAuth handoff has a small, independent `/auth.css` stylesheet. It does not
+load widget presentation styles. Its status and fallback link remain available
+when navigation fails; popup and full-window authentication share this shell.

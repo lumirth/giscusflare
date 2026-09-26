@@ -4,8 +4,10 @@ const data = jsonElement<CallbackResult>(), status = document.getElementById('au
 const back = document.getElementById('auth-return') as HTMLAnchorElement;
 const url = new URL(data.returnURL);
 if (data.status === 'ready') url.hash = 'gw-auth=' + encode(new TextEncoder().encode(JSON.stringify({ repo: data.repo, attempt: data.attempt, ticket: data.ticket, challenge: data.challenge })));
-back.href = url.toString(); back.textContent = 'Return to page';
-status.textContent = data.status === 'ready' ? 'Returning to comments...' : 'Sign-in cancelled.';
+back.href = url.toString(); back.textContent = 'Return to comments';
+setTimeout(() => { back.hidden = false; }, 1800);
+status.textContent = data.status === 'ready' ? 'Returning to comments…' : 'Sign-in cancelled.';
+if (data.status !== 'ready') { document.querySelector('.auth-loading')?.remove(); back.hidden = false; }
 if (data.mode === 'redirect') {
   if (data.status === 'ready') location.replace(url.toString());
 } else {

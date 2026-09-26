@@ -1,0 +1,9 @@
+html { color-scheme: light dark; font: 16px/1.5 system-ui, sans-serif; background: light-dark(#fff, #0d1117); color: light-dark(#57606a, #8b949e); }
+body { margin: 0; min-height: 100svh; display: grid; place-items: center; }
+.auth-page { text-align: center; padding: 2rem; max-width: 30rem; }
+.auth-page p { margin: 1rem 0; }
+.auth-page a { color: light-dark(#0969da, #58a6ff); text-underline-offset: .15em; }
+.auth-page a:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
+.auth-loading { width: 48px; height: 48px; margin: auto; background: center / contain no-repeat url("https://github.githubassets.com/images/mona-loading-default.gif"); }
+@media (prefers-color-scheme: dark) { .auth-loading { background-image: url("https://github.githubassets.com/images/mona-loading-dark.gif"); } }
+@media (prefers-reduced-motion: reduce) { .auth-loading { display: none; } }

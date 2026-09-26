@@ -7,7 +7,7 @@ import { cookieName, stateParts } from '../domain/auth.js';
 import { random } from '../domain/crypto.js';
 import { AppError, failure, requireCondition, unwrap } from '../domain/errors.js';
 import { boundedJSON, contract, rateLimit } from './middleware.js';
-import { documentHTML, json, security, widgetHTML } from './html.js';
+import { authHTML, json, security, widgetHTML } from './html.js';
 import type { AppEnv, Env } from './types.js';
 
 function repository(env: Env, repo: string) {
@@ -48,13 +48,13 @@ app.get('/:lang/widget', rateLimit('read'), c => widget(c.req.url, c.env, c.req.
 app.get('/auth/window', rateLimit('auth'), c => {
   const input = parse(R.AuthPrepare, R.queryObject(new URL(c.req.url)));
   const p = policy(c.get('config'), input.repo); parentOrigin(p, input.origin);
-  return security(documentHTML('GitHub sign-in', '<main class="auth-page"><h1>GitHub sign-in</h1><p id="auth-status" role="status">Opening GitHub...</p><a id="auth-return">Return to page</a></main>', '/auth-window.js', input));
+  return security(authHTML('Opening GitHub…', '/auth-window.js', input));
 });
 app.get('/auth/callback', rateLimit('auth'), async c => {
   const query = parse(R.AuthCallbackQuery, R.queryObject(new URL(c.req.url))), state = stateParts(query.state);
   policy(c.get('config'), state.repo);
   const result = unwrap(await repository(c.env, state.repo).authCallback({ ...state, browserCookie: cookie(c.req.raw, cookieName(c.get('config').origin, state.attempt)), code: query.code || '', denied: Boolean(query.error) }));
-  const response = documentHTML('GitHub sign-in', '<main class="auth-page"><h1>GitHub sign-in</h1><p id="auth-status" role="status">Signing in...</p><a id="auth-return">Return to page</a></main>', '/auth-complete.js', result);
+  const response = authHTML('Returning to comments…', '/auth-complete.js', result);
   response.headers.append('Set-Cookie', cookieHeader(c.get('config').origin, state.attempt, '', true));
   return security(response);
 });

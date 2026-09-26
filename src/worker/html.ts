@@ -23,3 +23,8 @@ export function widgetHTML(widget: Widget, policy: RepositoryPolicy): Response {
 export function json(value: unknown, status = 200, headers: HeadersInit = {}): Response {
   return new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...Object.fromEntries(new Headers(headers)) } });
 }
+
+export function authHTML(message: string, script: string, config: unknown): Response {
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>GitHub sign-in · giscusflare</title><link rel="stylesheet" href="/auth.css"></head><body><main class="auth-page"><div class="auth-loading" aria-hidden="true"></div><p id="auth-status" role="status">${escape(message)}</p><a id="auth-return" hidden>Return to comments</a></main><noscript>JavaScript is needed to complete sign-in.</noscript><script id="gw-config" type="application/json">${safeJSON(config)}</script><script type="module" src="${escape(script)}"></script></body></html>`;
+  return new Response(html, {headers: {'Content-Type': 'text/html; charset=utf-8'}});
+}

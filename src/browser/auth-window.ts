@@ -4,7 +4,8 @@ import { jsonElement } from './dom.js';
 const config = jsonElement<AuthPrepare>();
 const status = document.getElementById('auth-status')!;
 const back = document.getElementById('auth-return') as HTMLAnchorElement;
-back.href = config.origin; back.textContent = 'Return to page';
+back.href = config.origin;
+setTimeout(() => { back.hidden = false; }, 1800);
 async function run(): Promise<void> {
   if (config.mode === 'popup' && !window.opener) throw new Error('Return to the page and start sign-in from the comments.');
   const response = await fetch('/api/auth/prepare', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(config), credentials: 'same-origin', cache: 'no-store' });
@@ -25,7 +26,7 @@ async function run(): Promise<void> {
       window.opener.postMessage({ giscusAuth: { attempt: data.attempt, challenge: config.challenge } }, config.openerOrigin || location.origin);
     });
   }
-  const proceed=document.createElement('a');proceed.href=authorize.toString();proceed.textContent='Continue to GitHub';status.replaceChildren(proceed);
+  const proceed=document.createElement('a');proceed.href=authorize.toString();proceed.textContent='Continue to GitHub';setTimeout(() => { status.replaceChildren(proceed); }, 1800);
   navigateAuthorization(authorize);
 }
-void run().catch(error => { status.textContent = error instanceof Error ? error.message : 'Sign-in failed.'; });
+void run().catch(error => { document.querySelector('.auth-loading')?.remove(); back.hidden = false; status.textContent = error instanceof Error ? error.message : 'Sign-in failed.'; });
