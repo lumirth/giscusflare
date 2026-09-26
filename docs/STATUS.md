@@ -12,7 +12,7 @@ Updated 2026-09-26. Development is on `main`.
 
 ## Verified
 
-- 87 automated tests: TypeScript/build checks, domain behavior, response-loss recovery, identity changes, draft expiry, DOM continuity, initial loading and presentation boundaries.
+- 88 automated tests: TypeScript/build checks, domain behavior, response-loss recovery, identity changes, draft expiry, DOM continuity, initial loading and presentation boundaries.
 - 11 workerd checks with simulated GitHub: RPC, SQLite persistence, encrypted sessions, authentication handoff and rate limiting.
 - Real staging App sign-in, posting, editing, replies and reaction toggles in the retained development discussion.
 - Direct Giscus comparisons across seven themes, plus native grouped undo before and after Preview. See [presentation evidence](PRESENTATION.md).

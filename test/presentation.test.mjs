@@ -86,3 +86,27 @@ test('initial load shows the Giscus animation without placeholder counts or edit
  assert.equal(target.querySelector('.gsc-loading-image'),null);assert.ok(target.querySelector('textarea'));
  mounted.dispose();target.remove();globalThis.fetch=original;
 });
+
+test('reaction counts and repository roles do not imply viewer selection or authorship',async()=>{
+ const original=globalThis.fetch;
+ const groups=[{content:'HEART',viewerHasReacted:true,users:{totalCount:34}},{content:'THUMBS_UP',viewerHasReacted:false,users:{totalCount:111}}];
+ const pageInfo={hasNextPage:false,hasPreviousPage:false,startCursor:null,endCursor:null};
+ const comment=(id,own)=>({id,body:'A comment',bodyHTML:'<p>A comment</p>',createdAt:'2026-09-01T12:00:00Z',lastEditedAt:null,url:'https://github.com/example/comments/discussions/1#'+id,author:{login:own?'reader':'owner',avatarUrl:'https://github.com/identicons/test.png',url:'https://github.com/'+(own?'reader':'owner')},authorAssociation:'OWNER',viewerDidAuthor:own,viewerCanUpdate:own,viewerCanDelete:own,viewerCanMinimize:false,viewerCanUnminimize:false,isMinimized:false,deletedAt:null,reactionGroups:structuredClone(groups),replies:{nodes:[],totalCount:0,pageInfo}});
+ const discussion={id:'D_1',number:1,url:'https://github.com/example/comments/discussions/1',locked:false,closed:false,reactionGroups:structuredClone(groups),comments:{nodes:[comment('C_own',true),comment('C_other',false)],totalCount:2,pageInfo}};
+ globalThis.fetch=async()=>new Response(JSON.stringify({discussion,viewer:{login:'reader'},archived:false,order:'oldest',nextCursor:null}));
+ const target=document.createElement('div');document.body.append(target);
+ const mounted=mountComments(target,{service:'https://comments.example',config,draftRecovery:false});
+ try {
+  await mounted.controller.refresh();
+  const pills=[...target.querySelectorAll('.gsc-direct-reaction-button')];
+  assert.equal(pills.length,6);
+  for(const pill of pills){const selected=pill.textContent.includes('❤️');assert.equal(pill.classList.contains('has-reacted'),selected);assert.equal(pill.getAttribute('aria-pressed'),String(selected));}
+  assert.ok(target.querySelector('#comment-C_own > .gsc-comment-author-is-viewer'));
+  assert.equal(target.querySelector('#comment-C_other > .gsc-comment-author-is-viewer'),null,'OWNER association alone must not accent a comment');
+  for(const subject of [discussion,...discussion.comments.nodes]){for(const g of subject.reactionGroups)g.viewerHasReacted=false;subject.viewerDidAuthor=false;}
+  await mounted.controller.refresh();
+  assert.equal(target.querySelectorAll('.has-reacted').length,0);
+  assert.equal(target.querySelectorAll('.gsc-comment-author-is-viewer').length,0);
+  assert.equal(target.querySelectorAll('.gsc-direct-reaction-button').length,6,'unselected reactions keep their counts');
+ } finally {mounted.dispose();target.remove();globalThis.fetch=original;}
+});
