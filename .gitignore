@@ -17,3 +17,7 @@ dist/
 .types/
 public/*.js
 public/native.css
+public/themes/
+public/chunks/
+
+/public/widget.css

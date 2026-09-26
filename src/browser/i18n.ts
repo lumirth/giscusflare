@@ -1,4 +1,20 @@
+import {messages} from './upstream-messages.js';
+import { upstreamLocales } from './upstream-locales.js';
 const en = {
+  reason:'Reason',reasonOffTopic:'Off-topic',reasonAbuse:'Abuse',reasonDuplicate:'Duplicate',reasonOutdated:'Outdated',reasonResolved:'Resolved',reasonSpam:'Spam',
+  pickReaction:'Pick your reaction', loadingReplies:'Loading previous replies…', nothingToPreview:'Nothing to preview', loadingPreview:'Loading preview…',
+  discussionUnavailable:'This discussion was deleted or is no longer available.',closed:'This discussion is closed.',
+  discussionActions:'Discussion actions',close:'Close discussion',reopen:'Reopen discussion',lock:'Lock conversation',unlock:'Unlock conversation',
+  replies:'replies',writeReply:'Write a reply…',signInToComment:'Sign in to comment',continueSignIn:'Continue sign-in in this tab',answered:'Answer',answer:'Mark as answer',unanswer:'Unmark answer',title:'Discussion title',body:'Discussion body (Markdown)',
+  editDiscussion:'Edit discussion',deleteDiscussion:'Delete discussion',deleteDiscussionConfirm:'Delete this entire GitHub discussion? Its comments cannot be recovered. This page will not automatically create a replacement.',
+  block:'Block author on your GitHub account',blockConfirm:'Block @{user} across your GitHub account? This affects more than this conversation.',
+  fixedWidth: 'Use a fixed-width font in the editor',
+  deletedAuthor: '[deleted]', deletedComment: 'This comment was deleted.',
+  actions: 'Comment actions', reportOnGitHub: 'Report on GitHub ↗',
+  hideReason: 'Reason: ABUSE, DUPLICATE, OFF_TOPIC, OUTDATED, RESOLVED or SPAM',
+  invalidReason: 'Choose one of the listed moderation reasons.',
+  fewerReplies: 'Show fewer replies', previousReplies: 'Show {count} previous replies',
+  reactionsCount: 'reactions',
   comments: "Comments",
   signIn: "Sign in with GitHub",
   signOut: "Sign out",
@@ -21,7 +37,7 @@ const en = {
   locked: "This discussion is locked.",
   archived: "This repository is archived.",
   hidden: "Hidden comment",
-  hide: "Hide as off-topic",
+  hide: "Hide comment",
   unhide: "Show comment",
   onGitHub: "View on GitHub",
   signedAs: "Signed in as",
@@ -402,7 +418,7 @@ const dictionaries: Record<string, Partial<Strings>> = {
     eyes: "عينان",
   },
 };
-export function strings(lang: string): Strings { return { ...en, ...dictionaries[lang.split('-')[0] || 'en'] }; }
+export function strings(lang: string): Strings { return { ...en, ...dictionaries[lang.split('-')[0] || 'en'], ...upstreamLocales[lang] };  }
 
 const reactionNames: Record<string, keyof Strings> = {
   THUMBS_UP: 'thumbsUp', THUMBS_DOWN: 'thumbsDown', LAUGH: 'laugh', HOORAY: 'hooray',
@@ -411,4 +427,20 @@ const reactionNames: Record<string, keyof Strings> = {
 export function reactionLabel(text: Strings, reaction: string): string {
   const key = reactionNames[reaction];
   return key ? text[key] : reaction;
+}
+
+
+export function message(lang:string,key:string,count?:number,plus=''):string {
+  const entry=messages[lang]?.[key]??messages.en?.[key]??key;
+  if(typeof entry==='string')return entry;
+  const quantity=count??0;let category='other';try{category=new Intl.PluralRules(lang).select(quantity);}catch{/* English fallback. */}
+  return (entry[String(quantity)]??entry[category]??entry.other??key).replaceAll('{{count}}',String(quantity)).replaceAll('{{plus}}',plus);
+}
+export function relativeDate(date:Date,lang:string,now=new Date()):string {
+  const seconds=Math.max(0,Math.floor((now.getTime()-date.getTime())/1000));
+  const locale=Intl.DateTimeFormat.supportedLocalesOf([lang]).length?lang:'en';
+  if(date.getUTCFullYear()<now.getUTCFullYear()||seconds>=30*86400)return date.toLocaleDateString(locale,{month:'short',day:'numeric',...(date.getUTCFullYear()<now.getUTCFullYear()?{year:'numeric' as const}:{})});
+  const unit=seconds>=86400?'day':seconds>=3600?'hour':seconds>=60?'minute':'second';
+  const divisor=unit==='day'?86400:unit==='hour'?3600:unit==='minute'?60:1;
+  return new Intl.RelativeTimeFormat(locale,{numeric:'always'}).format(-Math.floor(seconds/divisor),unit);
 }

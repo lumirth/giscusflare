@@ -1,5 +1,5 @@
 import * as v from 'valibot';
-import type { MutationResult } from '../contracts/results.js';
+import type { MutationResult, ThreadView } from '../contracts/results.js';
 import { configuration, secrets, type ConfigBindings, type RepositoryPolicy } from '../contracts/config.js';
 import { parse, type Schema } from '../contracts/parse.js';
 import * as R from '../contracts/requests.js';
@@ -14,7 +14,6 @@ import { GitHub } from './github.js';
 import { AppError, requireCondition } from './errors.js';
 import { Store } from './store.js';
 import type { FetchLike } from './platform.js';
-export interface ThreadView { discussion: G.Discussion | null; viewer: S.Session['user'] | null; archived: boolean; order: 'oldest' | 'newest'; nextCursor: string | null }
 interface Context { widget: R.Widget; client: GitHub; auth: Auth; appToken: string; token: string; session: S.Session | null; meta: G.Repository; categoryId: string; policy: RepositoryPolicy }
 export class RepositoryEngine {
   constructor(readonly env: ConfigBindings, readonly store: Store, readonly transport?: FetchLike) {}
@@ -47,17 +46,18 @@ export class RepositoryEngine {
     }
     return null;
   }
-  async #load(c: Context, order: 'oldest' | 'newest' = 'oldest', cursor = ''): Promise<G.Discussion | null> {
+  async #load(c: Context, order: 'oldest' | 'newest' = 'oldest', cursor = '', includeComments=false, replyPrefetch=5): Promise<G.Discussion | null> {
     const number = await this.#find(c); if (!number) return null;
-    const discussion = await c.client.thread(number, order, cursor, c.token);
+    const discussion = await c.client.thread(number, order, cursor, c.token, includeComments, Math.min(replyPrefetch,c.policy.maxReplyPrefetch));
     if (discussion) discussionScope(discussion, c.widget.repo, c.meta.id, c.categoryId);
-    else if (!c.widget.number) this.store.delete(await this.#mapping(c));
+    // A previously mapped thread remains mapped when missing; never silently recreate it.
     return discussion;
   }
   async #ensure(c: Context): Promise<G.Discussion> {
     const key = await this.#mapping(c);
     return this.store.lock(key, async () => {
       const old = await this.#load(c); if (old) return old;
+      requireCondition(!this.store.get('deleted:'+key,S.Tombstone)&&!this.store.get(key,S.Mapping),410,'NOT_FOUND','The mapped discussion was deleted or is no longer available. Select a new discussion explicitly.');
       requireCondition(!c.widget.number, 404, 'NOT_FOUND', 'That discussion number does not exist.');
       requireCondition(!this.store.get('creating:' + key, S.Creation), 409, 'WRITE_UNCERTAIN', 'GitHub may have created this discussion. Check the repository before creating another.');
       requireCondition(c.session, 401, 'AUTH_REQUIRED', 'Sign in to create a discussion.');
@@ -66,7 +66,7 @@ export class RepositoryEngine {
       try {
         const created = await c.client.create(c.widget, c.meta.id, c.categoryId, c.appToken);
         this.store.put(key, S.Mapping, { version: 2, number: created.number }); this.store.delete('creating:' + key);
-        const discussion = await c.client.thread(created.number, 'oldest', '', c.token);
+        const discussion = await c.client.thread(created.number, 'oldest', '', c.token, false);
         requireCondition(discussion, 502, 'UPSTREAM', 'The discussion was created but could not be loaded. Refresh before posting.');
         discussionScope(discussion, c.widget.repo, c.meta.id, c.categoryId); return discussion;
       } catch (error) {
@@ -90,8 +90,8 @@ export class RepositoryEngine {
   }
   async thread(raw: C.ThreadCall): Promise<ThreadView> {
     const input = parse(C.ThreadCall, raw), c = await this.#context(input.request.config, input.session);
-    const discussion = await this.#load(c, input.request.order, input.request.cursor), page = discussion?.comments.pageInfo;
-    return { discussion, viewer: c.session?.user || null, archived: c.meta.isArchived, order: input.request.order,
+    const discussion = await this.#load(c, input.request.order, input.request.cursor, true, input.request.replyPrefetch), page = discussion?.comments.pageInfo;
+    return { discussion, unavailable:!discussion&&Boolean(input.request.config.number||this.store.get(await this.#mapping(c),S.Mapping)||this.store.get('deleted:'+await this.#mapping(c),S.Tombstone)), viewer: c.session?.user || null, archived: c.meta.isArchived, order: input.request.order,
       nextCursor: input.request.order === 'oldest' ? (page?.hasNextPage ? page.endCursor : null) : (page?.hasPreviousPage ? page.startCursor : null) };
   }
   async replies(raw: C.RepliesCall): Promise<G.Replies> {
@@ -187,6 +187,36 @@ export class RepositoryEngine {
       const updated = await this.#target(c, discussion, r.id);
       requireCondition(updated.__typename === 'DiscussionComment', 502, 'UPSTREAM_SCHEMA', 'GitHub returned an invalid comment.');
       return { id: r.id, comment: updated };
+    });
+  }
+  async discussionAction(raw:C.DiscussionActionCall) {
+    const {request:r,session}=parse(C.DiscussionActionCall,raw),c=await this.#context(r.config,session,true);
+    return this.#write(c,r.key,['discussion-action',r],false,async discussion=>{
+      const target=await this.#target(c,discussion,r.id);
+      if(['answer','unanswer'].includes(r.action))requireCondition(target.__typename==='DiscussionComment'&&(r.action==='answer'?target.viewerCanMarkAsAnswer:target.viewerCanUnmarkAsAnswer),403,'PERMISSION','You cannot change this answer.');
+      else {
+        requireCondition(target.__typename==='Discussion',400,'BAD_INPUT','This action requires a discussion.');
+        const permits:Record<string,boolean>={close:target.viewerCanClose,reopen:target.viewerCanReopen,edit:target.viewerCanUpdate,delete:target.viewerCanDelete};
+        if(['lock','unlock'].includes(r.action)){const a=await c.client.authority(c.token);requireCondition(['ADMIN','MAINTAIN','WRITE','TRIAGE'].includes(a.permission||''),403,'PERMISSION','You cannot change this discussion lock.');}
+        else requireCondition(permits[r.action],403,'PERMISSION','You cannot change this discussion.');
+      }
+      if(r.action==='edit')requireCondition(r.body&&r.title,400,'BAD_INPUT','A title and body are required.');
+      await c.client.discussionAction(r.id,r.action,c.token,r.body,r.title);
+      if(r.action==='delete'){this.store.put('deleted:'+await this.#mapping(c),S.Tombstone,{number:discussion.number});return {id:r.id,discussion:null};}
+      const updated=await c.client.thread(discussion.number,'oldest','',c.token,false);
+      requireCondition(updated,502,'UPSTREAM','Unable to read the changed discussion.');
+      return {id:r.id,discussion:updated};
+    });
+  }
+  async block(raw:C.BlockCall) {
+    const {request:r,session}=parse(C.BlockCall,raw),c=await this.#context(r.config,session,true);
+    return this.#write(c,r.key,['block',r],false,async discussion=>{
+      const target=await this.#target(c,discussion,r.id);
+      requireCondition(target.__typename==='DiscussionComment'&&target.author,400,'BAD_INPUT','This comment has no available author.');
+      requireCondition(target.author.login!==c.session!.user.login,400,'BAD_INPUT','You cannot block yourself.');
+      if(r.scope==='organization'){const a=await c.client.authority(c.token);requireCondition(a.organization&&a.permission==='ADMIN',403,'PERMISSION','Organization blocking requires repository administration and GitHub organization permission.');}
+      await c.client.block(target.author.login,r.scope==='organization',r.add,c.token);
+      return {id:r.id,blocked:r.add};
     });
   }
   async authPrepare(raw: C.PrepareCall) { const input = parse(C.PrepareCall, raw); return this.#base(input.request.repo).auth.prepare(input); }

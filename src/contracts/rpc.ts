@@ -26,3 +26,8 @@ export type PreviewCall = v.InferOutput<typeof PreviewCall>;
 export type PrepareCall = v.InferOutput<typeof PrepareCall>;
 export type CallbackCall = v.InferOutput<typeof CallbackCall>;
 export type LogoutCall = v.InferOutput<typeof LogoutCall>;
+
+export const DiscussionActionCall=v.strictObject({request:R.DiscussionActionRequest,session:Capability});
+export const BlockCall=v.strictObject({request:R.BlockRequest,session:Capability});
+export type DiscussionActionCall=v.InferOutput<typeof DiscussionActionCall>;
+export type BlockCall=v.InferOutput<typeof BlockCall>;

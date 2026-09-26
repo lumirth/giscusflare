@@ -9,16 +9,17 @@ export const Comment = v.object({
   author: v.nullable(User), authorAssociation: v.string(), viewerDidAuthor: v.boolean(),
   viewerCanUpdate: v.boolean(), viewerCanDelete: v.boolean(), viewerCanMinimize: v.boolean(),
   viewerCanUnminimize: v.optional(v.boolean(), false), deletedAt: v.optional(v.nullable(ISODate), null),
+  isAnswer: v.optional(v.boolean(), false), viewerCanMarkAsAnswer: v.optional(v.boolean(), false), viewerCanUnmarkAsAnswer: v.optional(v.boolean(), false),
   isMinimized: v.boolean(), minimizedReason: v.nullable(v.string()), reactionGroups: Reactions,
   replyTo: v.optional(v.nullable(v.object({ id: NodeID })), null),
 });
-export const Replies = v.object({ totalCount: Count, pageInfo: PageInfo, nodes: v.pipe(v.array(Comment), v.maxLength(20)) });
+export const Replies = v.object({ totalCount: Count, pageInfo: PageInfo, nodes: v.pipe(v.array(Comment), v.maxLength(100)) });
 export const RootComment = v.object({ ...Comment.entries, replies: Replies });
 export const Comments = v.object({ totalCount: Count, pageInfo: PageInfo, nodes: v.pipe(v.array(RootComment), v.maxLength(20)) });
 export const Scope = v.object({ repository: v.object({ id: NodeID, nameWithOwner: v.string(), isPrivate: v.boolean() }), category: v.object({ id: NodeID, name: v.string() }) });
 export const DiscussionSummary = v.object({
   ...Scope.entries, id: NodeID, number: PositiveInteger, title: v.string(), body: Body, bodyHTML: Body,
-  url: HttpsURL, locked: v.boolean(), reactionGroups: Reactions,
+  url: HttpsURL, locked: v.boolean(), closed: v.optional(v.boolean(), false), viewerCanClose: v.optional(v.boolean(), false), viewerCanReopen: v.optional(v.boolean(), false), viewerCanDelete: v.optional(v.boolean(), false), viewerCanUpdate: v.optional(v.boolean(), false), viewerCanLock: v.optional(v.boolean(), false), answer: v.optional(v.nullable(v.object({id:NodeID})), null), reactionGroups: Reactions,
 });
 export const Discussion = v.object({ ...DiscussionSummary.entries, comments: Comments });
 export const Repository = v.object({
@@ -26,7 +27,7 @@ export const Repository = v.object({
   discussionCategories: v.object({ nodes: v.pipe(v.array(v.object({ id: NodeID, name: v.string(), isAnswerable: v.boolean() })), v.maxLength(100)) }),
 });
 export const RepositoryResponse = v.object({ repository: v.nullable(Repository) });
-export const ThreadResponse = v.object({ repository: v.nullable(v.object({ isPrivate: v.boolean(), discussion: v.nullable(Discussion) })) });
+export const ThreadResponse = v.object({ repository: v.nullable(v.object({ isPrivate: v.boolean(), viewerPermission: v.optional(v.nullable(v.string()),null), discussion: v.nullable(Discussion) })) });
 export const SearchResponse = v.object({ search: v.object({ discussionCount: Count, nodes: v.pipe(v.array(v.nullable(DiscussionSummary)), v.maxLength(10)) }) });
 export const Target = v.variant('__typename', [
   v.object({ __typename: v.literal('Discussion'), ...DiscussionSummary.entries }),

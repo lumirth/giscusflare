@@ -1,3 +1,4 @@
+import { isNamedTheme } from '../themes.js';
 import * as v from 'valibot';
 
 export function isWebURL(value: string): boolean {
@@ -35,7 +36,7 @@ export const Order = v.picklist(['oldest', 'newest']);
 export const Reaction = v.picklist(['THUMBS_UP', 'THUMBS_DOWN', 'LAUGH', 'HOORAY', 'CONFUSED', 'HEART', 'ROCKET', 'EYES']);
 export const Language = v.pipe(v.string(), v.regex(/^[a-z]{2,3}(?:-[A-Za-z]{2,8})?$/), v.maxLength(20));
 export const Theme = v.pipe(v.string(), v.minLength(1), v.maxLength(2048),
-  v.check(s => ['light', 'dark', 'preferred_color_scheme'].includes(s) || isWebURL(s)));
+  v.check(s => isNamedTheme(s) || isWebURL(s)));
 export const Ciphertext = v.pipe(v.string(), v.minLength(20), v.maxLength(200000));
 export const Token = v.pipe(v.string(), v.minLength(1), v.maxLength(4096), v.check(s => !/[\u0000-\u0020\u007f]/u.test(s)));
 export const ISODate = v.pipe(v.string(), v.maxLength(64), v.check(s => Number.isFinite(Date.parse(s))));

@@ -23,3 +23,5 @@ export const RateWindow = v.strictObject({ count: Count, resets: Timestamp });
 export const ActorIdentity = v.strictObject({ version: v.literal(2), repo: RepositoryName, appId: v.string() });
 export type Session = v.InferOutput<typeof Session>;
 export type OAuthAttempt = v.InferOutput<typeof OAuthAttempt>;
+
+export const Tombstone=v.strictObject({number:PositiveInteger});

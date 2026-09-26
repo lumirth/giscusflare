@@ -34,7 +34,7 @@ export function queryObject(url: URL): Record<string, string> {
   }
   return result;
 }
-export const ThreadRequest = v.strictObject({ config: Widget, order: v.optional(Order, 'oldest'), cursor: v.optional(Cursor, '') });
+export const ThreadRequest = v.strictObject({ replyPrefetch:v.optional(v.pipe(v.number(),v.integer(),v.minValue(0),v.maxValue(100)),5), config: Widget, order: v.optional(Order, 'oldest'), cursor: v.optional(Cursor, '') });
 export const RepliesRequest = v.strictObject({ config: Widget, parentId: NodeID, cursor: v.optional(Cursor, '') });
 export const CommentRequest = v.strictObject({ config: Widget, body: Markdown, replyToId: v.optional(EmptyNodeID, ''), key: IdempotencyKey });
 export const EditRequest = v.strictObject({ config: Widget, id: NodeID, body: Markdown, key: IdempotencyKey });
@@ -48,7 +48,7 @@ export const AuthProof = v.strictObject({ repo: RepositoryName, origin: PageURL,
 export const AuthConsume = v.strictObject({ ...AuthProof.entries, ticket: Capability });
 export const LogoutRequest = InfoRequest;
 export const AuthStartQuery = v.strictObject({ repo: RepositoryName, attempt: Capability });
-export const AuthCallbackQuery = v.strictObject({ state: v.pipe(SafeLine, v.maxLength(512)), code: v.optional(v.pipe(v.string(), v.maxLength(1024))), error: v.optional(v.pipe(v.string(), v.maxLength(256))), error_description: v.optional(SafeLine), error_uri: v.optional(PageURL) });
+export const AuthCallbackQuery = v.strictObject({ iss:v.optional(v.literal('https://github.com/login/oauth')), state: v.pipe(SafeLine, v.maxLength(512)), code: v.optional(v.pipe(v.string(), v.maxLength(1024))), error: v.optional(v.pipe(v.string(), v.maxLength(256))), error_description: v.optional(SafeLine), error_uri: v.optional(PageURL) });
 export const Caller = v.strictObject({ repo: RepositoryName, origin: PageURL, session: v.optional(EmptyCapability, '') });
 export type Caller = v.InferOutput<typeof Caller>;
 export type ThreadRequest = v.InferOutput<typeof ThreadRequest>;
@@ -64,3 +64,8 @@ export type AuthPrepare = v.InferOutput<typeof AuthPrepare>;
 export type AuthProof = v.InferOutput<typeof AuthProof>;
 
 export type AuthConsume = v.InferOutput<typeof AuthConsume>;
+
+export const DiscussionActionRequest=v.strictObject({config:Widget,key:IdempotencyKey,id:NodeID,action:v.picklist(['lock','unlock','close','reopen','answer','unanswer','edit','delete']),body:v.optional(Markdown),title:v.optional(v.pipe(v.string(),v.minLength(1),v.maxLength(256)))});
+export const BlockRequest=v.strictObject({config:Widget,key:IdempotencyKey,id:NodeID,scope:v.picklist(['account','organization']),add:v.boolean()});
+export type DiscussionActionRequest=v.InferOutput<typeof DiscussionActionRequest>;
+export type BlockRequest=v.InferOutput<typeof BlockRequest>;

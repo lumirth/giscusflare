@@ -1,60 +1,21 @@
-# Testing
+# Verification
 
-[Verification](VERIFICATION.md) contains the results for this package. The commands below describe the test suites, not a claim that they passed.
+`npm test` runs strict browser/Worker type checks, builds the package, and runs the Node tests. Domain tests use an explicit GitHub simulator and real Node SQLite. Browser interaction tests use JSDOM; they can establish DOM identity and event handling, but cannot prove native undo, layout or OAuth navigation.
 
-## Node tests
+`npm run test:runtime` runs real local workerd, SQLite Durable Object RPC, cookie/proof authentication, encrypted session restart persistence and native rate limits. GitHub is simulated. It does not establish deployed CPU capacity or real App permissions.
 
-```sh
-npm test
-```
+`npm run check:release` runs both suites and artifact validation. Browser acceptance is separate and must be recorded in `docs/STATUS.md`; passing the command is not a visual acceptance or production-release certificate.
 
-This runs strict TypeScript checking, builds the application with esbuild, and runs Node's test runner. Tests use Hono, Valibot, the repository code, and Node SQLite. A stateful fixture simulates GitHub responses.
+## Browser acceptance
 
-The tests cover request and response schemas, configuration, corrupted records, encryption, expiry, concurrent writes, idempotency, access checks, comments, replies, reactions, moderation, pagination, and sign-in. The GitHub fixture checks request headers, variables, scopes, and token types. It can simulate rate limits, delayed search results, and a connection failure after a write.
+Use the actual browser against the staging fixture and compare with giscus.app. Verify:
 
-## Cloudflare runtime
+- Signed-out bottom composer, one main sign-in action, contextual reaction sign-in, all eight original emoji reactions.
+- Desktop and narrow layouts, light/dark themes, focused textarea/Markdown surface, unclipped Octicons.
+- Type with real keyboard input, switch Preview/Write, undo/redo, react and refresh; keep textarea identity, selection and writing intact.
+- Rapid reaction toggles, local pending feedback, canonical result and error recovery.
+- Replies beyond the initial buffer, cancelled/reopened reply draft, root/reply edits, sort changes.
+- Native and iframe authentication, same-window return and optional popup, return location, origin enforcement.
+- Independent public-API example without loading the standard presentation/style.
 
-```sh
-npm run test:runtime
-```
-
-This starts Wrangler and workerd with a separate test entry point. GitHub is simulated; RPC, SQLite-backed Durable Objects, and native rate-limiting bindings run in workerd.
-
-The tests check routing, schemas, static assets, the widget's Content Security Policy, repository calls, authorization, and persistence after a process restart. They create temporary test keys and storage and remove them afterward.
-
-## Browser
-
-```sh
-pip install playwright==1.57.0
-python -m playwright install chromium
-npm run test:browser
-```
-
-Normal mode starts the local demo with separate website and comments-service origins. It tests iframe navigation and a simulated authorization flow.
-
-A component-only mode is available when a managed browser blocks navigation:
-
-```sh
-CHROMIUM_PATH=/path/to/chromium BROWSER_COMPONENT_ONLY=1 npm run test:browser
-```
-
-It loads the component into `about:blank` and sends API requests through an HTTP bridge. It checks rendering, interactions, layout, and HTML filtering. It does not test popup navigation, browser-enforced iframe messaging, storage restrictions, or CORS and CSP enforcement. Run normal browser mode before deployment.
-
-## Copy checks
-
-```sh
-npm run check:copy
-npm run test:copy
-```
-
-The first command checks for removed voting options, obsolete UI strings, broken documentation links, and changes to the archived verification logs or license. It needs only Node.
-
-The second uses TypeScript and Playwright to load the browser components with simulated responses. It checks reaction labels and counts, conditional setup fields, messages, and layout. It does not run the Worker or test sign-in navigation. It can use a local or global TypeScript installation. Set `CHROMIUM_PATH` to use a browser installed outside Playwright.
-
-Copy-check results are in `docs/copy-checks/`. The full test commands above are still required before deployment.
-
-## Release checks
-
-`npm run check:release` runs the Node, native runtime, normal browser, and package checks. `npm run deploy:check` also validates configuration and runs a Wrangler dry run. CI runs checks without deploying or using production credentials.
-
-Test reports and command exit codes belong in `docs/evidence/`. Keep recorded logs unchanged. The live GitHub and deployed-browser checks are in [Deploy](DEPLOY.md).
+The previous Python component harnesses and copy-era lexical checks were removed. Their assumptions about private DOM and exact source spelling are not the new contract. Regression coverage belongs to domain behavior, shared interactions, package boundaries and actual browser observations.

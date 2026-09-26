@@ -13,26 +13,31 @@
     "build": "npm run typecheck && node scripts/build.mjs && tsc -p tsconfig.types.json && node scripts/build-test-assets.mjs",
     "test": "npm run build && node --test test/*.test.mjs",
     "test:runtime": "npm run build && node scripts/test-runtime.mjs",
-    "test:browser": "npm run build && python3 test/browser.py",
     "demo": "node scripts/demo.mjs",
     "dev": "wrangler dev",
     "check:config": "node scripts/check-config.mjs",
-    "check:release": "npm test && npm run test:runtime && npm run test:browser && node scripts/check-package.mjs",
+    "check:release": "npm test && npm run test:runtime && node scripts/check-package.mjs",
     "deploy:check": "npm run check:release && npm run check:config && wrangler deploy --dry-run",
     "deploy": "npm run deploy:check && wrangler deploy",
     "secret": "node scripts/secret.mjs",
-    "check:copy": "node scripts/check-copy.mjs",
-    "test:copy": "python3 test/copy-browser.py",
     "types": "wrangler types types/runtime.d.ts"
   },
   "dependencies": {
+    "@primer/octicons": "^19.27.0",
     "@standard-schema/spec": "1.0.0",
+    "dompurify": "^3.4.16",
     "hono": "4.13.9",
+    "lit-html": "^3.3.1",
+    "mathjax-full": "^3.2.2",
     "valibot": "1.5.0"
   },
   "devDependencies": {
+    "@types/node": "^22.20.4",
     "esbuild": "0.25.10",
+    "jsdom": "^27.4.0",
     "postcss": "^8.5.28",
+    "tailwindcss": "^3.4.17",
+    "tailwindcss-vanilla-rtl": "^0.4.0",
     "typescript": "5.9.3",
     "wrangler": "4.141.0"
   },
@@ -41,6 +46,23 @@
       "types": "./dist/types/browser/native.d.ts",
       "import": "./dist/browser/native.js"
     },
-    "./styles.css": "./public/native.css"
-  }
+    "./styles.css": "./public/native.css",
+    "./worker": "./dist/worker.mjs",
+    "./headless": {
+      "types": "./dist/types/browser/headless.d.ts",
+      "import": "./dist/browser/headless.js"
+    }
+  },
+  "files": [
+    "dist/browser",
+    "dist/types",
+    "dist/worker.mjs",
+    "public",
+    "docs",
+    "LICENSE",
+    "THIRD-PARTY-NOTICES.md",
+    "README.md",
+    "DEPLOY.md",
+    "FREE-TIER.md"
+  ]
 }

@@ -1,0 +1,1030 @@
+/*! This file contains adapted styles from the Primer CSS
+ * design system, original styles licensed under:
+ * MIT License
+ * Copyright (c) 2021 GitHub Inc.
+ * https://github.com/primer/css/blob/main/LICENSE
+ */
+
+* {
+  @apply scroll-mt-24;
+
+  border-color: var(--color-border-default, var(--color-border-primary));
+}
+
+:host, html {
+  --font-family-sans: -apple-system, "BlinkMacSystemFont", "Segoe UI", "Helvetica", "Arial", sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  --font-family-monospace: ui-monospace, "SFMono-Regular", "Menlo", "Monaco", "Consolas", "Liberation Mono", "Courier New", monospace;
+  --font-family-default: var(--font-family-sans);
+
+  font-family: var(--font-family-default);
+}
+
+code, kbd, pre, samp, .gsc-is-fixed-width, .commit-tease-sha, .blob-code-inner, .blob-num {
+  font-family: var(--font-family-monospace);
+}
+
+a {
+  color: var(--color-accent-fg, var(--color-text-link));
+}
+
+a:focus-visible,
+button:focus-visible,
+[role="button"]:focus-visible,
+input[type="radio"]:focus-visible,
+input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--color-accent-fg, var(--color-text-link));
+  outline-offset: -2px;
+  box-shadow: none;
+}
+
+details summary {
+  @apply cursor-pointer;
+}
+
+@media screen and (width <= 320px) {
+  html {
+    font-size: 5vw;
+  }
+}
+
+.link-secondary {
+  @apply underline;
+}
+
+.color-bg-primary,
+.color-bg-default {
+  background-color: var(--color-canvas-default, var(--color-bg-primary));
+}
+
+.color-bg-secondary,
+.color-bg-subtle {
+  background-color: var(--color-canvas-subtle, var(--color-bg-secondary));
+}
+
+.color-bg-tertiary {
+  background-color: var(--color-canvas-subtle, var(--color-bg-tertiary));
+}
+
+.color-bg-canvas {
+  background-color: var(--color-canvas-default, var(--color-bg-canvas));
+}
+
+.color-bg-inset {
+  background-color: var(--color-canvas-inset, var(--color-bg-canvas-inset));
+}
+
+.color-bg-overlay {
+  background-color: var(--color-canvas-overlay, var(--color-bg-overlay));
+}
+
+.color-bg-info {
+  background-color: var(--color-accent-subtle, var(--color-bg-info));
+}
+
+.color-fg-default,
+.color-text-primary,
+.link-primary {
+  color: var(--color-fg-default, var(--color-text-primary));
+}
+
+.color-fg-muted,
+.color-text-secondary,
+.link-secondary {
+  color: var(--color-fg-muted, var(--color-text-secondary));
+}
+
+.color-fg-subtle {
+  color: var(--color-fg-subtle, var(--color-diff-blob-num-text));
+}
+
+.color-text-tertiary {
+  color: var(--color-fg-muted, var(--color-text-tertiary));
+}
+
+.color-text-link,
+.color-fg-accent,
+.link-primary:hover,
+.link-secondary:hover {
+  color: var(--color-accent-fg, var(--color-text-link));
+}
+
+.color-text-success {
+  color: var(--color-success-fg, var(--color-text-success));
+}
+
+.color-fg-attention {
+  color: var(--color-attention-fg);
+}
+
+.color-text-danger {
+  color: var(--color-danger-fg, var(--color-text-danger));
+}
+
+.color-border-primary {
+  border-color: var(--color-border-default, var(--color-border-primary));
+}
+
+.color-border-tertiary {
+  border-color: var(--color-border-default, var(--color-border-tertiary));
+}
+
+.color-border-info {
+  border-color: var(--color-accent-emphasis, var(--color-border-info));
+}
+
+.form-control {
+  @apply align-middle;
+
+  background-color: var(--color-canvas-default, var(--color-input-bg));
+  border-color: var(--color-border-default, var(--color-input-border));
+}
+
+.form-control:focus {
+  border-color: var(--color-accent-fg, var(--color-text-link));
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-accent-fg, var(--color-text-link));
+}
+
+@supports (-webkit-touch-callout: none) {
+  .form-control,
+  .form-select {
+    /* Ensures inputs don't zoom on mobile iPhone but are normal on iPad */
+    @apply text-base md:text-sm;
+  }
+}
+
+.input-contrast {
+  background-color: var(--color-canvas-inset, var(--color-input-contrast-bg));
+}
+
+.input-contrast:focus {
+  background-color: var(--color-canvas-default, var(--color-input-bg));
+}
+
+.color-label-border {
+  border-color: var(--color-border-default, var(--color-label-border));
+}
+
+.color-box-border-info {
+  border-color: var(--color-accent-muted, var(--color-box-border-info));
+}
+
+.btn {
+  @apply px-4 py-[5px] text-sm relative inline-block align-middle border rounded-md cursor-pointer whitespace-nowrap;
+
+  color: var(--color-btn-text);
+  background-color: var(--color-btn-bg);
+  border-color: var(--color-btn-border);
+  box-shadow: var(--color-btn-shadow), var(--color-btn-inset-shadow);
+  transition: 0.2s cubic-bezier(0.3, 0, 0.5, 1);
+  transition-property: color, background-color, border-color;
+  transition-delay: 0s;
+}
+
+.BtnGroup {
+  background-color: var(
+    --color-segmented-control-bg,
+    var(--color-canvas-subtle, var(--color-bg-secondary))
+  );
+
+  @apply inline-flex items-center align-middle rounded-md;
+}
+
+.BtnGroup-item {
+  @apply inline-flex rounded-md border border-transparent px-1 py-0.5;
+}
+
+.BtnGroup-item.BtnGroup-item--selected {
+  @apply font-semibold;
+
+  background-color: var(
+    --color-segmented-control-button-bg,
+    var(--color-btn-bg)
+  );
+  border-color: var(
+    --color-segmented-control-button-selected-border,
+    var(--color-border-default, var(--color-border-primary))
+  );
+}
+
+.BtnGroup-item .btn {
+  @apply px-2 py-0.5 bg-inherit border-0 shadow-none;
+}
+
+.btn:hover {
+  @apply duration-100;
+
+  background-color: var(--color-btn-hover-bg);
+  border-color: var(--color-btn-hover-border);
+}
+
+.btn:active {
+  @apply transition-none outline-none;
+
+  background-color: var(--color-btn-active-bg);
+  border-color: var(--color-btn-active-border);
+}
+
+.BtnGroup-item .btn:hover {
+  @apply border-transparent;
+
+  background-color: var(
+    --color-action-list-item-default-hover-bg,
+    var(--color-btn-hover-bg)
+  );
+}
+
+.BtnGroup-item.BtnGroup-item--selected .btn:hover {
+  @apply bg-inherit;
+}
+
+.btn-primary {
+  color: var(--color-btn-primary-text);
+  background-color: var(--color-btn-primary-bg);
+  border-color: var(--color-btn-primary-border);
+  box-shadow: var(--color-btn-primary-shadow), var(--color-btn-primary-inset-shadow);
+}
+
+.btn-primary:hover {
+  background-color: var(--color-btn-primary-hover-bg);
+  border-color: var(--color-btn-primary-hover-border);
+}
+
+.btn-primary:active {
+  background-color: var(--color-btn-primary-selected-bg);
+  box-shadow: var(--color-btn-primary-selected-shadow);
+}
+
+.btn-primary:disabled {
+  color: var(--color-btn-primary-disabled-text);
+  background-color: var(--color-btn-primary-disabled-bg);
+  border-color: var(--color-btn-primary-disabled-border);
+}
+
+.octicon {
+  @apply fill-current inline-block overflow-visible align-text-bottom;
+}
+
+/*! Compatibility shim for @primer/css to style GitHub-generated HTML */
+
+.border-0 {
+  @apply border-none;
+}
+
+.team-mention,
+.user-mention {
+  @apply font-semibold whitespace-nowrap;
+
+  color: var(--color-fg-default, var(--color-text-primary));
+}
+
+.position-relative {
+  @apply relative;
+}
+
+.position-absolute {
+  @apply absolute;
+}
+
+.d-none {
+  display: none !important;
+}
+
+.btn .octicon {
+  @apply align-bottom;
+}
+
+.btn:not(.btn-primary) .octicon:not(.color-text-success) {
+  color: var(--color-fg-muted, var(--color-text-tertiary));
+}
+
+.rounded-1 {
+  @apply rounded-md;
+}
+
+.border-bottom {
+  @apply border-b;
+}
+
+.f6 {
+  @apply text-xs;
+}
+
+.lh-condensed {
+  line-height: 1.25;
+}
+
+.text-bold {
+  @apply font-semibold;
+}
+
+.commit-tease-sha {
+  font-size: 90%;
+  color: var(--color-fg-default, var(--color-text-primary));
+}
+
+.rounded-2 {
+  @apply rounded-md;
+}
+
+.task-list-item {
+  @apply list-none;
+}
+
+.task-list-item-checkbox {
+  @apply align-middle;
+
+  margin: 0 0.2em 0.25em -1.6em;
+}
+
+.Box {
+  @apply border rounded-md;
+
+  background-color: var(--color-canvas-default, var(--color-bg-canvas));
+  border-color: var(--color-border-default, var(--color-border-primary));
+}
+
+.Box--condensed {
+  @apply leading-tight;
+}
+
+.Box-header {
+  @apply p-4 m-[-1px] mb-0 border rounded-t-md;
+
+  background-color: var(--color-canvas-subtle, var(--color-bg-secondary));
+  border-color: var(--color-border-default, var(--color-border-primary));
+}
+
+.Box--condensed .Box-header {
+  @apply px-4 py-2;
+}
+
+.blob-wrapper {
+  @apply overflow-x-auto overflow-y-hidden rounded-b-md;
+}
+
+.blob-wrapper-embedded {
+  @apply max-h-[240px] overflow-y-auto;
+}
+
+.blob-num {
+  /* stylelint-disable-next-line max-line-length */
+  @apply w-[1%] min-w-[50px] px-[10px] text-xs leading-5 text-right whitespace-nowrap align-top cursor-pointer select-none;
+
+  color: var(--color-fg-subtle, var(--color-diff-blob-num-text));
+}
+
+.blob-num:hover {
+  color: var(--color-fg-default, var(--color-diff-blob-num-hover-text));
+}
+
+.blob-num::before {
+  content: attr(data-line-number);
+}
+
+.blob-code-inner {
+  @apply overflow-visible text-xs whitespace-pre;
+
+  word-wrap: normal;
+}
+
+.blob-wrapper.blob-wrapper-embedded table tr:nth-child(2n) {
+  background-color: transparent;
+}
+
+.email-hidden-toggle a {
+  @apply inline-block h-3 px-2 text-xs font-semibold leading-[6px] no-underline align-middle border;
+
+  color: var(--color-fg-default, var(--color-text-primary));
+  background-color: var(--color-neutral-muted, var(--color-hidden-text-expander-bg));
+}
+
+.email-quoted-reply,
+.email-signature-reply {
+  @apply px-4 my-4 border-l-4;
+
+  color: var(--color-fg-muted, var(--color-text-secondary));
+  border-left-color: var(--color-border-default, var(--color-border-primary));
+}
+
+.email-hidden-reply {
+  @apply hidden whitespace-pre-wrap;
+}
+
+.email-hidden-reply.expanded {
+  @apply block;
+}
+
+.ClipboardButton {
+  @apply p-0 m-2;
+}
+
+.snippet-clipboard-content .ClipboardButton,
+.highlight .ClipboardButton {
+  @apply opacity-0;
+
+  animation: fade-out 0.2s both;
+}
+
+.ClipboardButton:focus,
+.snippet-clipboard-content:hover .ClipboardButton,
+.highlight:hover .ClipboardButton, {
+  @apply opacity-100;
+
+  animation: fade-in 0.2s both;
+}
+
+img.emoji {
+  @apply inline align-top max-w-none;
+
+  background-color: initial;
+}
+
+.form-select {
+  @apply max-w-full whitespace-normal;
+
+  background-image: url("data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIGZpbGw9IiM1ODYwNjkiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZD0iTTQuNDI3IDkuNDI3bDMuMzk2IDMuMzk2YS4yNTEuMjUxIDAgMDAuMzU0IDBsMy4zOTYtMy4zOTZBLjI1LjI1IDAgMDAxMS4zOTYgOUg0LjYwNGEuMjUuMjUgMCAwMC0uMTc3LjQyN3pNNC40MjMgNi40N0w3LjgyIDMuMDcyYS4yNS4yNSAwIDAxLjM1NCAwTDExLjU3IDYuNDdhLjI1LjI1IDAgMDEtLjE3Ny40MjdINC42YS4yNS4yNSAwIDAxLS4xNzctLjQyN3oiLz48L3N2Zz4=");
+  background-position: right 4px center;
+}
+
+[dir="rtl"] .form-select {
+  background-position: left 4px center;
+}
+
+.form-checkbox {
+  @apply pl-5 my-[15px] align-middle;
+}
+
+.form-checkbox input[type="checkbox"],
+.form-checkbox input[type="radio"] {
+  @apply mt-1 -ml-5 mr-2 align-top;
+}
+
+.flash {
+  @apply relative px-4 py-5 border rounded-md;
+
+  color: var(--color-fg-default, var(--color-text-primary));
+  background-color: var(--color-accent-subtle, var(--color-bg-info));
+  border-color: var(--color-accent-muted, var(--color-box-border-info));
+}
+
+.flash-error {
+  background-image: linear-gradient(var(--color-danger-subtle), var(--color-danger-subtle));
+  border-color: var(--color-danger-muted);
+}
+
+.flash-warn {
+  background-image: linear-gradient(var(--color-attention-subtle), var(--color-attention-subtle));
+  border-color: var(--color-attention-muted);
+}
+
+/*! giscus-specific styles */
+
+.gsc-loading {
+  @apply flex flex-col items-center gap-4;
+}
+
+.gsc-loading-image {
+  @apply w-12 h-12 bg-contain bg-no-repeat;
+
+  background-image: url("https://github.githubassets.com/images/mona-loading-default.gif");
+}
+
+.gsc-loading-text {
+  @apply text-sm whitespace-nowrap text-center w-full;
+}
+
+.gsc-tl-line {
+  @apply w-[2px] shrink-0 absolute left-[30px] h-full top-0;
+
+  background-color: var(--color-border-muted, var(--color-border-secondary));
+}
+
+.gsc-emoji-button:focus .gsc-emoji,
+.gsc-emoji-button:hover .gsc-emoji {
+  @apply inline-block transition-transform;
+
+  transform: scaleX(1.5) scaleY(1.5);
+}
+
+.gsc-reply:first-child > .gsc-tl-line {
+  top: 16px;
+  height: calc(100% - 16px);
+}
+
+.gsc-homepage-bg {
+  background-color: var(--color-canvas-default, var(--color-bg-canvas));
+}
+
+.gsc-timeline {
+  @apply flex flex-col gap-4;
+}
+
+.gsc-comment {
+  @apply flex text-sm;
+}
+
+.gsc-main {
+  @apply w-full flex flex-col gap-8;
+}
+
+.gsc-reactions {
+  @apply flex flex-col justify-center flex-auto;
+}
+
+.gsc-reactions-count {
+  @apply font-semibold text-center;
+}
+
+.gsc-comments {
+  @apply flex flex-col gap-6;
+}
+
+.gsc-header {
+  @apply flex items-center flex-auto gap-2;
+}
+
+.gsc-left-header {
+  @apply flex flex-wrap items-center flex-auto whitespace-nowrap gap-2;
+}
+
+.gsc-comments-count,
+.gsc-comments-count-separator {
+  @apply font-semibold;
+}
+
+.gsc-pagination {
+  @apply flex justify-center py-2 my-4 bg-center bg-repeat-x;
+}
+
+.gsc-pagination-button {
+  @apply flex flex-col items-center px-6 py-2 text-sm border rounded;
+
+  background-color: var(--color-canvas-default, var(--color-bg-primary));
+}
+
+.gsc-comment-header {
+  @apply flex items-center px-4 pt-2 gap-2;
+}
+
+.gsc-comment-author {
+  @apply flex items-center flex-auto min-w-0 gap-2;
+}
+
+.gsc-comment-author-avatar {
+  @apply flex items-center min-w-0;
+}
+
+.gsc-comment-content {
+  @apply p-4 rounded-t;
+}
+
+.gsc-comment-content.minimized {
+  @apply px-4 py-2 border-b;
+}
+
+.gsc-comment-footer, .gsc-reply-footer {
+  @apply flex content-center justify-between mb-3 gap-2;
+}
+
+.gsc-comment-reactions {
+  @apply flex items-start justify-end ml-4 gap-2;
+}
+
+.gsc-comment-replies-count {
+  @apply mr-4 whitespace-nowrap flex items-center;
+}
+
+.gsc-replies {
+  @apply pt-2 border-t rounded-b-md;
+}
+
+.gsc-comment-box {
+  @apply w-full text-sm;
+}
+
+.gsc-comment-box:not(.gsc-comment-box-is-reply) {
+  @apply border rounded;
+}
+
+.gsc-comment-box-tabs {
+  @apply flex items-center justify-between border-b rounded-t;
+}
+
+.gsc-comment .gsc-comment-box-tabs {
+  @apply border-t rounded-none;
+}
+
+.gsc-comment-box-md-toolbar {
+  @apply inline-flex items-center mx-2 mt-2;
+}
+
+.gsc-toolbar-item {
+  @apply p-1;
+
+  color: var(--color-fg-muted, var(--color-text-secondary));
+}
+
+.gsc-toolbar-item:hover,
+.gsc-toolbar-item:focus {
+  color: var(--color-accent-fg, var(--color-text-link));
+}
+
+.gsc-comment-box-main {
+  @apply m-2;
+}
+
+.gsc-comment-box-preview {
+  @apply px-2 pt-2 pb-4 min-h-[131px] border-b-2;
+}
+
+.gsc-comment-box-write {
+  @apply rounded;
+}
+
+.gsc-comment-box-write:focus-within {
+  border-color: var(--color-accent-fg, var(--color-text-link));
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-accent-fg, var(--color-text-link));
+}
+
+.gsc-comment-box-textarea {
+  @apply w-full p-2 border rounded min-h-[100px] max-h-[500px] disabled:cursor-not-allowed;
+
+  border-bottom-style: dashed;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.gsc-comment-box-textarea:focus {
+  @apply shadow-none;
+
+  border-color: var(--color-border-default, var(--color-input-border));
+}
+
+.gsc-comment-box-textarea-extras {
+  @apply flex justify-end px-2.5 py-[7px] border border-t-0 rounded-b;
+}
+
+.gsc-comment-box-bottom {
+  @apply flex items-center m-2;
+}
+
+.gsc-comment-box-markdown-hint {
+  @apply text-xs hover:no-underline;
+}
+
+.gsc-comment-box-buttons {
+  @apply inline-flex shrink-0 ml-auto;
+}
+
+.gsc-reply-box {
+  @apply flex px-4 py-2 border-t rounded-b-md;
+}
+
+.gsc-social-reaction-summary-item {
+  @apply px-[4px] h-[26px] flex items-center justify-center rounded-full text-xs leading-[24px] border whitespace-nowrap;
+
+  background-color: transparent;
+  border-color: var(--color-border-default, var(--color-border-primary));
+  color: var(--color-fg-muted, var(--color-text-secondary));
+}
+
+.gsc-social-reaction-summary-item:disabled {
+  @apply cursor-not-allowed;
+}
+
+.gsc-social-reaction-summary-item:hover:enabled {
+  background-color: var(--color-social-reaction-bg-hover);
+}
+
+.gsc-social-reaction-summary-item.has-reacted {
+  background-color: var(--color-accent-subtle, var(--color-bg-info));
+  border-color: var(--color-accent-emphasis, --color-social-reaction-border);
+  color: var(--color-accent-fg, var(--color-text-link));
+}
+
+.gsc-social-reaction-summary-item.has-reacted:hover:enabled {
+  background-color: var(--color-social-reaction-bg-reacted-hover);
+}
+
+.gsc-social-reaction-summary-item-count {
+  @apply px-1 ml-[2px] max-w-[100px] overflow-hidden text-ellipsis whitespace-nowrap;
+}
+
+.gsc-direct-reaction-button-emoji {
+  @apply inline-block w-4 h-4 leading-tight;
+}
+
+.gsc-upvotes {
+  @apply shrink-0 mr-2 text-center w-14;
+}
+
+.gsc-upvote-button {
+  @apply font-medium;
+}
+
+/*
+  TODO: Remove when GitHub allows upvote with app-issued user tokens
+  https://github.com/orgs/community/discussions/3968
+  */
+.gsc-upvote-button:disabled {
+  @apply border-none bg-transparent cursor-auto p-0;
+}
+
+.gsc-reactions-menu {
+  @apply relative;
+}
+
+.gsc-reactions-button {
+  @apply w-[26px] h-[26px] px-0 flex items-center justify-center leading-tight text-xs cursor-pointer list-none;
+
+  background-color: var(--color-canvas-subtle, var(--color-bg-secondary));
+}
+
+.gsc-reactions-button::before,
+.gsc-reactions-button::-webkit-details-marker {
+  display: none;
+}
+
+.gsc-reactions-button::marker {
+  content: "";
+}
+
+.gsc-reactions-button:hover {
+  color: var(--color-fg-muted, var(--color-text-tertiary));
+}
+
+.gsc-reactions-button.popover-only {
+  @apply bg-transparent border border-none;
+}
+
+.gsc-reactions-button.popover-only:hover {
+  color: var(--color-accent-fg, var(--color-text-link));
+}
+
+.gsc-reactions-popover.open::before {
+  @apply absolute border-8 border-transparent border-solid;
+
+  content: "";
+}
+
+.gsc-reactions-popover.open::after {
+  @apply absolute border-[7px] border-transparent border-solid;
+
+  content: "";
+}
+
+.gsc-reactions-popover.open.bottom::before {
+  @apply top-[-16px];
+
+  border-bottom-color: var(--color-border-default, var(--color-border-primary));
+}
+
+.gsc-reactions-popover.open.bottom::after {
+  @apply top-[-15px];
+
+  border-bottom: 8px solid var(--color-canvas-overlay, var(--color-bg-overlay));
+}
+
+.gsc-reactions-popover.open.top::before {
+  @apply bottom-[-16px];
+
+  border-top-color: var(--color-border-default, var(--color-border-primary));
+}
+
+.gsc-reactions-popover.open.top::after {
+  @apply bottom-[-15px];
+
+  border-top: 8px solid var(--color-canvas-overlay, var(--color-bg-overlay));
+}
+
+.gsc-reactions-popover.open.left::before {
+  @apply left-[9px];
+}
+
+.gsc-reactions-popover.open.left::after {
+  @apply left-[10px];
+}
+
+.gsc-reactions-popover.open.right::before {
+  @apply right-[9px];
+}
+
+.gsc-reactions-popover.open.right::after {
+  @apply right-[10px];
+}
+
+.gsc-reactions-popover {
+  /* stylelint-disable-next-line max-line-length */
+  @apply ease-in-out duration-100 origin-center transform transition z-20 border rounded mt-[2px] absolute invisible scale-50 w-[146px];
+}
+
+.gsc-reactions-popover.open {
+  @apply visible scale-100;
+}
+
+.gsc-reactions-popover.right {
+  @apply right-0;
+}
+
+.gsc-reactions-popover.top {
+  @apply bottom-9 -left-1.5;
+}
+
+.gsc-reactions-popover.bottom {
+  @apply top-9 -left-1.5;
+}
+
+.gsc-emoji-button {
+  @apply w-8 h-8 mr-[-1px] mt-[-1px] rounded-none;
+}
+
+.gsc-emoji-button.has-reacted {
+  @apply border;
+}
+
+.gsc-emoji-button.no-token {
+  @apply cursor-not-allowed;
+}
+
+.gsc-direct-reaction-buttons {
+  @apply flex flex-wrap gap-2;
+}
+
+.gsc-direct-reaction-button {
+  @apply border items-baseline;
+}
+
+.gsc-reply {
+  @apply relative p-4 pb-2;
+}
+
+.gsc-reply-author-avatar {
+  @apply z-10 shrink-0;
+}
+
+.gsc-reply-header {
+  @apply flex py-1 mb-2 gap-2;
+}
+
+.gsc-reply-author {
+  @apply flex items-center flex-auto min-w-0 gap-2;
+}
+
+.gsc-reply-content {
+  @apply w-full pb-2;
+}
+
+.gsc-reply-content.markdown pre,
+.gsc-reply-content.markdown .highlight pre {
+  background-color: var(--color-neutral-muted, var(--color-hidden-text-expander-bg));
+}
+
+.gsc-reply-content.not-shown {
+  @apply pb-0;
+}
+
+.gsc-reply-footer {
+  @apply mb-0;
+}
+
+.gsc-reply-reactions {
+  @apply flex content-center mr-4 gap-2 -ml-1;
+}
+
+/* Re-apply overridden tailwind */
+
+.inline-flex {
+  display: inline-flex;
+}
+
+/*!
+ * GitHub Light v0.5.0
+ * Copyright (c) 2012 - 2017 GitHub, Inc.
+ * Licensed under MIT (https://github.com/primer/github-syntax-theme-generator/blob/master/LICENSE)
+ */
+
+.pl-c {
+  color: var(--color-prettylights-syntax-comment);
+}
+
+.pl-v,
+.pl-smw {
+  color: var(--color-prettylights-syntax-variable);
+}
+
+.pl-c1,
+.pl-s .pl-v {
+  color: var(--color-prettylights-syntax-constant);
+}
+
+.pl-e,
+.pl-en {
+  color: var(--color-prettylights-syntax-entity);
+}
+
+.pl-smi,
+.pl-s .pl-s1 {
+  color: var(--color-prettylights-syntax-storage-modifier-import);
+}
+
+.pl-ent {
+  color: var(--color-prettylights-syntax-entity-tag);
+}
+
+.pl-k {
+  color: var(--color-prettylights-syntax-keyword);
+}
+
+.pl-s,
+.pl-pds,
+.pl-s .pl-pse .pl-s1,
+.pl-sr,
+.pl-sr .pl-cce,
+.pl-sr .pl-sre,
+.pl-sr .pl-sra {
+  color: var(--color-prettylights-syntax-string);
+}
+
+.pl-bu {
+  color: var(--color-prettylights-syntax-brackethighlighter-unmatched);
+}
+
+.pl-ii {
+  color: var(--color-prettylights-syntax-invalid-illegal-text);
+  background-color: var(--color-prettylights-syntax-invalid-illegal-bg);
+}
+
+.pl-c2 {
+  color: var(--color-prettylights-syntax-carriage-return-text);
+  background-color: var(--color-prettylights-syntax-carriage-return-bg);
+}
+
+.pl-c2::before {
+  content: "^M";
+}
+
+.pl-sr .pl-cce {
+  font-weight: bold;
+  color: var(--color-prettylights-syntax-string-regexp);
+}
+
+.pl-ml {
+  color: var(--color-prettylights-syntax-markup-list);
+}
+
+.pl-mh,
+.pl-mh .pl-en,
+.pl-ms {
+  font-weight: bold;
+  color: var(--color-prettylights-syntax-markup-heading);
+}
+
+.pl-mi {
+  font-style: italic;
+  color: var(--color-prettylights-syntax-markup-italic);
+}
+
+.pl-mb {
+  font-weight: bold;
+  color: var(--color-prettylights-syntax-markup-bold);
+}
+
+.pl-md {
+  color: var(--color-prettylights-syntax-markup-deleted-text);
+  background-color: var(--color-prettylights-syntax-markup-deleted-bg);
+}
+
+.pl-mi1 {
+  color: var(--color-prettylights-syntax-markup-inserted-text);
+  background-color: var(--color-prettylights-syntax-markup-inserted-bg);
+}
+
+.pl-mc {
+  color: var(--color-prettylights-syntax-markup-changed-text);
+  background-color: var(--color-prettylights-syntax-markup-changed-bg);
+}
+
+.pl-mi2 {
+  color: var(--color-prettylights-syntax-markup-ignored-text);
+  background-color: var(--color-prettylights-syntax-markup-ignored-bg);
+}
+
+.pl-mdr {
+  font-weight: bold;
+  color: var(--color-prettylights-syntax-meta-diff-range);
+}
+
+.pl-ba {
+  color: var(--color-prettylights-syntax-brackethighlighter-angle);
+}
+
+.pl-sg {
+  color: var(--color-prettylights-syntax-sublimelinter-gutter-mark);
+}
+
+.pl-corl {
+  text-decoration: underline;
+  color: var(--color-prettylights-syntax-constant-other-reference-link);
+}

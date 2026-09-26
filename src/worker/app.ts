@@ -109,6 +109,8 @@ app.post('/api/reaction', contract(R.ReactionRequest), async c => {
 app.post('/api/moderate', contract(R.ModerateRequest), async c => {
   const request = c.req.valid('json'); return json(unwrap(await repository(c.env, request.config.repo).moderate({ request, session: requireSession(c.get('session')) })));
 });
+app.post('/api/discussion',contract(R.DiscussionActionRequest),async c=>json(unwrap(await repository(c.env,c.req.valid('json').config.repo).discussionAction({request:c.req.valid('json'),session:requireSession(c.get('session'))}))));
+app.post('/api/block',contract(R.BlockRequest),async c=>json(unwrap(await repository(c.env,c.req.valid('json').config.repo).block({request:c.req.valid('json'),session:requireSession(c.get('session'))}))));
 app.post('/api/preview', contract(R.PreviewRequest), async c => {
   const request = c.req.valid('json'); return json(unwrap(await repository(c.env, request.config.repo).preview({ request, session: requireSession(c.get('session')) })));
 });

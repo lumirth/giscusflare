@@ -1,3 +1,4 @@
+import { isNamedTheme } from '../themes.js';
 import type { RepositoryPolicy } from '../contracts/config.js';
 import type { Widget } from '../contracts/requests.js';
 export function escape(value: string): string { return value.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!)); }
@@ -11,12 +12,12 @@ export function security(response: Response, ancestors = "'none'", styleOrigins:
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 export function documentHTML(title: string, content: string, script: string, config: unknown, lang = 'en', theme = 'preferred_color_scheme', head = ''): Response {
-  const html = `<!doctype html><html lang="${escape(lang)}" data-theme="${escape(theme)}"${lang.startsWith('ar') ? ' dir="rtl"' : ''}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>${escape(title)}</title><link rel="stylesheet" href="/widget.css">${head}</head><body>${content}<script id="gw-config" type="application/json">${safeJSON(config)}</script><script type="module" src="${escape(script)}"></script></body></html>`;
+  const html = `<!doctype html><html lang="${escape(lang)}" data-theme="${escape(theme)}"${/^(ar|he|fa|ur)(-|$)/.test(lang) ? ' dir="rtl"' : ''}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>${escape(title)}</title><link rel="stylesheet" href="/widget.css">${head}</head><body>${content}<script id="gw-config" type="application/json">${safeJSON(config)}</script><script type="module" src="${escape(script)}"></script></body></html>`;
   return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
 }
 export function widgetHTML(widget: Widget, policy: RepositoryPolicy): Response {
-  const custom = ['light', 'dark', 'preferred_color_scheme'].includes(widget.theme) ? '' : widget.theme;
-  const response = documentHTML('Comments', `<giscus-comments><p role="status">Loading comments...</p></giscus-comments><noscript><a href="https://github.com/${escape(widget.repo)}/discussions" target="_blank" rel="noopener noreferrer">View discussions on GitHub</a></noscript>`, '/widget.js', { ...widget, defaultCommentOrder: policy.defaultCommentOrder }, widget.lang, custom ? 'preferred_color_scheme' : widget.theme, custom ? `<link rel="stylesheet" href="${escape(custom)}">` : '');
+  const custom = isNamedTheme(widget.theme) ? '' : widget.theme;
+  const response = documentHTML('Comments', `<div id="giscusflare"><p role="status">Loading comments...</p></div><noscript><a href="https://github.com/${escape(widget.repo)}/discussions" target="_blank" rel="noopener noreferrer">View discussions on GitHub</a></noscript>`, '/widget.js', { ...widget, defaultCommentOrder: policy.defaultCommentOrder }, widget.lang, custom ? 'preferred_color_scheme' : widget.theme, `<link data-theme-sheet rel="stylesheet" href="${custom ? escape(custom) : '/themes/'+escape(widget.theme)+'.css'}">`);
   return security(response, policy.origins.join(' '), [...policy.origins, ...policy.customThemeOrigins]);
 }
 export function json(value: unknown, status = 200, headers: HeadersInit = {}): Response {

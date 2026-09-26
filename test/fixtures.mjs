@@ -14,7 +14,7 @@ export function fixture({seed=false,origin=SERVICE,blog=BLOG,privateKey=PRIVATE_
   const env={PUBLIC_ORIGIN:origin,GITHUB_APP_ID:'12345',GITHUB_CLIENT_ID:'Iv1.fixture',GITHUB_CLIENT_SECRET:'fixture-client-secret',GITHUB_PRIVATE_KEY:privateKey,SESSION_SECRET:core.cryptography.random(),REPOSITORIES:{[REPO]:{origins:[blog],category:'Announcements'}},ASSETS:{fetch:async()=>new Response('not found',{status:404})}};
   for(const [name,kind] of [['READ_LIMITER','read'],['WRITE_LIMITER','write'],['AUTH_LIMITER','auth']])env[name]={limit:async()=>{counts[kind]++;return {success:!counts.denied};}};
   const engine=new core.RepositoryEngine(env,store,upstream.fetch);
-  const methods=['info','thread','replies','comment','edit','remove','reaction','moderate','preview','authPrepare','authCallback','authPoll','authConsume','logout'];
+  const methods=['info','thread','replies','comment','edit','remove','reaction','moderate','preview','discussionAction','block','authPrepare','authCallback','authPoll','authConsume','logout'];
   const stub=Object.fromEntries(methods.map(name=>[name,async input=>{counts.rpc.push(name);return core.result(()=>engine[name](input));}]));
   env.REPOSITORY_STORE={idFromName:name=>name,get:name=>stub};
   const config=core.parse(core.requests.Widget,{repo:REPO,origin:blog+'/article',term:'article'});

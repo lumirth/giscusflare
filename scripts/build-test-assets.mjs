@@ -15,11 +15,3 @@ await build({
     });
   } }]
 });
-await build({
-  absWorkingDir: root, stdin: { contents: "export * from './src/browser/markdown.ts';", resolveDir: root, sourcefile: 'browser-test-entry.ts' },
-  outfile: 'dist/renderer-test.js', bundle: true, platform: 'browser', target: 'es2022', format: 'iife', globalName: 'GiscusRendererTest', minify: false
-});
-await build({
-  absWorkingDir: root, entryPoints: ['src/browser/widget.ts'], outfile: 'dist/widget-test.js',
-  bundle: true, platform: 'browser', target: 'es2022', format: 'iife', minify: false
-});

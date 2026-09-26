@@ -52,10 +52,11 @@ export class BrowserSession implements Transport {
     }
     return data as T;
   }
-  async signIn(): Promise<void> {
+  async signIn(mode:'popup'|'redirect'='redirect'): Promise<void> {
     if (this.#disposed) return;
     clearTimeout(this.#timer);
-    this.#popup = window.open('about:blank','giscusflare-' + crypto.randomUUID(),'popup,width=620,height=760');
+    this.#popup?.close();
+    this.#popup = mode==='redirect'?null:window.open('about:blank','giscusflare-' + crypto.randomUUID(),'popup,width=620,height=760');
     const verifier = randomProof(), proof = await challenge(verifier);
     if (this.#disposed) { this.#popup?.close(); return; }
     this.#login = { verifier, challenge: proof, attempt: '', created: Date.now() };

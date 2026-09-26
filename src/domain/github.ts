@@ -15,14 +15,14 @@ export const GRAPH = {
   scope: 'repository { id nameWithOwner isPrivate } category { id name }',
   page: 'totalCount pageInfo { startCursor endCursor hasNextPage hasPreviousPage }',
 };
-export const COMMENT = `id body bodyHTML createdAt lastEditedAt url authorAssociation viewerDidAuthor viewerCanUpdate viewerCanDelete viewerCanMinimize viewerCanUnminimize deletedAt isMinimized minimizedReason author { login avatarUrl url } replyTo { id } ${GRAPH.reactions}`;
-export const SUMMARY = `id number title body bodyHTML url locked ${GRAPH.scope} ${GRAPH.reactions}`;
+export const COMMENT = `isAnswer viewerCanMarkAsAnswer viewerCanUnmarkAsAnswer id body bodyHTML createdAt lastEditedAt url authorAssociation viewerDidAuthor viewerCanUpdate viewerCanDelete viewerCanMinimize viewerCanUnminimize deletedAt isMinimized minimizedReason author { login avatarUrl url } replyTo { id } ${GRAPH.reactions}`;
+export const SUMMARY = `id number title body bodyHTML url locked closed viewerCanClose viewerCanReopen viewerCanDelete viewerCanUpdate answer { id } ${GRAPH.scope} ${GRAPH.reactions}`;
 export const QUERIES = {
   repository: 'query Repository($owner:String!,$name:String!) { repository(owner:$owner,name:$name) { id nameWithOwner isPrivate isArchived discussionCategories(first:100) { nodes { id name isAnswerable } } } }',
-  thread: `query Thread($owner:String!,$name:String!,$number:Int!,$first:Int,$last:Int,$after:String,$before:String) { repository(owner:$owner,name:$name) { isPrivate discussion(number:$number) { ${SUMMARY} comments(first:$first,last:$last,after:$after,before:$before) { ${GRAPH.page} nodes { ${COMMENT} replies(first:3) { ${GRAPH.page} nodes { ${COMMENT} } } } } } } }`,
+  thread: `query Thread($owner:String!,$name:String!,$number:Int!,$first:Int,$last:Int,$after:String,$before:String,$replyPrefetch:Int!) { repository(owner:$owner,name:$name) { isPrivate viewerPermission discussion(number:$number) { ${SUMMARY} comments(first:$first,last:$last,after:$after,before:$before) { ${GRAPH.page} nodes { ${COMMENT} replies(last:$replyPrefetch) { ${GRAPH.page} nodes { ${COMMENT} } } } } } } }`,
   search: `query FindDiscussion($query:String!) { search(type:DISCUSSION,query:$query,first:10) { discussionCount nodes { ... on Discussion { ${SUMMARY} } } } }`,
   target: `query Target($id:ID!) { node(id:$id) { __typename ... on Discussion { ${SUMMARY} } ... on DiscussionComment { ${COMMENT} discussion { ${SUMMARY} } } } }`,
-  replies: `query Replies($id:ID!,$after:String) { node(id:$id) { ... on DiscussionComment { id discussion { ${SUMMARY} } replies(first:20,after:$after) { ${GRAPH.page} nodes { ${COMMENT} } } } } }`,
+  replies: `query Replies($id:ID!,$before:String) { node(id:$id) { ... on DiscussionComment { id discussion { ${SUMMARY} } replies(last:50,before:$before) { ${GRAPH.page} nodes { ${COMMENT} } } } } }`,
 };
 async function limitedText(response: Response, max = 4 * 1024 * 1024): Promise<string> {
   const reader = response.body?.getReader();
@@ -45,7 +45,7 @@ async function limitedText(response: Response, max = 4 * 1024 * 1024): Promise<s
 export class GitHub {
   constructor(readonly repo: string, readonly config: PublicConfig, readonly keys: SecretConfig, readonly store: Store, readonly transport: FetchLike = request => fetch(request)) {}
   #scope(): { owner: string; name: string } { const [owner, name] = this.repo.split('/'); return { owner: owner!, name: name! }; }
-  async #response(path: string, token: string, method: 'GET' | 'POST', body?: unknown, text = false): Promise<Response> {
+  async #response(path: string, token: string, method: 'GET' | 'POST' | 'PUT' | 'DELETE', body?: unknown, text = false): Promise<Response> {
     const headers = new Headers({ Accept: text ? 'text/html' : 'application/vnd.github+json', Authorization: 'Bearer ' + token, 'User-Agent': 'giscusflare/0.1', 'X-GitHub-Api-Version': '2022-11-28' });
     if (body !== undefined) headers.set('Content-Type', 'application/json');
     let response: Response;
@@ -63,7 +63,7 @@ export class GitHub {
     if ([400, 422].includes(response.status)) throw new AppError(400, 'BAD_INPUT', 'GitHub rejected the request. Check the content or repository settings.');
     throw new AppError(502, 'WRITE_UNCERTAIN', 'GitHub could not complete the request.');
   }
-  async #rest<S extends Schema>(schema: S, path: string, token: string, method: 'GET' | 'POST' = 'GET', body?: unknown): Promise<v.InferOutput<S>> {
+  async #rest<S extends Schema>(schema: S, path: string, token: string, method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET', body?: unknown): Promise<v.InferOutput<S>> {
     const response = await this.#response(path, token, method, body);
     return parse(schema, parseJSON(await limitedText(response), 'upstream'), 'upstream');
   }
@@ -80,6 +80,32 @@ export class GitHub {
       throw new AppError(502, 'UPSTREAM', 'GitHub could not load the discussion.');
     }
     return parse(schema, envelope.data, 'upstream');
+  }
+  async authority(token:string):Promise<{permission:string|null;organization:boolean}> {
+    const result=await this.graph(v.object({repository:v.nullable(v.object({viewerPermission:v.nullable(v.string()),owner:v.object({__typename:v.string()})}))}),
+      'query Authority($owner:String!,$name:String!){repository(owner:$owner,name:$name){viewerPermission owner{__typename}}}',this.#scope(),token);
+    requireCondition(result.repository,403,'PERMISSION','This repository is not accessible.');
+    return {permission:result.repository.viewerPermission,organization:result.repository.owner.__typename==='Organization'};
+  }
+  async discussionAction(id:string,action:string,token:string,body='',title=''):Promise<void> {
+    const specs:Record<string,{name:string;type:string;input:Record<string,unknown>}>={
+      lock:{name:'lockLockable',type:'LockLockableInput',input:{lockableId:id}},
+      unlock:{name:'unlockLockable',type:'UnlockLockableInput',input:{lockableId:id}},
+      close:{name:'closeDiscussion',type:'CloseDiscussionInput',input:{discussionId:id}},
+      reopen:{name:'reopenDiscussion',type:'ReopenDiscussionInput',input:{discussionId:id}},
+      answer:{name:'markDiscussionCommentAsAnswer',type:'MarkDiscussionCommentAsAnswerInput',input:{id}},
+      unanswer:{name:'unmarkDiscussionCommentAsAnswer',type:'UnmarkDiscussionCommentAsAnswerInput',input:{id}},
+      delete:{name:'deleteDiscussion',type:'DeleteDiscussionInput',input:{id}},
+      edit:{name:'updateDiscussion',type:'UpdateDiscussionInput',input:{discussionId:id,body,title}},
+    };
+    const spec=specs[action];requireCondition(spec,400,'BAD_INPUT','Unknown discussion action.');
+    await this.graph(v.object({[spec.name]:v.object({clientMutationId:v.nullable(v.string())})}),
+      `mutation DiscussionAction($input:${spec.type}!){${spec.name}(input:$input){clientMutationId}}`,{input:spec.input},token);
+  }
+  async block(login:string,organization:boolean,add:boolean,token:string):Promise<void> {
+    const owner=this.#scope().owner;
+    const path=organization?`/orgs/${owner}/blocks/${encodeURIComponent(login)}`:`/user/blocks/${encodeURIComponent(login)}`;
+    const response=await this.#response(path,token,add?'PUT':'DELETE');await response.body?.cancel();
   }
   async installation(): Promise<string> {
     return this.store.lock('installation', async () => {
@@ -115,18 +141,18 @@ export class GitHub {
     const result = await this.graph(G.SearchResponse, QUERIES.search, { query }, token);
     return result.search.nodes.filter((node): node is G.DiscussionSummary => node !== null).filter(d => !config.strict || d.body.includes(term));
   }
-  async thread(number: number, order: 'oldest' | 'newest', cursor: string, token: string): Promise<G.Discussion | null> {
-    const variables = { ...this.#scope(), number, first: order === 'oldest' ? 20 : null, last: order === 'newest' ? 20 : null, after: order === 'oldest' && cursor ? cursor : null, before: order === 'newest' && cursor ? cursor : null };
+  async thread(number: number, order: 'oldest' | 'newest', cursor: string, token: string, includeComments=true, replyPrefetch=5): Promise<G.Discussion | null> {
+    const variables = { ...this.#scope(), number, replyPrefetch, first: order === 'oldest' ? (includeComments?20:0) : null, last: order === 'newest' ? (includeComments?20:0) : null, after: order === 'oldest' && cursor ? cursor : null, before: order === 'newest' && cursor ? cursor : null };
     const data = await this.graph(G.ThreadResponse, QUERIES.thread, variables, token);
     requireCondition(data.repository && !data.repository.isPrivate, 403, 'PUBLIC_ONLY', 'The configured repository must remain public.');
-    return data.repository.discussion;
+    return data.repository.discussion ? {...data.repository.discussion,viewerCanLock:['ADMIN','MAINTAIN','WRITE','TRIAGE'].includes(data.repository.viewerPermission||'')} : null;
   }
   async target(id: string, token: string): Promise<G.Target> {
     const result = await this.graph(G.TargetResponse, QUERIES.target, { id }, token);
     requireCondition(result.node, 404, 'NOT_FOUND', 'Comment or discussion not found.'); return result.node;
   }
   async replies(parentId: string, cursor: string, token: string): Promise<v.InferOutput<typeof G.RepliesResponse>['node']> {
-    const result = await this.graph(G.RepliesResponse, QUERIES.replies, { id: parentId, after: cursor || null }, token);
+    const result = await this.graph(G.RepliesResponse, QUERIES.replies, { id: parentId, before: cursor || null }, token);
     requireCondition(result.node, 404, 'NOT_FOUND', 'Reply thread not found.'); return result.node;
   }
   async create(widget: Widget, repositoryId: string, categoryId: string, token: string): Promise<{ id: string; number: number }> {

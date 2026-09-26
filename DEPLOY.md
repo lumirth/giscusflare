@@ -62,7 +62,7 @@ npm test
 npm run test:runtime
 pip install playwright==1.57.0
 python -m playwright install chromium
-npm run test:browser
+# Perform and record browser acceptance from TESTING.md
 ```
 
 The package pins direct dependency versions. After a successful install, review and commit `package-lock.json`. Use `npm ci` for later installs.

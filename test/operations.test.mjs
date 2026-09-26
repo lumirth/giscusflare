@@ -20,10 +20,10 @@ test('oldest/newest cursor pagination covers 47 comments without duplicates',asy
  for(const order of ['oldest','newest']){let cursor='',ids=[];do{const data=await expectJSON(await f.request('/api/thread',{config:f.config,order,cursor}));ids.push(...data.discussion.comments.nodes.map(c=>c.id));cursor=data.nextCursor;}while(cursor);assert.equal(ids.length,47);assert.equal(new Set(ids).size,47);}f.close();
 });
 test('reply pagination and reply-to-reply flattening stay within the mapped discussion',async()=>{
- const f=fixture(),d=f.upstream.addThread('article'),root=f.upstream.addComment(d,'root');for(let i=0;i<44;i++)f.upstream.addComment(d,'Reply '+i,{replyTo:root.id});const cap=await f.session();
- const initial=(await expectJSON(await f.request('/api/thread',{config:f.config}))).discussion.comments.nodes[0].replies;let ids=initial.nodes.map(c=>c.id),cursor=initial.pageInfo.endCursor;
- while(cursor){const data=await expectJSON(await f.request('/api/replies',{config:f.config,parentId:root.id,cursor}));ids.push(...data.nodes.map(c=>c.id));cursor=data.pageInfo.hasNextPage?data.pageInfo.endCursor:null;}assert.equal(ids.length,44);assert.equal(new Set(ids).size,44);
- await expectJSON(await f.request('/api/comment',{config:f.config,replyToId:root.replies[0].id,body:'flattened',key:key()},cap));assert.equal(root.replies.length,45);
+ const f=fixture(),d=f.upstream.addThread('article'),root=f.upstream.addComment(d,'root');for(let i=0;i<144;i++)f.upstream.addComment(d,'Reply '+i,{replyTo:root.id});const cap=await f.session();
+ const initial=(await expectJSON(await f.request('/api/thread',{config:f.config}))).discussion.comments.nodes[0].replies;let ids=initial.nodes.map(c=>c.id),cursor=initial.pageInfo.hasPreviousPage?initial.pageInfo.startCursor:null;
+ while(cursor){const data=await expectJSON(await f.request('/api/replies',{config:f.config,parentId:root.id,cursor}));ids.push(...data.nodes.map(c=>c.id));cursor=data.pageInfo.hasPreviousPage?data.pageInfo.startCursor:null;}assert.equal(ids.length,144);assert.equal(new Set(ids).size,144);
+ await expectJSON(await f.request('/api/comment',{config:f.config,replyToId:root.replies[0].id,body:'flattened',key:key()},cap));assert.equal(root.replies.length,145);
  const other=f.upstream.addThread('other'),outside=f.upstream.addComment(other,'outside');await expectJSON(await f.request('/api/replies',{config:f.config,parentId:outside.id}),403);await expectJSON(await f.request('/api/comment',{config:f.config,replyToId:outside.id,body:'wrong',key:key()},cap),403);f.close();
 });
 test('ownership, public visibility, category, archive and lock checks remain domain authorization',async()=>{
@@ -50,4 +50,30 @@ test('unexpected GitHub fields are tolerated but required safety data cannot sil
 });
 test('unauthenticated writes are rejected before repository I/O',async()=>{
  const f=fixture();await expectJSON(await f.request('/api/comment',{config:f.config,body:'no',key:key()}),401);assert.equal(f.counts.rpc.length,0);f.close();
+});
+test('discussion moderation uses acting user authority and canonical results, including unlock',async()=>{
+ const f=fixture(),d=f.upstream.addThread('article'),c=f.upstream.addComment(d,'answer'),reader=await f.session(),mod=await f.session('maintainer');
+ try{
+ for(const action of ['close','lock','delete','edit'])await expectJSON(await f.request('/api/discussion',{config:f.config,id:d.id,action,key:key(),body:'body',title:'title'},reader),403);
+ for(const [action,field,value] of [['close','closed',true],['reopen','closed',false],['lock','locked',true],['unlock','locked',false]]){
+ const result=await expectJSON(await f.request('/api/discussion',{config:f.config,id:d.id,action,key:key()},mod));assert.equal(result.discussion[field],value);
+ }
+ for(const action of ['answer','unanswer']){const result=await expectJSON(await f.request('/api/discussion',{config:f.config,id:c.id,action,key:key()},mod));assert.equal(result.discussion.answer?.id||null,action==='answer'?c.id:null);}
+ assert.ok(f.upstream.calls.filter(c=>c.operation==='DiscussionAction').every(c=>c.token==='ghu_maintainer'));
+ }finally{f.close();}
+});
+test('deleted mappings stay unavailable and cannot silently recreate a discussion',async()=>{
+ const f=fixture(),d=f.upstream.addThread('article'),mod=await f.session('maintainer');try{
+ await expectJSON(await f.request('/api/thread',{config:f.config},mod));
+ const result=await expectJSON(await f.request('/api/discussion',{config:f.config,id:d.id,action:'delete',key:key()},mod));assert.equal(result.discussion,null);
+ const view=await expectJSON(await f.request('/api/thread',{config:f.config},mod));assert.equal(view.unavailable,true);
+ await expectJSON(await f.request('/api/comment',{config:f.config,body:'new',key:key()},mod),410);assert.equal(f.upstream.discussions.length,0);
+ }finally{f.close();}
+});
+test('blocking resolves author from this conversation and never uses installation authority',async()=>{
+ const f=fixture(),d=f.upstream.addThread('article'),other=f.upstream.addComment(d,'hello',{author:'visitor'}),cap=await f.session();try{
+ for(const add of [true,false]){const r=await expectJSON(await f.request('/api/block',{config:f.config,id:other.id,scope:'account',add,key:key()},cap));assert.equal(r.blocked,add);}
+ const calls=f.upstream.calls.filter(c=>c.path.startsWith('/user/blocks/'));assert.equal(calls.length,2);assert.ok(calls.every(c=>c.token==='ghu_reader'));
+ await expectJSON(await f.request('/api/block',{config:f.config,id:other.id,scope:'organization',add:true,key:key()},cap),403);
+ }finally{f.close();}
 });

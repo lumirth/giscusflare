@@ -2,7 +2,7 @@
 
 A customizable GitHub Discussions comments system for Cloudflare Workers and SQLite Durable Objects.
 
-**In development.** This repository contains the adopted implementation and the first shared conversation/embedding refactor. It is not yet a production release or a claim of Giscus capability parity. See [status and acceptance gaps](docs/STATUS.md).
+**In development.** The core includes a shared conversation runtime, native and iframe embedding, rich content, and a Giscus-style default interface. It is not yet a production release or a claim of Giscus capability parity. See [status and acceptance gaps](docs/STATUS.md).
 
 ## Repositories
 
@@ -30,10 +30,12 @@ The demo provides an iframe page at `http://127.0.0.1:8788/article` and a native
 
 The repository engine owns external transitions and durable retry receipts. The browser `ConversationController` owns draft, editor, pagination and mutation continuity. `BrowserSession` supplies the same explicit bearer transport and OAuth handoff for iframe and native embedding. Presentations consume these APIs, rather than duplicating them.
 
-Native integration is exported from `giscusflare`, with scoped standard styles from `giscusflare/styles.css`. The public API is provisional until the standard and Kukas interfaces exercise it fully. Build-time presentation replacement is the intended customization boundary.
+Native integration is exported from `giscusflare`, with scoped standard styles from `giscusflare/styles.css`. Fully independent renderers use `giscusflare/headless` without importing the standard component or its CSS. The public API is provisional. The Kukas presentation is paused while the reusable core is completed. Build-time presentation replacement is the intended customization boundary.
 
 ## Design and release gates
 
+- [Design boundaries and intentional differences](docs/DESIGN.md)
+- [Customization API](docs/EXTENDING.md)
 - [Implementation plan](docs/IMPLEMENTATION.md)
 - [Pinned upstream capability inventory](docs/CAPABILITIES.md)
 - [GitHub API and token constraints](docs/GITHUB-API.md)

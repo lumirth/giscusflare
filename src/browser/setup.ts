@@ -1,9 +1,12 @@
+import { themes } from '../themes.js';
 const form = document.getElementById('setup-form') as HTMLFormElement;
 const statusNode = document.getElementById('setup-status')!;
 const result = document.getElementById('setup-result')!;
 const code = document.getElementById('setup-code')!;
 const copyButton = document.getElementById('setup-copy')!;
 const copyStatus = document.getElementById('copy-status')!;
+const themeSelect=form.elements.namedItem('theme') as HTMLSelectElement;
+for(const theme of themes)if(![...themeSelect.options].some(option=>option.value===theme))themeSelect.add(new Option(theme.replaceAll('_',' '),theme));
 const mappingSelect = form.elements.namedItem('mapping') as HTMLSelectElement;
 const termInput = form.elements.namedItem('term') as HTMLInputElement;
 const strictInput = form.elements.namedItem('strict') as HTMLInputElement;

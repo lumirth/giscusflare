@@ -1,0 +1,3 @@
+/* Names from the pinned Giscus theme collection; see vendor/giscus/LICENSE. */
+export const themes = ["catppuccin_frappe", "catppuccin_latte", "catppuccin_macchiato", "catppuccin_mocha", "cobalt", "dark", "dark_dimmed", "dark_high_contrast", "dark_protanopia", "dark_tritanopia", "fro", "gruvbox", "gruvbox_dark", "gruvbox_light", "light", "light_high_contrast", "light_protanopia", "light_tritanopia", "noborder_dark", "noborder_gray", "noborder_light", "preferred_color_scheme", "purple_dark", "transparent_dark"] as const;
+export const isNamedTheme = (value: string): boolean => (themes as readonly string[]).includes(value);

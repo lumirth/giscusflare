@@ -63,3 +63,8 @@ test('widget input rejects the removed voting option in JSON and URL parameters'
     assert.throws(() => parse(r.WidgetQuery, { ...common, voteMode: value }), e => e.code === 'BAD_INPUT');
   }
 });
+test('OAuth callbacks accept GitHub issuer identification and reject another issuer',()=>{
+ const state='repo.abc';
+ assert.doesNotThrow(()=>core.parse(core.requests.AuthCallbackQuery,{state,code:'code',iss:'https://github.com/login/oauth'}));
+ assert.throws(()=>core.parse(core.requests.AuthCallbackQuery,{state,code:'code',iss:'https://evil.example'}));
+});

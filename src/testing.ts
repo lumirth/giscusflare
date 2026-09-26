@@ -16,3 +16,5 @@ export { app } from './worker/app.js';
 export * as authorization from './domain/authorization.js';
 
 export { ConversationController } from './conversation/controller.js';
+
+export {FetchScheduler,fetchPolicy} from './conversation/fetch-policy.js';

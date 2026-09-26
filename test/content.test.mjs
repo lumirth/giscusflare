@@ -1,0 +1,41 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {JSDOM} from 'jsdom';
+import {build} from 'esbuild';
+await build({entryPoints:['src/browser/content.ts'],outfile:'dist/content-test.mjs',bundle:true,platform:'node',format:'esm',packages:'external'});
+const dom=new JSDOM('<!doctype html><body></body>',{url:'https://blog.example'});
+for(const name of ['window','document','DOMParser','Node','Element','HTMLElement','HTMLAnchorElement','HTMLImageElement','HTMLInputElement','HTMLTableCellElement','HTMLOListElement'])globalThis[name]=name==='window'?dom.window:name==='document'?dom.window.document:dom.window[name];
+const {createContentRenderer}=await import('../dist/content-test.mjs');
+
+test('content removes executable HTML and unsafe attributes, preserving rich structures',()=>{
+ const result=createContentRenderer({math:'source'})('<script>alert(1)</script><svg onload="evil()"></svg><a href="javascript:evil()" onclick="evil()">bad</a><table><tr><td rowspan="2">cell</td></tr></table><input type="checkbox" checked><img src="https://example.com/a.png" onerror="evil()"><pre><code>hello</code></pre>');
+ const container=document.createElement('div');container.append(result);
+ assert.equal(container.querySelector('script,svg:not(.octicon),[onclick],[onerror]'),null);
+ assert.ok(!container.querySelector('a').href.startsWith('javascript:'));
+ assert.equal(container.querySelector('td').rowSpan,2);assert.equal(container.querySelector('input').disabled,true);
+ assert.equal(container.querySelector('button').getAttribute('aria-label'),'Copy');assert.ok(container.querySelector('button svg.octicon'));assert.equal(container.querySelector('button svg').namespaceURI,'http://www.w3.org/2000/svg');
+});
+
+test('inline and display math use the full renderer after an alternate declines',async()=>{
+ let calls=0;const result=createContentRenderer({math:async()=>{calls++;return null;}})('<p>Inline <math-renderer class="js-inline-math">x^2</math-renderer></p><math-renderer>\\frac{a}{b}</math-renderer>');
+ const container=document.createElement('div');container.append(result);document.body.append(container);
+ for(let i=0;i<100&&container.querySelector('[aria-busy]');i++)await new Promise(r=>setTimeout(r,20));
+ assert.equal(calls,2);assert.equal(container.querySelectorAll('math').length,2);
+ assert.equal(container.querySelector('.giscus-math').dataset.display,'inline');
+ assert.equal(container.querySelectorAll('math mfrac').length,1);
+});
+
+test('hostile math cannot create links or HTML execution; reduced mode keeps source',async()=>{
+ const result=createContentRenderer()('<math-renderer>\\href{javascript:alert(1)}{hello}</math-renderer>');
+ const node=document.createElement('div');node.append(result);
+ for(let i=0;i<100&&node.querySelector('[aria-busy]');i++)await new Promise(r=>setTimeout(r,20));
+ assert.equal(node.querySelector('a,script,[href],[style],annotation-xml'),null);
+ const reduced=createContentRenderer({math:'source',codeCopy:false})('<math-renderer>x^2</math-renderer>');assert.equal(reduced.textContent,'x^2');assert.equal(reduced.querySelector('[aria-busy]'),null);
+});
+
+
+test('GitHub math delimiters are removed before TeX conversion, not rendered as dollar glyphs',async()=>{
+ const node=document.createElement('div');node.append(createContentRenderer()('<p><math-renderer class="js-inline-math">$E=mc^2$</math-renderer></p><math-renderer>$$\\frac{1}{3}$$</math-renderer>'));
+ for(let i=0;i<100&&node.querySelector('[aria-busy]');i++)await new Promise(r=>setTimeout(r,20));
+ assert.equal(node.querySelectorAll('math').length,2);assert.ok(!node.textContent.includes('$'));assert.equal(node.querySelectorAll('mfrac').length,1);
+});

@@ -25,6 +25,7 @@ async function run(): Promise<void> {
       window.opener.postMessage({ giscusAuth: { attempt: data.attempt, challenge: config.challenge } }, config.openerOrigin || location.origin);
     });
   }
+  const proceed=document.createElement('a');proceed.href=authorize.toString();proceed.textContent='Continue to GitHub';status.replaceChildren(proceed);
   navigateAuthorization(authorize);
 }
 void run().catch(error => { status.textContent = error instanceof Error ? error.message : 'Sign-in failed.'; });

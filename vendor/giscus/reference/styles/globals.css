@@ -1,0 +1,206 @@
+body * {
+  border-color: var(--color-border-default, var(--color-border-primary));
+}
+
+a:hover {
+  @apply underline;
+}
+
+.markdown {
+  @apply break-words;
+}
+
+.markdown a {
+  @apply underline;
+}
+
+.markdown strong {
+  @apply font-semibold;
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  @apply mt-6 mb-4 font-semibold;
+}
+
+.markdown h1,
+.markdown h2 {
+  @apply pb-2 border-b;
+}
+
+.markdown h1 {
+  @apply text-3xl;
+}
+
+.markdown h2 {
+  @apply text-2xl;
+}
+
+.markdown h3 {
+  @apply text-xl;
+}
+
+.markdown h4 {
+  @apply text-base;
+}
+
+.markdown h5 {
+  @apply text-sm;
+}
+
+.markdown h6 {
+  @apply text-xs;
+
+  color: var(--color-fg-muted, var(--color-text-secondary));
+}
+
+.markdown .g-emoji {
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif;
+  font-weight: 400;
+}
+
+.markdown .highlight {
+  @apply mb-4;
+}
+
+.markdown blockquote,
+.markdown details,
+.markdown dl,
+.markdown ol,
+.markdown p,
+.markdown pre,
+.markdown table,
+.markdown ul {
+  @apply mb-4;
+}
+
+.markdown pre,
+.markdown .highlight pre, {
+  @apply p-4 overflow-auto text-xs rounded-md;
+
+  line-height: 1.45;
+  background-color: var(--color-canvas-subtle, var(--color-bg-tertiary));
+}
+
+.markdown .highlight pre {
+  @apply mb-0 break-normal;
+}
+
+.markdown pre > code {
+  background: transparent;
+}
+
+.markdown code:not(pre>code),
+.markdown tt {
+  @apply text-xs px-1 py-[2px] rounded-md;
+
+  background-color: var(--color-neutral-muted);
+}
+
+.markdown table {
+  background-color: var(--color-canvas-default, var(--color-bg-primary));
+}
+
+.markdown table th,
+.markdown table td {
+  @apply px-3 py-[6px] border;
+}
+
+.markdown table th {
+  @apply font-semibold;
+}
+
+.markdown table tr:nth-child(2n) {
+  background-color: var(--color-canvas-subtle, var(--color-bg-tertiary));
+}
+
+.markdown blockquote {
+  @apply px-4 border-l-[3px];
+
+  color: var(--color-fg-muted, var(--color-text-tertiary));
+}
+
+.markdown ul,
+.markdown ol {
+  @apply pl-[2em];
+}
+
+.markdown ul {
+  @apply list-disc;
+}
+
+.markdown ol {
+  @apply list-decimal;
+}
+
+.markdown li + li {
+  @apply mt-1;
+}
+
+.markdown li > p {
+  @apply mt-4;
+}
+
+.markdown ol ol,
+.markdown ol ul,
+.markdown ul ol,
+.markdown ul ul {
+  @apply my-0;
+}
+
+.markdown ul ul {
+  list-style-type: circle;
+}
+
+.markdown ul ul ul {
+  list-style-type: square;
+}
+
+.markdown kbd {
+  @apply px-[5px] py-[3px] text-[11px] align-middle border rounded-md;
+
+  color: var(--color-fg-default, var(--color-auto-gray-7));
+  background-color: var(--color-canvas-subtle, var(--color-bg-secondary));
+  border: 1px solid var(--color-border-default, var(--color-border-tertiary));
+  box-shadow: inset 0 -1px 0 var(--color-border-default, var(--color-border-tertiary));
+}
+
+.markdown hr {
+  @apply h-[0.25em] my-6;
+
+  background-color: var(--color-border-default, var(--color-border-primary));
+}
+
+.markdown .footnotes {
+  @apply text-xs border-t;
+
+  color: var(--color-fg-muted, var(--color-text-tertiary));
+}
+
+.markdown .footnotes ol {
+  @apply pl-4;
+}
+
+.markdown .footnotes .data-footnote-backref .g-emoji {
+  font-family: monospace;
+}
+
+.markdown sup > a::before {
+  content: "[";
+}
+
+.markdown sup > a::after {
+  content: "]";
+}
+
+.markdown > :last-child {
+  @apply mb-0;
+}
+
+.markdown > :first-child {
+  @apply mt-0;
+}

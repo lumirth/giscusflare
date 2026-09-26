@@ -31,6 +31,8 @@ export function repositoryClass(transport?: FetchLike) {
     remove(input: C.DeleteCall) { return this.#call(() => this.#engine.remove(input)); }
     reaction(input: C.ReactionCall) { return this.#call(() => this.#engine.reaction(input)); }
     moderate(input: C.ModerateCall) { return this.#call(() => this.#engine.moderate(input)); }
+    discussionAction(input:C.DiscussionActionCall){return this.#call(()=>this.#engine.discussionAction(input));}
+    block(input:C.BlockCall){return this.#call(()=>this.#engine.block(input));}
     preview(input: C.PreviewCall) { return this.#call(() => this.#engine.preview(input)); }
     authPrepare(input: C.PrepareCall) { return this.#call(() => this.#engine.authPrepare(input)); }
     authCallback(input: C.CallbackCall) { return this.#call(() => this.#engine.authCallback(input)); }

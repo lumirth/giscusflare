@@ -1,3 +1,4 @@
+import { isNamedTheme } from '../themes.js';
 import type { PublicConfig, RepositoryPolicy } from '../contracts/config.js';
 import type { Widget } from '../contracts/requests.js';
 import type { DiscussionSummary, Repository } from '../contracts/github.js';
@@ -16,7 +17,7 @@ export function authorizeWidget(publicConfig: PublicConfig, widget: Widget): Rep
   parentOrigin(p, widget.origin);
   requireCondition(!widget.category || widget.category === p.category, 403, 'CATEGORY', 'The selected category is not enabled.');
   requireCondition(!widget.categoryId || !p.categoryId || widget.categoryId === p.categoryId, 403, 'CATEGORY', 'The category ID does not match the configured category.');
-  if (!['light', 'dark', 'preferred_color_scheme'].includes(widget.theme)) {
+  if (!isNamedTheme(widget.theme)) {
     const origin = new URL(widget.theme).origin;
     requireCondition(origin === publicConfig.origin || p.origins.includes(origin) || p.customThemeOrigins.includes(origin), 403, 'ORIGIN', 'This stylesheet URL is not allowed by the repository policy.');
   }

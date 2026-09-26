@@ -13,6 +13,13 @@ export function markdown(html: string, fallback = ''): DocumentFragment {
     if (source.nodeType === Node.TEXT_NODE) { target.appendChild(document.createTextNode(source.textContent || '')); return; }
     if (!(source instanceof Element) || source.namespaceURI !== 'http://www.w3.org/1999/xhtml') return;
     const tag = source.localName;
+    if (tag === 'math-renderer') {
+      const math=document.createElement('span');math.className='giscus-math';
+      math.dataset.display=source.classList.contains('js-inline-math')?'inline':'block';
+      const raw=(source.textContent||'').trim();
+      const delimiter=raw.startsWith('$$')&&raw.endsWith('$$')?'$$':raw.startsWith('$')&&raw.endsWith('$')?'$':'';
+      math.textContent=(delimiter?raw.slice(delimiter.length,-delimiter.length).trim():raw).slice(0,10001);target.appendChild(math);return;
+    }
     if (discard.has(tag)) return;
     if (!allowed.has(tag)) { for (const child of source.childNodes) copy(child, target, depth + 1); return; }
     if (tag === 'input' && source.getAttribute('type') !== 'checkbox') return;

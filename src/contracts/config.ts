@@ -5,6 +5,7 @@ export const RepositoryPolicy = v.strictObject({
   origins: v.pipe(v.array(Origin), v.minLength(1), v.maxLength(30)),
   category: CategoryName,
   categoryId: v.optional(EmptyNodeID, ''),
+  maxReplyPrefetch: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(100)), 20),
   defaultCommentOrder: v.optional(Order, 'oldest'),
   customThemeOrigins: v.optional(v.pipe(v.array(Origin), v.maxLength(20)), []),
 });

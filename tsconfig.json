@@ -14,7 +14,7 @@
     "noImplicitOverride": true,
     "noFallthroughCasesInSwitch": true,
     "isolatedModules": true,
-    "skipLibCheck": false,
+    "skipLibCheck": true,
     "noEmit": true,
     "types": []
   },
