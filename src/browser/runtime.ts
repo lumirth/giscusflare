@@ -6,7 +6,7 @@ import {
   type FetchPolicy,
 } from "../conversation/fetch-policy.js";
 import { browserDraftStore, type DraftRecovery } from "./draft-store.js";
-import { ConversationController } from "../conversation/controller.js";
+import { ConversationController, type CommentOrder } from "../conversation/controller.js";
 import type { Widget } from "../contracts/requests.js";
 import { BrowserSession, type SessionHost, type Login } from "./session.js";
 import { renderContent } from "./content.js";
@@ -16,7 +16,7 @@ export interface ConversationOptions {
   config: Widget;
   fetching?: Partial<FetchPolicy> | false;
   draftRecovery?: DraftRecovery | false;
-  order?: "oldest" | "newest";
+  order?: CommentOrder;
   /** Supplied by iframe hosts. Native embedding uses first-party browser storage. */
   host?: SessionHost;
   renderContent?: typeof renderContent;

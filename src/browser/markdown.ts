@@ -28,6 +28,12 @@ export function markdown(html: string, fallback = ''): DocumentFragment {
     if (source.id) node.id = prefix + source.id;
     const classes = [...source.classList].filter(c => /^(?:pl-[a-z0-9-]+|language-[a-z0-9-]+|highlight|task-list-item|contains-task-list)$/.test(c));
     if (classes.length) node.className = classes.join(' ');
+    if (tag === 'pre') {
+      const language = [source, source.querySelector('code'), source.parentElement]
+        .filter(Boolean).flatMap(e => [...e!.classList])
+        .map(c => c.match(/^(?:language-|highlight-source-)([a-z0-9-]+)$/)?.[1]).find(Boolean);
+      if (language) node.dataset.language = language;
+    }
     if (node instanceof HTMLAnchorElement) {
       const raw = source.getAttribute('href') || '';
       if (raw.startsWith('#')) { let id = raw.slice(1); try { id = decodeURIComponent(id); } catch { /* Keep invalid percent escapes as text. */ } node.href = '#' + prefix + encodeURIComponent(id); }

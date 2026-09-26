@@ -13,6 +13,14 @@ body {
   color: var(--color-fg-default, var(--color-text-primary));
 }
 
+/* Action labels are controls; prose and timestamps remain selectable. */
+.giscusflare button,
+.giscusflare .gsc-actions > summary,
+.giscusflare summary.gsc-reactions-button {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 .gsc-header-with-actions {
   display: flex;
   align-items: center;

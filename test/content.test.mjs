@@ -39,3 +39,15 @@ test('GitHub math delimiters are removed before TeX conversion, not rendered as 
  for(let i=0;i<100&&node.querySelector('[aria-busy]');i++)await new Promise(r=>setTimeout(r,20));
  assert.equal(node.querySelectorAll('math').length,2);assert.ok(!node.textContent.includes('$'));assert.equal(node.querySelectorAll('mfrac').length,1);
 });
+
+test('custom code renderer gets plain source and language while failure retains readable code',async()=>{
+ const seen=[];
+ const node=document.createElement('div');
+ node.append(createContentRenderer({code:async(source,language)=>{seen.push([source,language]);const f=document.createDocumentFragment();const code=document.createElement('code');code.textContent=source;f.append(code);return f;}})('<div class="highlight highlight-source-js"><pre><span class="pl-k">const</span> x = &lt;tag&gt;;</pre></div>'));
+ await new Promise(r=>setTimeout(r,0));
+ assert.deepEqual(seen,[['const x = <tag>;','js']]);
+ assert.equal(node.querySelector('pre'),null);assert.equal(node.querySelector('tag'),null);
+ const fallback=document.createElement('div');fallback.append(createContentRenderer({code:async()=>{throw Error('offline');}})('<pre><code class="language-rust">fn main() {}</code></pre>'));
+ await new Promise(r=>setTimeout(r,0));
+ assert.match(fallback.querySelector('pre').textContent,/fn main/);assert.ok(fallback.querySelector('button'));
+});

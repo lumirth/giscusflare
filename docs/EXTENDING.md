@@ -55,7 +55,9 @@ Read `runtime.controller.state` and subscribe to updates. Treat snapshots as imm
 
 ## Rendering and lifecycle
 
-`createContentRenderer` sanitizes HTML and supports replaceable math/code behavior. Heavy math loads only when needed. `math:'source'` and `codeCopy:false` are explicit reduced profiles. A fully replaced `renderContent` is trusted application code and must return safe DOM.
+`createContentRenderer` sanitizes HTML and supports replaceable math/code behavior. Heavy math loads only when needed. `math:'source'` and `codeCopy:false` are explicit reduced profiles. Supply `code: async (source, language) => fragment` to replace a code block with your own renderer (for example, Expressive Code). The input is plain text plus a sanitized language identifier. Return safe DOM; `null` or a rejected promise retains the readable source and copy control. The renderer owns escaping, its styles and any copy interaction in its replacement. Heavy engines can be lazy-loaded and reused across blocks. Kukas uses this hook without importing the standard presentation.
+
+A fully replaced `renderContent` is trusted application code and must return safe DOM.
 
 Keep the textarea and its surrounding decoration nodes stable during typing. WebKit can split native undo groups when nearby nodes are replaced, even if the textarea itself stays mounted.
 
@@ -66,3 +68,9 @@ Appearance updates preserve runtime/draft identity. Discussion identity changes 
 `mountComments(target, options, parts)` and `createStandardPresentation(parts)` accept optional `composer`, `reactions`, and `header` factories. Each factory receives the same public runtime and an error reporter. It returns `{element, update(value), dispose()}`. The standard view owns placement and lifetime; the replacement owns its markup, listeners and styling. `Part`, factory and context types are exported from `giscusflare`.
 
 Use this level for a changed editor, reaction affordance or author header. For a different conversation layout, import `mountPresentation` from `giscusflare/headless`; do not rearrange nodes produced by the standard view. The standard templates use Lit, but the headless graph contains no Lit or standard UI module. The build checks both the headless bundle and the independent example for that boundary.
+
+### Reaction-ranked conversations
+
+The shared controller accepts `setOrder({ reaction: 'THUMBS_UP' })` (or another GitHub reaction). This is opt-in: the standard presentation still offers Oldest/Newest. The controller fetches every root page before ranking, sorts by the selected reaction count descending, and resolves ties by creation date and ID. Replies retain their conversational order. Reaction clicks update counts in place; ordering changes on a fresh ranked read rather than moving the clicked comment away.
+
+GitHub exposes no comment reaction-order query. A ranked read therefore costs one request per root page and may be slow for large discussions. There is no extra background poll; the host's fetching policy still applies. Switching order cancels the previous read. A repeated/incomplete cursor fails instead of presenting a partial ranking as complete.

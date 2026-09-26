@@ -12,6 +12,7 @@ export {
 export {
   ConversationController,
   type ConversationState,
+  type CommentOrder,
   type Transport,
 } from "../conversation/controller.js";
 export { BrowserSession, ApiError } from "./session.js";
@@ -19,6 +20,7 @@ export {
   createContentRenderer,
   type ContentProfile,
   type MathRenderer,
+  type CodeRenderer,
 } from "./content.js";
 export type { Widget } from "../contracts/requests.js";
 export type { Comment, RootComment, Discussion } from "../contracts/github.js";

@@ -177,3 +177,20 @@ test('opening an edit starts from canonical text and reopening retains the unfin
  const name=model.beginEdit(comment);assert.equal(model.draft(name),'Published text');
  model.setDraft(name,'Unfinished revision');model.closeEditor(name);model.beginEdit({...comment,body:'A later read'});assert.equal(model.draft(name),'Unfinished revision');model.dispose();
 });
+
+test('reaction ranking reads the complete discussion and keeps ties chronological',async()=>{
+ const f=fixture({seed:true});try{
+  const initial=await expectJSON(await f.request('/api/thread',{config:f.config,order:'oldest',cursor:''}));
+  const base=initial.discussion.comments.nodes[0];
+  const root=(id,count,date)=>({...structuredClone(base),id,createdAt:date,reactionGroups:[{content:'THUMBS_UP',viewerHasReacted:false,users:{totalCount:count}}]});
+  const a=root('a',1,'2020-01-01'),b=root('b',3,'2020-01-03'),c=root('c',3,'2020-01-02');
+  const calls=[];
+  const controller=new core.ConversationController(f.config,{request:async(op,body)=>{
+   calls.push(body);assert.equal(body.order,'oldest');
+   return {...initial,order:'oldest',discussion:{...initial.discussion,comments:{...initial.discussion.comments,totalCount:3,nodes:body.cursor?[c]:[a,b]}},nextCursor:body.cursor?null:'page2'};
+  }},{reaction:'THUMBS_UP'});
+  await controller.refresh();assert.deepEqual(controller.state.comments.map(c=>c.id),['c','b','a']);assert.equal(calls.length,2);assert.equal(controller.state.nextCursor,null);
+  assert.equal(controller.state.comments[0].replies.nodes.length,base.replies.nodes.length);
+  controller.dispose();
+ }finally{f.close();}
+});

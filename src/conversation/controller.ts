@@ -17,6 +17,8 @@ export interface Transport {
   ): Promise<T>;
 }
 export type Reaction = ReactionRequest["reaction"];
+/** Reaction ranking is opt-in and requires all root pages; replies remain chronological. */
+export type CommentOrder = "oldest" | "newest" | { reaction: Reaction };
 export type OperationState = {
   status: "pending" | "failed" | "uncertain";
   message?: string;
@@ -34,7 +36,7 @@ export interface Editor {
 export interface ConversationState {
   view: ThreadView | null;
   comments: RootComment[];
-  order: "oldest" | "newest";
+  order: CommentOrder;
   nextCursor: string | null;
   loading: boolean;
   error: string;
@@ -87,7 +89,7 @@ export class ConversationController {
   constructor(
     readonly config: Widget,
     readonly transport: Transport,
-    order: "oldest" | "newest" = "oldest",
+    order: CommentOrder = "oldest",
   ) {
     this.#state = {
       view: null,
@@ -300,8 +302,8 @@ export class ConversationController {
       operations: new Map(),
     });
   }
-  async setOrder(order: "oldest" | "newest"): Promise<void> {
-    if (order === this.#state.order) return;
+  async setOrder(order: CommentOrder): Promise<void> {
+    if (JSON.stringify(order) === JSON.stringify(this.#state.order)) return;
     this.#generation++;
     this.#abort?.abort();
     this.#refreshing = undefined;
@@ -334,7 +336,7 @@ export class ConversationController {
           "thread",
           {
             config: this.config,
-            order: previous.order,
+            order: typeof previous.order === "object" ? "oldest" : previous.order,
             cursor,
             replyPrefetch: this.replyPrefetch,
           },
@@ -354,13 +356,19 @@ export class ConversationController {
       while (
         !more &&
         nextCursor &&
-        comments.length < previous.comments.length &&
+        (typeof previous.order === "object" || comments.length < previous.comments.length) &&
         !seen.has(nextCursor)
       ) {
         seen.add(nextCursor);
         const page = await fetchPage(nextCursor);
         comments = unique([...comments, ...ordered(page)]);
         nextCursor = page.nextCursor;
+      }
+      if (typeof previous.order === "object") {
+        if (nextCursor) throw new Error("Unable to load the complete discussion for reaction ranking. Please retry.");
+        const reaction = previous.order.reaction;
+        const count = (c: RootComment) => c.reactionGroups.find(g => g.content === reaction)?.users.totalCount || 0;
+        comments.sort((a,b) => count(b)-count(a) || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
       }
       // Revalidate expanded replies to their previous depth, preserving folding.
       for (let i = 0; i < comments.length; i++) {
