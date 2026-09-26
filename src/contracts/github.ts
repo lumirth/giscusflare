@@ -49,6 +49,7 @@ export const AddCommentResponse = v.object({ addDiscussionComment: v.object({ co
 export const EditResponse = v.object({ updateDiscussionComment: v.object({ comment: Comment }) });
 export const DeleteResponse = v.object({ deleteDiscussionComment: v.object({ comment: v.nullable(Comment) }) });
 export const ReactionSubject = v.object({ id: NodeID, reactionGroups: Reactions });
+export type ReactionSubject = v.InferOutput<typeof ReactionSubject>;
 export const AddReactionResponse = v.object({ addReaction: v.object({ subject: ReactionSubject }) });
 export const RemoveReactionResponse = v.object({ removeReaction: v.object({ subject: ReactionSubject }) });
 export const MinimizeResponse = v.object({ minimizeComment: v.object({ clientMutationId: v.nullable(v.string()) }) });

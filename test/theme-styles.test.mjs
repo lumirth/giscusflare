@@ -12,3 +12,13 @@ test('native styles retain root-level theme fonts and theme-specific Mona animat
   assert.equal(declaration(`.giscusflare[data-theme="${theme}"] .gsc-loading-image`,'background-image'),`url("https://github.githubassets.com/images/mona-loading-${asset}.gif")`);
  }
 });
+
+test('native selector scoping does not turn an empty selector into container styling',async()=>{
+ const css=postcss.parse(await readFile('public/native.css','utf8'));
+ css.walkRules(rule=>{
+  if(rule.selectors.includes('.giscusflare')){
+   assert.equal(rule.nodes.some(n=>n.prop==='padding'&&n.value==='1rem'),false,'code-block padding must not apply to the native container');
+   assert.equal(rule.nodes.some(n=>n.prop==='overflow'&&n.value==='auto'),false,'code-block overflow must not apply to the native container');
+  }
+ });
+});

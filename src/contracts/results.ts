@@ -11,7 +11,15 @@ export const MutationResult = v.strictObject({
   blocked: v.optional(v.boolean()),
   removed: v.optional(v.boolean()),
 });
-export type MutationResult = v.InferOutput<typeof MutationResult>;
+export interface MutationResult {
+  id: string;
+  number: number;
+  comment?: Comment;
+  reactions?: ReactionSubject;
+  discussion?: Discussion | null;
+  blocked?: boolean;
+  removed?: boolean;
+}
 
 /** Read model shared by the service and every conversation client. */
 export interface ThreadView {

@@ -195,3 +195,11 @@ summary.gsc-reactions-button:focus-visible {
     font-size: 16px;
   }
 }
+
+/* Give the summary its own row when controls would squeeze its text. */
+.giscusflare { container-type: inline-size; }
+@container (max-width: 440px) {
+  .gsc-header { flex-wrap: wrap; }
+  .gsc-left-header { flex-basis: 100%; }
+  .gsc-right-header { margin-inline-start: auto; }
+}

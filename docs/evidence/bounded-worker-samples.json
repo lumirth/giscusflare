@@ -1,0 +1,485 @@
+[
+  {
+    "model": "stateless",
+    "operation": "/auth/window",
+    "cpu_ms": 13,
+    "wall_ms": 14,
+    "outcome": "ok"
+  },
+  {
+    "model": "stateless",
+    "operation": "/api/auth/prepare",
+    "cpu_ms": 4,
+    "wall_ms": 57,
+    "outcome": "ok"
+  },
+  {
+    "model": "durableObject",
+    "operation": "thread",
+    "cpu_ms": 2,
+    "wall_ms": 822,
+    "outcome": "ok"
+  },
+  {
+    "model": "stateless",
+    "operation": "/api/thread",
+    "cpu_ms": 12,
+    "wall_ms": 837,
+    "outcome": "ok"
+  },
+  {
+    "model": "durableObject",
+    "operation": "authPrepare",
+    "cpu_ms": 2,
+    "wall_ms": 678,
+    "outcome": "ok"
+  },
+  {
+    "model": "stateless",
+    "operation": "/auth/callback",
+    "cpu_ms": 3,
+    "wall_ms": 3675,
+    "outcome": "ok"
+  },
+  {
+    "model": "durableObject",
+    "operation": "authCallback",
+    "cpu_ms": 3,
+    "wall_ms": 4025,
+    "outcome": "ok"
+  },
+  {
+    "model": "stateless",
+    "operation": "/api/auth/consume",
+    "cpu_ms": 2,
+    "wall_ms": 32,
+    "outcome": "ok"
+  },
+  {
+    "model": "durableObject",
+    "operation": "authConsume",
+    "cpu_ms": 1,
+    "wall_ms": 86,
+    "outcome": "ok"
+  },
+  {
+    "model": "stateless",
+    "operation": "/api/thread",
+    "cpu_ms": 3,
+    "wall_ms": 837,
+    "outcome": "ok"
+  },
+  {
+    "model": "durableObject",
+    "operation": "thread",
+    "cpu_ms": 2,
+    "wall_ms": 15182,
+    "outcome": "ok"
+  },
+  {
+    "model": "stateless",
+    "operation": "/api/preview",
+    "cpu_ms": 6,
+    "wall_ms": 634,
+    "outcome": "ok"
+  },
+  {
+    "model": "durableObject",
+    "operation": "preview",
+    "cpu_ms": 3,
+    "wall_ms": 15241,
+    "outcome": "ok"
+  },
+  {
+    "model": "stateless",
+    "operation": "/api/comment",
+    "cpu_ms": 2,
+    "wall_ms": 2179,
+    "outcome": "ok"
+  },
+  {
+    "model": "durableObject",
+    "operation": "comment",
+    "cpu_ms": 4,
+    "wall_ms": 15974,
+    "outcome": "ok"
+  },
+  {
+    "model": "durableObject",
+    "operation": "unknown",
+    "cpu_ms": 0,
+    "wall_ms": 21,
+    "outcome": "ok"
+  },
+  {
+    "model": "durableObject",
+    "operation": "unknown",
+    "cpu_ms": 0,
+    "wall_ms": 21,
+    "outcome": "ok"
+  },
+  {
+    "model": "stateless",
+    "operation": "/",
+    "cpu_ms": 7,
+    "wall_ms": 13,
+    "outcome": "ok"
+  },
+  {
+    "model": "stateless",
+    "operation": "/favicon.ico",
+    "cpu_ms": 4,
+    "wall_ms": 8,
+    "outcome": "ok"
+  },
+  {
+    "model": "stateless",
+    "operation": "/favicon.ico",
+    "cpu_ms": 4,
+    "wall_ms": 9,
+    "outcome": "ok"
+  },
+  {
+    "model": "stateless",
+    "operation": "/",
+    "cpu_ms": 0,
+    "wall_ms": 10,
+    "outcome": "ok"
+  },
+  {
+    "model": "stateless",
+    "operation": "/api/thread",
+    "cpu_ms": 7,
+    "wall_ms": 1276,
+    "outcome": "ok"
+  },
+  {
+    "model": "durableObject",
+    "operation": "thread",
+    "cpu_ms": 3,
+    "wall_ms": 15546,
+    "outcome": "ok"
+  },
+  {
+    "model": "stateless",
+    "operation": "/api/thread",
+    "cpu_ms": 4,
+    "wall_ms": 1050,
+    "outcome": "ok"
+  },
+  {
+    "model": "durableObject",
+    "operation": "thread",
+    "cpu_ms": 3,
+    "wall_ms": 7763,
+    "outcome": "ok"
+  },
+  {
+    "model": "stateless",
+    "operation": "/api/thread",
+    "cpu_ms": 2,
+    "wall_ms": 904,
+    "outcome": "ok"
+  },
+  {
+    "model": "durableObject",
+    "operation": "thread",
+    "cpu_ms": 3,
+    "wall_ms": 15208,
+    "outcome": "ok"
+  },
+  {
+    "model": "stateless",
+    "operation": "/api/thread",
+    "cpu_ms": 14,
+    "wall_ms": 1001,
+    "outcome": "ok"
+  },
+  {
+    "model": "durableObject",
+    "operation": "edit",
+    "cpu_ms": 3,
+    "wall_ms": 2146,
+    "outcome": "ok"
+  },
+  {
+    "model": "stateless",
+    "operation": "/api/edit",
+    "cpu_ms": 9,
+    "wall_ms": 2161,
+    "outcome": "ok"
+  },
+  {
+    "model": "durableObject",
+    "operation": "thread",
+    "cpu_ms": 5,
+    "wall_ms": 2135,
+    "outcome": "ok"
+  },
+  {
+    "model": "stateless",
+    "operation": "/api/thread",
+    "cpu_ms": 4,
+    "wall_ms": 1086,
+    "outcome": "ok"
+  },
+  {
+    "model": "durableObject",
+    "operation": "thread",
+    "cpu_ms": 3,
+    "wall_ms": 3809,
+    "outcome": "ok"
+  },
+  {
+    "model": "stateless",
+    "operation": "/api/thread",
+    "cpu_ms": 4,
+    "wall_ms": 743,
+    "outcome": "ok"
+  },
+  {
+    "model": "durableObject",
+    "operation": "thread",
+    "cpu_ms": 3,
+    "wall_ms": 3992,
+    "outcome": "ok"
+  },
+  {
+    "model": "stateless",
+    "operation": "/api/thread",
+    "cpu_ms": 3,
+    "wall_ms": 924,
+    "outcome": "ok"
+  },
+  {
+    "model": "durableObject",
+    "operation": "thread",
+    "cpu_ms": 2,
+    "wall_ms": 15236,
+    "outcome": "ok"
+  },
+  {
+    "model": "stateless",
+    "operation": "/api/thread",
+    "cpu_ms": 3,
+    "wall_ms": 827,
+    "outcome": "ok"
+  },
+  {
+    "model": "durableObject",
+    "operation": "replies",
+    "cpu_ms": 2,
+    "wall_ms": 1382,
+    "outcome": "ok"
+  },
+  {
+    "model": "stateless",
+    "operation": "/api/replies",
+    "cpu_ms": 1,
+    "wall_ms": 1386,
+    "outcome": "ok"
+  },
+  {
+    "model": "durableObject",
+    "operation": "thread",
+    "cpu_ms": 7,
+    "wall_ms": 15890,
+    "outcome": "ok"
+  },
+  {
+    "model": "durableObject",
+    "operation": "unknown",
+    "cpu_ms": 0,
+    "wall_ms": 32,
+    "outcome": "ok"
+  },
+  {
+    "model": "stateless",
+    "operation": "/api/thread",
+    "cpu_ms": 8,
+    "wall_ms": 1241,
+    "outcome": "ok"
+  },
+  {
+    "model": "durableObject",
+    "operation": "thread",
+    "cpu_ms": 10,
+    "wall_ms": 6854,
+    "outcome": "ok"
+  },
+  {
+    "model": "stateless",
+    "operation": "/api/thread",
+    "cpu_ms": 7,
+    "wall_ms": 892,
+    "outcome": "ok"
+  },
+  {
+    "model": "durableObject",
+    "operation": "thread",
+    "cpu_ms": 3,
+    "wall_ms": 3308,
+    "outcome": "ok"
+  },
+  {
+    "model": "stateless",
+    "operation": "/api/thread",
+    "cpu_ms": 2,
+    "wall_ms": 822,
+    "outcome": "ok"
+  },
+  {
+    "model": "durableObject",
+    "operation": "thread",
+    "cpu_ms": 3,
+    "wall_ms": 15198,
+    "outcome": "ok"
+  },
+  {
+    "model": "stateless",
+    "operation": "/api/reaction",
+    "cpu_ms": 2,
+    "wall_ms": 1575,
+    "outcome": "ok"
+  },
+  {
+    "model": "durableObject",
+    "operation": "reaction",
+    "cpu_ms": 3,
+    "wall_ms": 1568,
+    "outcome": "ok"
+  },
+  {
+    "model": "durableObject",
+    "operation": "replies",
+    "cpu_ms": 5,
+    "wall_ms": 1901,
+    "outcome": "ok"
+  },
+  {
+    "model": "stateless",
+    "operation": "/api/replies",
+    "cpu_ms": 13,
+    "wall_ms": 1918,
+    "outcome": "ok"
+  },
+  {
+    "model": "stateless",
+    "operation": "/api/reaction",
+    "cpu_ms": 3,
+    "wall_ms": 1107,
+    "outcome": "ok"
+  },
+  {
+    "model": "durableObject",
+    "operation": "reaction",
+    "cpu_ms": 6,
+    "wall_ms": 15739,
+    "outcome": "ok"
+  },
+  {
+    "model": "stateless",
+    "operation": "/api/preview",
+    "cpu_ms": 3,
+    "wall_ms": 451,
+    "outcome": "ok"
+  },
+  {
+    "model": "durableObject",
+    "operation": "preview",
+    "cpu_ms": 3,
+    "wall_ms": 15229,
+    "outcome": "ok"
+  },
+  {
+    "model": "stateless",
+    "operation": "/api/thread",
+    "cpu_ms": 2,
+    "wall_ms": 944,
+    "outcome": "ok"
+  },
+  {
+    "model": "durableObject",
+    "operation": "thread",
+    "cpu_ms": 3,
+    "wall_ms": 4137,
+    "outcome": "ok"
+  },
+  {
+    "model": "durableObject",
+    "operation": "unknown",
+    "cpu_ms": 0,
+    "wall_ms": 8100,
+    "outcome": "ok"
+  },
+  {
+    "model": "stateless",
+    "operation": "/api/thread",
+    "cpu_ms": 1,
+    "wall_ms": 798,
+    "outcome": "ok"
+  },
+  {
+    "model": "durableObject",
+    "operation": "thread",
+    "cpu_ms": 2,
+    "wall_ms": 2215,
+    "outcome": "ok"
+  },
+  {
+    "model": "durableObject",
+    "operation": "thread",
+    "cpu_ms": 1,
+    "wall_ms": 756,
+    "outcome": "ok"
+  },
+  {
+    "model": "stateless",
+    "operation": "/api/thread",
+    "cpu_ms": 2,
+    "wall_ms": 761,
+    "outcome": "ok"
+  },
+  {
+    "model": "stateless",
+    "operation": "/api/replies",
+    "cpu_ms": 1,
+    "wall_ms": 1237,
+    "outcome": "ok"
+  },
+  {
+    "model": "durableObject",
+    "operation": "replies",
+    "cpu_ms": 6,
+    "wall_ms": 14987,
+    "outcome": "ok"
+  },
+  {
+    "model": "stateless",
+    "operation": "/api/reaction",
+    "cpu_ms": 1,
+    "wall_ms": 1233,
+    "outcome": "ok"
+  },
+  {
+    "model": "durableObject",
+    "operation": "reaction",
+    "cpu_ms": 4,
+    "wall_ms": 1731,
+    "outcome": "ok"
+  },
+  {
+    "model": "durableObject",
+    "operation": "unknown",
+    "cpu_ms": 0,
+    "wall_ms": 1311,
+    "outcome": "ok"
+  },
+  {
+    "model": "stateless",
+    "operation": "/api/reaction",
+    "cpu_ms": 9,
+    "wall_ms": 1381,
+    "outcome": "ok"
+  }
+]

@@ -1,6 +1,6 @@
 # Free-tier usage
 
-The project targets Cloudflare's Free plan. A deployment still needs to fit its request, CPU, storage, and bundle-size limits. This release has no production usage measurements.
+The project targets Cloudflare's Free plan. A deployment still needs to fit its request, CPU, storage, and bundle-size limits. This release has no production usage measurements. A [bounded staging sample](docs/CONFIDENCE.md) found stateless CPU outliers above the Free-plan limit; Free-plan readiness remains unverified.
 
 ## Requests
 

@@ -2,6 +2,10 @@
 
 The shared model, reusable interactions, iframe/native embedding and standard presentation are implemented. [Status](STATUS.md) records verification; [Design](DESIGN.md) defines ownership and behavior.
 
+## Gate for starting Kukas
+
+The bounded desktop journey, narrow-screen check and resource sample are recorded in [Confidence](CONFIDENCE.md). They are sufficient to proceed with the separate Kukas presentation. The broader items below are public-release qualification, not prerequisites for each design iteration.
+
 ## Standard presentation
 
 Compare directly with Giscus on the same discussion, across themes and narrow/wide layouts. Check loading, colors, borders, spacing, author rows, reactions, folding, sorting and the composer. Record intentional differences in [Presentation](PRESENTATION.md). Visual parity does not require copying Giscus's UI implementation.
@@ -24,6 +28,6 @@ Measure Worker CPU, GitHub requests, storage operations and browser resources un
 
 ## Kukas presentation
 
-Build Kukas's native presentation in `kukas-giscusflare` using public core APIs. Keep anonymous Post/Note Toasts in their separate service. If the presentation needs private core access, improve the public contract first.
+Refine Kukas's native presentation in `kukas-giscusflare` using public core APIs. Keep anonymous Post/Note Toasts in their separate service. If the presentation needs private core access, improve the public contract first.
 
 Production Kukas comments stay disabled until visual approval. Stabilize the customization API after the standard presentation and Kukas both exercise it.

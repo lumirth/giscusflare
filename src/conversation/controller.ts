@@ -1,6 +1,6 @@
 import type {
   ReactionRequest,
-  ModerateRequest,
+  ModerationReason,
   DiscussionActionRequest,
   BlockRequest,
   Widget,
@@ -505,7 +505,7 @@ export class ConversationController {
   moderateComment(
     id: string,
     minimized: boolean,
-    reason: ModerateRequest["reason"] = "OFF_TOPIC",
+    reason: ModerationReason = "OFF_TOPIC",
   ): Promise<MutationResult> {
     return this.#mutate("moderate", { id, minimized, reason });
   }

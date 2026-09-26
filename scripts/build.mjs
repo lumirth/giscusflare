@@ -44,7 +44,7 @@ console.log(JSON.stringify({ build: 'passed', sizes }, null, 2));
 const sheet = postcss.parse(await readFile('public/widget.css', 'utf8'));
 sheet.walkRules(rule => {
   if (rule.parent?.type === 'atrule' && /keyframes$/.test(rule.parent.name)) return;
-  rule.selectors = rule.selectors.map(selector => {
+  rule.selectors = rule.selectors.filter(selector => selector.trim()).map(selector => {
     const scope=selector.replace(/(^|[ ,])(:root|html|body|:host)(?=[ ,.:#\[]|$)/g,'$1.giscusflare').replace(/\.giscusflare\s+\.giscusflare/g,'.giscusflare');
     return scope.includes('.giscusflare')?scope:'.giscusflare '+scope;
   });

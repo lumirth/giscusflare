@@ -28,7 +28,7 @@ The demo serves an iframe page at `http://127.0.0.1:8788/article` and a native p
 
 The API is experimental. Custom presentations share authentication, drafts, pagination, reactions and recovery through the runtime. See [customization](docs/EXTENDING.md) and the [independent example](examples/custom.ts).
 
-The separate `kukas-giscusflare` repository hosts staging and will contain Kukas's custom presentation. GitHub Discussions in `kukas-comments` hold the actual comments.
+The separate `kukas-giscusflare` repository hosts staging and Kukas's custom presentation. GitHub Discussions in `kukas-comments` hold the actual comments.
 
 ## Documentation
 
