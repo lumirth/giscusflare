@@ -1,0 +1,89 @@
+/** Stateful GitHub responses for local tests. */
+const AUTHOR = { login: 'reader', avatarUrl: 'https://avatars.githubusercontent.com/u/1', url: 'https://github.com/reader' };
+const reactions = ['THUMBS_UP','THUMBS_DOWN','LAUGH','HOORAY','CONFUSED','HEART','ROCKET','EYES'];
+const clone = value => JSON.parse(JSON.stringify(value));
+const response = (data, status = 200, headers = {}) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type':'application/json', ...headers } });
+const check = (ok, message) => { if (!ok) throw new Error('Fixture contract: ' + message); };
+export function escape(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+export function render(text) { return '<p>' + escape(text).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\n/g,'<br>') + '</p>'; }
+function connection(nodes, { first = 20, last = null, after = null, before = null } = {}) {
+  let start = after ? Number(after.slice(2)) + 1 : 0, end = before ? Number(before.slice(2)) : nodes.length;
+  if (last !== null) start = Math.max(start, end - last); else end = Math.min(end, start + first);
+  const result = nodes.slice(start, end);
+  return { totalCount: nodes.length, pageInfo: { hasNextPage: end < nodes.length, hasPreviousPage: start > 0, startCursor: result.length ? 'c:' + start : null, endCursor: result.length ? 'c:' + (end - 1) : null }, nodes: result };
+}
+async function sha256(value) { return btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+export class FakeGitHub {
+  constructor({seed = false, now = () => Date.now()} = {}) {
+    this.now=now; this.calls=[]; this.discussions=[]; this.nextComment=1; this.failNext=null; this.corruptNext=null; this.failAfterMutation=false; this.hideSearch=false; this.refreshes=0; this.installations=0;
+    this.meta={id:'R_fixture',nameWithOwner:'example/comments',isPrivate:false,isArchived:false,discussionCategories:{nodes:[{id:'CAT_fixture',name:'Announcements',isAnswerable:false}]}};
+    if(seed) {
+      const d=this.addThread('article');
+      const root=this.addComment(d,'Try posting a comment or replying here.',{author:'maintainer'});
+      for(let i=0;i<7;i++)this.addComment(d,'Reply '+(i+1),{replyTo:root.id,author:i%2?'reader':'visitor'});
+      this.addComment(d,'**Code**, tables, and task lists stay readable on small screens.',{html:'<p><strong>Code</strong>, tables, and task lists stay readable on small screens.</p><pre><code>export default {\n  fetch(request, env) {\n    return new Response("Hello");\n  }\n};</code></pre><table><tr><th>Layer</th><th>Implementation</th></tr><tr><td>HTTP</td><td>Hono</td></tr><tr><td>Contracts</td><td>Valibot</td></tr></table><ul><li><input type="checkbox" checked disabled> No frontend framework</li></ul>'});
+      for(let i=0;i<21;i++)this.addComment(d,'Conversation '+(i+1),{author:'visitor'});
+      root.votes.THUMBS_UP=['visitor']; d.votes.THUMBS_UP=['visitor'];
+    }
+    this.fetch=this.fetch.bind(this);
+  }
+  addThread(title, options={}) {
+    const number=this.discussions.length+1;
+    const value={id:'D_'+number,number,title,body:title,bodyHTML:render(title),url:`https://github.com/example/comments/discussions/${number}`,locked:false,repository:{id:'R_fixture',nameWithOwner:'example/comments',isPrivate:false},category:{id:'CAT_fixture',name:'Announcements'},comments:[],votes:{},...options};
+    this.discussions.push(value); return value;
+  }
+  addComment(d,body,{author='reader',replyTo=null,html=render(body)}={}) {
+    const c={id:'DC_'+this.nextComment++,body,bodyHTML:html,url:d.url+'#discussioncomment-'+this.nextComment,createdAt:new Date(this.now()).toISOString(),lastEditedAt:null,author:{...AUTHOR,login:author,url:'https://github.com/'+author},authorAssociation:author==='maintainer'?'OWNER':'NONE',isMinimized:false,minimizedReason:null,replyTo:replyTo?{id:replyTo}:null,replies:[],votes:{}};
+    if(replyTo){const root=d.comments.find(c=>c.id===replyTo);check(root,'reply root');root.replies.push(c);}else d.comments.push(c);return c;
+  }
+  groups(node,user){return reactions.map(content=>({content,viewerHasReacted:Boolean(user&&node.votes[content]?.includes(user)),users:{totalCount:node.votes[content]?.length||0}}));}
+  comment(c,user,root=false){const {replies,votes,...value}=c;const result={...clone(value),viewerDidAuthor:c.author?.login===user,viewerCanUpdate:c.author?.login===user,viewerCanDelete:c.author?.login===user||user==='maintainer',viewerCanMinimize:user==='maintainer',reactionGroups:this.groups(c,user)};if(root)result.replies=connection(replies.map(r=>this.comment(r,user)),{first:3});return result;}
+  discussion(d,user,paging){const {comments,votes,...value}=d;const result={...clone(value),repository:{...d.repository,isPrivate:d.repository.isPrivate||this.meta.isPrivate},reactionGroups:this.groups(d,user)};if(paging)result.comments=connection(comments.map(c=>this.comment(c,user,true)),paging);return result;}
+  locate(id){for(const d of this.discussions){if(d.id===id)return {d,node:d};for(const c of d.comments){if(c.id===id)return {d,node:c};const r=c.replies.find(r=>r.id===id);if(r)return {d,node:r};}}return null;}
+  async fetch(request) {
+    const url=new URL(request.url),token=(request.headers.get('Authorization')||'').replace(/^Bearer /,'');
+    const payload=request.method==='POST'?await request.text():'';
+    const user=token.startsWith('ghu_')?token.slice(4).replace(/_refreshed$/,''):'';
+    check(request.redirect==='manual','manual redirect handling');check(request.headers.has('User-Agent'),'User-Agent');
+    check(['https://api.github.com','https://github.com'].includes(url.origin),'only fixed upstream hosts');
+    const call={path:url.pathname,method:request.method,token};this.calls.push(call);
+    if(this.failNext){const fail=this.failNext;this.failNext=null;if(fail==='network')throw new TypeError('simulated disconnect');return response({message:'PRIVATE_UPSTREAM_DETAILS'},fail);}
+    if(url.pathname==='/login/oauth/access_token'){
+      const p=new URLSearchParams(payload);check(p.get('client_secret')==='fixture-client-secret','correct OAuth secret');
+      if(p.get('grant_type')==='refresh_token'){this.refreshes++;check(p.get('refresh_token')?.startsWith('ghr_'),'refresh token');return response({access_token:'ghu_reader_refreshed',expires_in:28800,refresh_token:'ghr_rotated',refresh_token_expires_in:15552000});}
+      const code=p.get('code');if(code==='bad')return response({error:'bad_verification_code'});
+      check(code?.startsWith('fixture_')&&await sha256(p.get('code_verifier')||'')===code.slice(8),'independent PKCE proof');
+      return response({access_token:'ghu_reader',expires_in:28800,refresh_token:'ghr_reader',refresh_token_expires_in:15552000});
+    }
+    check(url.origin==='https://api.github.com','REST/GraphQL host');check(Boolean(token),'authorization');
+    if(url.pathname==='/repos/example/comments/installation'){check(token.split('.').length===3,'app JWT');return response({id:123});}
+    if(url.pathname==='/app/installations/123/access_tokens'){const b=JSON.parse(payload);check(b.repositories.join()==='comments'&&b.permissions.discussions==='write','restricted app permission scope');this.installations++;return response({token:'ghs_fixture',expires_at:new Date(this.now()+3600000).toISOString()});}
+    if(url.pathname==='/user'){check(user,'user token');return response({login:user,avatar_url:AUTHOR.avatarUrl,html_url:'https://github.com/'+user});}
+    if(url.pathname==='/markdown'){check(user,'authenticated preview');return new Response(render(JSON.parse(payload).text),{headers:{'Content-Type':'text/html'}});}
+    check(url.pathname==='/graphql'&&request.method==='POST','known endpoint');
+    const {query,variables:x}=JSON.parse(payload),operation=/^(?:query|mutation) (\w+)/.exec(query)?.[1];call.operation=operation;call.variables=x;
+    let data;
+    switch(operation){
+      case 'Repository': check(x.owner==='example'&&x.name==='comments','scoped metadata');data={repository:clone(this.meta)};break;
+      case 'FindDiscussion': {
+        check(x.query.startsWith('repo:example/comments category:"Announcements" '),'quoted scoped search');
+        const term=JSON.parse(/in:(?:body|title) ("(?:\\.|[^"\\])*")/.exec(x.query)?.[1]||'""');
+        const nodes=this.hideSearch?[]:this.discussions.filter(d=>x.query.includes('in:body')?d.body.includes(term):d.title.includes(term));
+        data={search:{discussionCount:nodes.length,nodes:nodes.slice(0,10).map(d=>this.discussion(d,user))}};break;
+      }
+      case 'Thread': {check((x.first===20&&x.last===null)||(x.last===20&&x.first===null),'exclusive cursor direction');const d=this.discussions.find(d=>d.number===x.number);data={repository:{isPrivate:this.meta.isPrivate,discussion:d?this.discussion(d,user,x):null}};break;}
+      case 'Target': {const t=this.locate(x.id);data={node:t?t.d===t.node?{__typename:'Discussion',...this.discussion(t.d,user)}:{__typename:'DiscussionComment',...this.comment(t.node,user),discussion:this.discussion(t.d,user)}:null};break;}
+      case 'Replies': {const t=this.locate(x.id);data={node:t?{id:t.node.id,discussion:this.discussion(t.d,user),replies:connection(t.node.replies.map(c=>this.comment(c,user)),{first:20,after:x.after})}:null};break;}
+      case 'CreateDiscussion': {check(token==='ghs_fixture','app authors first discussion');check(x.input.repositoryId==='R_fixture'&&x.input.categoryId==='CAT_fixture','creation scope');const d=this.addThread(x.input.title,{body:x.input.body,bodyHTML:render(x.input.body)});data={createDiscussion:{discussion:{id:d.id,number:d.number}}};break;}
+      case 'AddComment': {check(user,'reader authors comments');const d=this.discussions.find(d=>d.id===x.input.discussionId);check(d&&!d.locked,'writable discussion');const c=this.addComment(d,x.input.body,{author:user,replyTo:x.input.replyToId||null});data={addDiscussionComment:{comment:this.comment(c,user)}};break;}
+      case 'EditComment': {const t=this.locate(x.input.commentId);check(t?.node.author?.login===user,'editor ownership');t.node.body=x.input.body;t.node.bodyHTML=render(x.input.body);t.node.lastEditedAt=new Date(this.now()).toISOString();data={updateDiscussionComment:{comment:this.comment(t.node,user)}};break;}
+      case 'DeleteComment': {const t=this.locate(x.input.id);check(t?.node.author?.login===user||user==='maintainer','delete ownership');if(t.node.replyTo){const root=this.locate(t.node.replyTo.id).node;root.replies=root.replies.filter(c=>c.id!==t.node.id);}else t.d.comments=t.d.comments.filter(c=>c.id!==t.node.id);data={deleteDiscussionComment:{clientMutationId:null}};break;}
+      case 'React': case 'Unreact': {const t=this.locate(x.input.subjectId);check(t&&user&&reactions.includes(x.input.content),'reaction target');const votes=t.node.votes[x.input.content]||[];t.node.votes[x.input.content]=operation==='React'?[...new Set([...votes,user])]:votes.filter(u=>u!==user);data={[operation==='React'?'addReaction':'removeReaction']:{subject:{id:t.node.id,reactionGroups:this.groups(t.node,user)}}};break;}
+      case 'Minimize': case 'Unminimize': {check(user==='maintainer','moderator permission');const t=this.locate(x.input.subjectId);check(t,'moderation target');t.node.isMinimized=operation==='Minimize';t.node.minimizedReason=t.node.isMinimized?'off-topic':null;data={[operation==='Minimize'?'minimizeComment':'unminimizeComment']:{clientMutationId:null}};break;}
+      default: throw new Error('Unknown GraphQL fixture operation: '+operation);
+    }
+    if(this.corruptNext){const change=this.corruptNext;this.corruptNext=null;data=change(data,operation);}
+    if(this.failAfterMutation&&query.startsWith('mutation')){this.failAfterMutation=false;throw new TypeError('lost response after commit');}
+    return response({data});
+  }
+}

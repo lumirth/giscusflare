@@ -1,0 +1,37 @@
+{
+  "name": "giscus-workers",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "GitHub Discussions comments for Cloudflare Workers",
+  "engines": {
+    "node": ">=22.16.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "npm run typecheck && node scripts/build.mjs && node scripts/build-test-assets.mjs",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "test:runtime": "npm run build && node scripts/test-runtime.mjs",
+    "test:browser": "npm run build && python3 test/browser.py",
+    "demo": "node scripts/demo.mjs",
+    "dev": "wrangler dev",
+    "check:config": "node scripts/check-config.mjs",
+    "check:release": "npm test && npm run test:runtime && npm run test:browser && node scripts/check-package.mjs",
+    "deploy:check": "npm run check:release && npm run check:config && wrangler deploy --dry-run",
+    "deploy": "npm run deploy:check && wrangler deploy",
+    "secret": "node scripts/secret.mjs",
+    "check:copy": "node scripts/check-copy.mjs",
+    "test:copy": "python3 test/copy-browser.py"
+  },
+  "dependencies": {
+    "hono": "4.13.9",
+    "valibot": "1.5.0",
+    "@standard-schema/spec": "1.0.0"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "esbuild": "0.25.10",
+    "wrangler": "4.141.0"
+  }
+}

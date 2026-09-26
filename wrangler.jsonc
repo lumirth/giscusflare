@@ -1,0 +1,32 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "giscus-workers-v2",
+  "main": "src/worker/entry.ts",
+  "compatibility_date": "2026-09-25",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*", "/auth/*", "/widget", "/*/widget", "/healthz"]
+  },
+  "durable_objects": { "bindings": [{ "name": "REPOSITORY_STORE", "class_name": "Repository" }] },
+  "migrations": [{ "tag": "v2-initial", "new_sqlite_classes": ["Repository"] }],
+  "ratelimits": [
+    { "name": "READ_LIMITER", "namespace_id": "4101", "simple": { "limit": 120, "period": 60 } },
+    { "name": "WRITE_LIMITER", "namespace_id": "4102", "simple": { "limit": 30, "period": 60 } },
+    { "name": "AUTH_LIMITER", "namespace_id": "4103", "simple": { "limit": 15, "period": 60 } }
+  ],
+  "vars": {
+    "PUBLIC_ORIGIN": "https://comments.example.com",
+    "GITHUB_APP_ID": "123456",
+    "GITHUB_CLIENT_ID": "Iv1.REPLACE_ME",
+    "REPOSITORIES": {
+      "your-account/your-public-repository": {
+        "origins": ["https://your-blog.example"],
+        "category": "Announcements",
+        "defaultCommentOrder": "oldest",
+        "customThemeOrigins": []
+      }
+    }
+  },
+  "observability": { "enabled": false }
+}
