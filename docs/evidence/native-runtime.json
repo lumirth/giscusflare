@@ -1,0 +1,52 @@
+{
+  "name": "native-workerd",
+  "status": "passed",
+  "github": "local test-only simulation",
+  "checks": [
+    {
+      "name": "Hono handles requests in workerd",
+      "status": "passed"
+    },
+    {
+      "name": "ASSETS serves static files",
+      "status": "passed"
+    },
+    {
+      "name": "widget HTML has the configured frame boundary",
+      "status": "passed"
+    },
+    {
+      "name": "Valibot rejects malformed JSON before a repository operation",
+      "status": "passed"
+    },
+    {
+      "name": "named Repository RPC reads a validated GitHub thread",
+      "status": "passed"
+    },
+    {
+      "name": "SQLite-backed RPC probe writes its first durable counter",
+      "status": "passed"
+    },
+    {
+      "name": "first-party preparation creates cookie-bound OAuth state through RPC",
+      "status": "passed"
+    },
+    {
+      "name": "proof-authenticated polling and one-use handoff yield only an opaque session",
+      "status": "passed"
+    },
+    {
+      "name": "SQLite counter survives a workerd restart",
+      "status": "passed"
+    },
+    {
+      "name": "encrypted repository session survives that process restart",
+      "status": "passed"
+    },
+    {
+      "name": "native rate limiting binding enforces its configured threshold",
+      "status": "passed"
+    }
+  ],
+  "details": ""
+}

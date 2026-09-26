@@ -16,7 +16,7 @@ const origin = `http://127.0.0.1:${port}`;
 const blog = `http://127.0.0.1:${blogPort}`;
 const createFixture = fixtures.fixture || fixtures.createFixture;
 if (typeof createFixture !== 'function') throw new Error('The demo fixture is missing. Run npm test.');
-const fixture = await createFixture();
+const fixture = await createFixture({seed:true});
 if (!fixture.env) throw new Error('The demo fixture has no environment.');
 const env = fixture.env;
 env.PUBLIC_ORIGIN = origin;
@@ -54,6 +54,7 @@ env.ASSETS = assets;
 const localContext = { waitUntil(promise) { Promise.resolve(promise).catch(() => {}); }, passThroughOnException() {} };
 const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function parentHTML(url) {
+  if(url.pathname==='/native')return nativeHTML(url);
   const theme = url.searchParams.get('theme') === 'dark' ? 'dark' : 'preferred_color_scheme';
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Comment demo</title><style>*{box-sizing:border-box}body{margin:0;background:#f7f8fa;color:#242b35;font:16px/1.7 system-ui,sans-serif}main{max-width:780px;margin:auto;padding:44px 22px}h1{font-size:clamp(32px,6vw,48px);line-height:1.15;letter-spacing:-.05em}.note{border-left:3px solid #8895a7;padding:12px 18px;background:#eaf0f5}.giscus{margin-top:32px;padding:20px;background:white;border:1px solid #dce2e8;border-radius:8px}@media(max-width:480px){main{padding:24px 12px}.giscus{padding:12px}}</style></head><body><main><h1>Comment demo</h1><p class="note">Comments and GitHub sign-in are simulated. Nothing is posted online.</p><div class="giscus"></div><script src="${escape(origin)}/client.js" data-repo="example/comments" data-category="Announcements" data-mapping="specific" data-term="article" data-theme="${theme}" data-input-position="top" data-emit-metadata="1" async></script></main></body></html>`;
 }
@@ -95,3 +96,8 @@ let closed = false;
 function close() { if (closed) return; closed = true; server.close(); parent.close(); fixture.close?.(); }
 process.once('SIGINT', () => { close(); process.exit(130); });
 process.once('SIGTERM', () => { close(); process.exit(0); });
+
+function nativeHTML(url){
+ const config={repo:'example/comments',repoId:'',category:'Announcements',categoryId:'',origin:blog+'/native',backLink:blog+'/native',term:'article',number:0,strict:false,theme:url.searchParams.get('theme')==='dark'?'dark':'light',lang:'en',reactionsEnabled:true,emitMetadata:true,inputPosition:'top',description:''};
+ return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Giscusflare native demo</title><link rel="stylesheet" href="${origin}/native.css"><style>body{font:16px/1.6 system-ui;max-width:760px;margin:3rem auto;padding:0 1rem}#comments{padding:1rem}</style></head><body><h1>Giscusflare · native page</h1><p>Local fixture: GitHub and sign-in are simulated. Nothing is posted online.</p><div id="comments"></div><script type="module">import {mountComments} from '${origin}/native.js';mountComments(document.getElementById('comments'),{service:'${origin}',config:${JSON.stringify(config)}});</script></body></html>`;
+}

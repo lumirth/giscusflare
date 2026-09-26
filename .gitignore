@@ -12,3 +12,8 @@ test-results/
 __pycache__/
 
 .runtime-test-*/
+
+dist/
+.types/
+public/*.js
+public/native.css

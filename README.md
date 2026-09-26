@@ -1,63 +1,42 @@
-# giscus-workers
+# Giscusflare
 
-GitHub Discussions comments for Cloudflare Workers. This is an independent rebuild of giscus. Readers sign in with GitHub, and their comments and reactions stay in your discussion repository.
+A customizable GitHub Discussions comments system for Cloudflare Workers and SQLite Durable Objects.
 
-The v2 build has unresolved failures. See [Verification](VERIFICATION.md) before deploying.
+**In development.** This repository contains the adopted implementation and the first shared conversation/embedding refactor. It is not yet a production release or a claim of Giscus capability parity. See [status and acceptance gaps](docs/STATUS.md).
 
-## Run locally
+## Repositories
 
-Use Node 22.16 or newer:
+- `giscusflare` owns GitHub transport, authorization, persistence, conversation state, content processing and the standard interface.
+- `kukas-giscusflare` is a separate consumer for Kukas presentation and deployment choices. It depends on this package; it must not copy its engine or authentication.
+
+The core starts from the owner-supplied `giscus-workers-v2` source. The untouched import is commit `5e62a02`; [provenance](docs/PROVENANCE.md) records attribution. Development takes place here, not in the Downloads archive.
+
+## Development
+
+Use Node 22.16 or newer.
 
 ```sh
-npm install
+npm ci
 npm test
+npm run test:runtime
 npm run demo
 ```
 
-Open `http://127.0.0.1:8788/article` for the demo or `http://127.0.0.1:8787/` for setup. The demo simulates GitHub sign-in and stores comments locally. It does not post to GitHub.
+`npm test` checks both TypeScript environments, builds artifacts and exercises simulated GitHub operations. `test:runtime` adds real local workerd, SQLite and RPC checks, with simulated GitHub. Neither proves real GitHub App permissions or deployed performance.
 
-## Comments and reactions
+The demo provides an iframe page at `http://127.0.0.1:8788/article` and a native page at `/native` on the same host. Read the URLs printed by the command if overriding its ports. Demo comments stay in the local simulated service.
 
-The widget includes comments, replies, editing, deletion, Markdown preview, moderation, and pagination. Readers can use GitHub's eight emoji reactions. Reaction counts appear when people have reacted; the picker offers all eight choices.
+## Architecture
 
-Existing discussions use the same repository, category, page mapping, and strict-matching setting as giscus. Readers must authorize your GitHub App again. See [Migration](MIGRATION.md) for compatibility details.
+The repository engine owns external transitions and durable retry receipts. The browser `ConversationController` owns draft, editor, pagination and mutation continuity. `BrowserSession` supplies the same explicit bearer transport and OAuth handoff for iframe and native embedding. Presentations consume these APIs, rather than duplicating them.
 
-## Embed
+Native integration is exported from `giscusflare`, with scoped standard styles from `giscusflare/styles.css`. The public API is provisional until the standard and Kukas interfaces exercise it fully. Build-time presentation replacement is the intended customization boundary.
 
-After [setting up the service](DEPLOY.md), open its setup page to generate an embed. A typical configuration looks like this:
+## Design and release gates
 
-```html
-<script
-  src="https://YOUR-COMMENTS-ORIGIN/client.js"
-  data-repo="your-account/your-public-repository"
-  data-category="Announcements"
-  data-mapping="pathname"
-  data-strict="0"
-  data-reactions-enabled="1"
-  data-input-position="bottom"
-  data-theme="preferred_color_scheme"
-  data-lang="en"
-  crossorigin="anonymous"
-  async>
-</script>
-```
+- [Implementation plan](docs/IMPLEMENTATION.md)
+- [Pinned upstream capability inventory](docs/CAPABILITIES.md)
+- [GitHub API and token constraints](docs/GITHUB-API.md)
+- [Verification status](docs/STATUS.md)
 
-Use this service's `client.js` with its API. The original hosted giscus client uses a different sign-in protocol.
-
-## How it runs
-
-Hono handles HTTP requests. Valibot checks input, configuration, stored records, and GitHub responses through Standard Schema contracts. A SQLite-backed Durable Object coordinates each repository's sessions and writes. GitHub stores the conversations.
-
-The browser uses a Web Component and CSS. Hono and Valibot stay on the server. Static files use Workers Static Assets, and rate checks use Cloudflare's native rate-limiting bindings. See [Architecture](ARCHITECTURE.md) and [Free-tier usage](FREE-TIER.md).
-
-## Supported scope
-
-The service accepts configured public repositories on github.com. It includes automatic, light, and dark themes, plus custom CSS from approved origins. The interface has English and nine additional dictionaries. Missing translations use English.
-
-This release does not include private repositories, GitHub Enterprise, MathJax, Mermaid, arbitrary embedded media, or the full giscus theme and translation catalogs.
-
-## Documentation
-
-[Deploy](DEPLOY.md) · [Migrate](MIGRATION.md) · [Test](TESTING.md) · [Verification](VERIFICATION.md)
-
-[Architecture](ARCHITECTURE.md) · [Validation](VALIDATION.md) · [Security](SECURITY.md) · [Free-tier usage](FREE-TIER.md)
+Existing deployment/security instructions came from the imported candidate and require reconciliation with the new integration contracts before a release. No production cutover is implied by a passing local build.

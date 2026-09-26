@@ -1,16 +1,16 @@
 {
-  "name": "giscus-workers",
-  "version": "2.0.0",
+  "name": "giscusflare",
+  "version": "0.1.0-dev",
   "private": true,
   "type": "module",
   "license": "MIT",
-  "description": "GitHub Discussions comments for Cloudflare Workers",
+  "description": "Customizable GitHub Discussions comments for Cloudflare",
   "engines": {
     "node": ">=22.16.0"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
-    "build": "npm run typecheck && node scripts/build.mjs && node scripts/build-test-assets.mjs",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.worker.json",
+    "build": "npm run typecheck && node scripts/build.mjs && tsc -p tsconfig.types.json && node scripts/build-test-assets.mjs",
     "test": "npm run build && node --test test/*.test.mjs",
     "test:runtime": "npm run build && node scripts/test-runtime.mjs",
     "test:browser": "npm run build && python3 test/browser.py",
@@ -22,16 +22,25 @@
     "deploy": "npm run deploy:check && wrangler deploy",
     "secret": "node scripts/secret.mjs",
     "check:copy": "node scripts/check-copy.mjs",
-    "test:copy": "python3 test/copy-browser.py"
+    "test:copy": "python3 test/copy-browser.py",
+    "types": "wrangler types types/runtime.d.ts"
   },
   "dependencies": {
+    "@standard-schema/spec": "1.0.0",
     "hono": "4.13.9",
-    "valibot": "1.5.0",
-    "@standard-schema/spec": "1.0.0"
+    "valibot": "1.5.0"
   },
   "devDependencies": {
-    "typescript": "5.9.3",
     "esbuild": "0.25.10",
+    "postcss": "^8.5.28",
+    "typescript": "5.9.3",
     "wrangler": "4.141.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/types/browser/native.d.ts",
+      "import": "./dist/browser/native.js"
+    },
+    "./styles.css": "./public/native.css"
   }
 }

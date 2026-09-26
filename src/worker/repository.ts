@@ -13,7 +13,7 @@ export function repositoryClass(transport?: FetchLike) {
     #engine: RepositoryEngine;
     #store: Store;
     #state: DurableState;
-    constructor(ctx: DurableState, env: Env) {
+    constructor(ctx: DurableObjectState, env: Env) {
       super(ctx, env); this.#state = ctx; this.#store = new Store(ctx.storage.sql);
       this.#engine = new RepositoryEngine(env, this.#store, transport);
     }
@@ -37,7 +37,7 @@ export function repositoryClass(transport?: FetchLike) {
     authPoll(input: R.AuthProof) { return this.#call(() => this.#engine.authPoll(input)); }
     authConsume(input: R.AuthConsume) { return this.#call(() => this.#engine.authConsume(input)); }
     logout(input: C.LogoutCall) { return this.#call(() => this.#engine.logout(input)); }
-    async alarm(): Promise<void> { this.#store.prune(); await this.#store.schedule(this.#state); }
+    override async alarm(): Promise<void> { this.#store.prune(); await this.#store.schedule(this.#state); }
   };
 }
 export class Repository extends repositoryClass() {}

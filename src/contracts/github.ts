@@ -8,6 +8,7 @@ export const Comment = v.object({
   id: NodeID, body: Body, bodyHTML: Body, url: HttpsURL, createdAt: ISODate, lastEditedAt: v.nullable(ISODate),
   author: v.nullable(User), authorAssociation: v.string(), viewerDidAuthor: v.boolean(),
   viewerCanUpdate: v.boolean(), viewerCanDelete: v.boolean(), viewerCanMinimize: v.boolean(),
+  viewerCanUnminimize: v.optional(v.boolean(), false), deletedAt: v.optional(v.nullable(ISODate), null),
   isMinimized: v.boolean(), minimizedReason: v.nullable(v.string()), reactionGroups: Reactions,
   replyTo: v.optional(v.nullable(v.object({ id: NodeID })), null),
 });
@@ -45,7 +46,7 @@ export const GraphQLEnvelope = v.object({ data: v.optional(v.unknown()), errors:
 export const CreateResponse = v.object({ createDiscussion: v.object({ discussion: v.object({ id: NodeID, number: PositiveInteger }) }) });
 export const AddCommentResponse = v.object({ addDiscussionComment: v.object({ comment: Comment }) });
 export const EditResponse = v.object({ updateDiscussionComment: v.object({ comment: Comment }) });
-export const DeleteResponse = v.object({ deleteDiscussionComment: v.object({ clientMutationId: v.nullable(v.string()) }) });
+export const DeleteResponse = v.object({ deleteDiscussionComment: v.object({ comment: v.nullable(Comment) }) });
 export const ReactionSubject = v.object({ id: NodeID, reactionGroups: Reactions });
 export const AddReactionResponse = v.object({ addReaction: v.object({ subject: ReactionSubject }) });
 export const RemoveReactionResponse = v.object({ removeReaction: v.object({ subject: ReactionSubject }) });

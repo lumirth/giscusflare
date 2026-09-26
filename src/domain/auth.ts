@@ -11,12 +11,12 @@ import { GitHub } from './github.js';
 import { Store } from './store.js';
 const DAY = 86400000, TEN_MINUTES = 600000;
 export type AuthStatus = { status: 'pending' | 'denied' } | { status: 'ready'; ticket: string };
-export type CallbackResult = { status: 'ready' | 'denied'; attempt: string; ticket: string; repo: string; challenge: string; returnURL: string; mode: 'popup' | 'redirect' };
+export type CallbackResult = { status: 'ready' | 'denied'; attempt: string; ticket: string; repo: string; challenge: string; returnURL: string; mode: 'popup' | 'redirect'; openerOrigin: string };
 export function stateValue(repo: string, attempt: string): string { return b64(new TextEncoder().encode(repo)) + '.' + attempt; }
 export function stateParts(state: string): { repo: string; attempt: string } {
   const match = /^([A-Za-z0-9_-]{1,200})\.([A-Za-z0-9_-]{43})$/.exec(state);
   requireCondition(match?.[1] && match[2], 400, 'OAUTH', 'Invalid authorization state.');
-  const repo = new TextDecoder('utf-8', { fatal: true }).decode(unb64(match[1]));
+  const repo = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(unb64(match[1]));
   return parse(R.AuthStartQuery, { repo, attempt: match[2] });
 }
 export function cookieName(origin: string, attempt: string): string { return (origin.startsWith('https:') ? '__Host-' : '') + 'gw-auth-' + attempt.slice(0, 16); }
@@ -33,9 +33,11 @@ export class Auth {
   async prepare(raw: C.PrepareCall): Promise<{ attempt: string; authorizeURL: string }> {
     const input = parse(C.PrepareCall, raw), request = input.request;
     const origin = parentOrigin(this.policy, request.origin);
+    const openerOrigin = request.openerOrigin || this.config.origin;
+    requireCondition(openerOrigin === this.config.origin || openerOrigin === origin, 403, 'ORIGIN', 'The sign-in opener must be the service or authorized page.');
     const attempt = random(), githubVerifier = random(), now = this.store.now();
     const url = new URL(request.origin); url.hash = ''; url.searchParams.delete('giscus');
-    const record: S.OAuthAttempt = { version: 2, repo: this.repo, origin, returnURL: url.toString(), mode: request.mode,
+    const record: S.OAuthAttempt = { version: 2, repo: this.repo, origin, returnURL: url.toString(), mode: request.mode, openerOrigin,
       challenge: request.challenge, githubVerifier, cookieHash: await hash(input.browserCookie), created: now, expires: now + TEN_MINUTES,
       status: 'pending', credentials: null, ticket: null };
     await this.store.putSecret('auth:' + attempt, S.OAuthAttempt, record, this.keys.sessionSecret, this.#purpose, record.expires);
@@ -59,7 +61,7 @@ export class Auth {
       const attempt = await this.#attempt(input.attempt);
       requireCondition(input.browserCookie && equal(await hash(input.browserCookie), attempt.cookieHash), 401, 'OAUTH', 'Sign-in must finish in the browser that started it.');
       requireCondition(attempt.status === 'pending', 409, 'OAUTH', 'This sign-in callback was already used.');
-      const view = (status: 'ready' | 'denied', ticket = ''): CallbackResult => ({ status, ticket, attempt: input.attempt, repo: this.repo, challenge: attempt.challenge, returnURL: attempt.returnURL, mode: attempt.mode });
+      const view = (status: 'ready' | 'denied', ticket = ''): CallbackResult => ({ status, ticket, attempt: input.attempt, repo: this.repo, challenge: attempt.challenge, returnURL: attempt.returnURL, mode: attempt.mode, openerOrigin: attempt.openerOrigin || this.config.origin });
       if (input.denied) { attempt.status = 'denied'; await this.#saveAttempt(input.attempt, attempt); return view('denied'); }
       requireCondition(input.code, 400, 'OAUTH', 'GitHub did not return an authorization code.');
       attempt.status = 'exchanging'; await this.#saveAttempt(input.attempt, attempt);
@@ -107,6 +109,10 @@ export class Auth {
       requireCondition(data && data.repo === this.repo && data.origin === origin && data.expires > this.store.now(), 401, 'SESSION', 'Your session expired or belongs to another website. Sign in again.');
       if (data.accessExpires <= this.store.now() + 60000) {
         if (!data.refreshToken || data.refreshExpires <= this.store.now()) { this.store.delete(key); throw new AppError(401, 'SESSION', 'Your GitHub authorization expired. Sign in again.'); }
+        // Retire the rotating credentials durably before the external exchange.
+        // If execution stops after GitHub rotates them, the next request must
+        // reauthenticate rather than replay an already consumed refresh token.
+        this.store.delete(key);
         try {
           const refreshed = await this.github.exchange({ grant_type: 'refresh_token', refresh_token: data.refreshToken });
           requireCondition(refreshed.refresh_token && refreshed.refresh_token_expires_in, 502, 'UPSTREAM_SCHEMA', 'GitHub did not return a complete refreshed session. Sign in again.');
@@ -114,7 +120,7 @@ export class Auth {
           await this.store.putSecret(key, S.Session, data, this.keys.sessionSecret, this.#purpose, data.expires);
         } catch (error) {
           // An uncertain rotating refresh can make the old refresh token unusable.
-          // Remove the local session when GitHub rejects a refresh.
+          // A failed or interrupted exchange requires a new sign-in.
           this.store.delete(key);
           throw new AppError(401, 'SESSION', 'Your GitHub session could not be renewed. Sign in again.');
         }

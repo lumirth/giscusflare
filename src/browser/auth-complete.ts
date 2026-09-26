@@ -9,7 +9,7 @@ status.textContent = data.status === 'ready' ? 'Returning to comments...' : 'Sig
 if (data.mode === 'redirect') {
   if (data.status === 'ready') location.replace(url.toString());
 } else {
-  if (window.opener && !window.opener.closed) window.opener.postMessage({ giscusAuthDone: { attempt: data.attempt, challenge: data.challenge, status: data.status, ticket: data.ticket } }, location.origin);
+  if (window.opener && !window.opener.closed) window.opener.postMessage({ giscusAuthDone: { attempt: data.attempt, challenge: data.challenge, status: data.status, ticket: data.ticket } }, data.openerOrigin || location.origin);
   // The widget polls for completion if GitHub disconnects the opener.
   setTimeout(() => window.close(), 200);
 }

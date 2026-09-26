@@ -15,7 +15,7 @@ export const GRAPH = {
   scope: 'repository { id nameWithOwner isPrivate } category { id name }',
   page: 'totalCount pageInfo { startCursor endCursor hasNextPage hasPreviousPage }',
 };
-export const COMMENT = `id body bodyHTML createdAt lastEditedAt url authorAssociation viewerDidAuthor viewerCanUpdate viewerCanDelete viewerCanMinimize isMinimized minimizedReason author { login avatarUrl url } replyTo { id } ${GRAPH.reactions}`;
+export const COMMENT = `id body bodyHTML createdAt lastEditedAt url authorAssociation viewerDidAuthor viewerCanUpdate viewerCanDelete viewerCanMinimize viewerCanUnminimize deletedAt isMinimized minimizedReason author { login avatarUrl url } replyTo { id } ${GRAPH.reactions}`;
 export const SUMMARY = `id number title body bodyHTML url locked ${GRAPH.scope} ${GRAPH.reactions}`;
 export const QUERIES = {
   repository: 'query Repository($owner:String!,$name:String!) { repository(owner:$owner,name:$name) { id nameWithOwner isPrivate isArchived discussionCategories(first:100) { nodes { id name isAnswerable } } } }',
@@ -39,14 +39,14 @@ async function limitedText(response: Response, max = 4 * 1024 * 1024): Promise<s
   } finally { await reader.cancel().catch(() => undefined); }
   const result = new Uint8Array(length); let offset = 0;
   for (const chunk of chunks) { result.set(chunk, offset); offset += chunk.length; }
-  try { return new TextDecoder('utf-8', { fatal: true }).decode(result); }
+  try { return new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(result); }
   catch { throw new AppError(502, 'UPSTREAM_SCHEMA', 'GitHub returned invalid text.'); }
 }
 export class GitHub {
   constructor(readonly repo: string, readonly config: PublicConfig, readonly keys: SecretConfig, readonly store: Store, readonly transport: FetchLike = request => fetch(request)) {}
   #scope(): { owner: string; name: string } { const [owner, name] = this.repo.split('/'); return { owner: owner!, name: name! }; }
   async #response(path: string, token: string, method: 'GET' | 'POST', body?: unknown, text = false): Promise<Response> {
-    const headers = new Headers({ Accept: text ? 'text/html' : 'application/vnd.github+json', Authorization: 'Bearer ' + token, 'User-Agent': 'giscus-workers/2.0', 'X-GitHub-Api-Version': '2022-11-28' });
+    const headers = new Headers({ Accept: text ? 'text/html' : 'application/vnd.github+json', Authorization: 'Bearer ' + token, 'User-Agent': 'giscusflare/0.1', 'X-GitHub-Api-Version': '2022-11-28' });
     if (body !== undefined) headers.set('Content-Type', 'application/json');
     let response: Response;
     try { response = await this.transport(new Request('https://api.github.com' + path, { method, headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }), redirect: 'manual', signal: AbortSignal.timeout(15000) })); }
@@ -143,16 +143,17 @@ export class GitHub {
     const data = await this.graph(G.EditResponse, `mutation EditComment($input:UpdateDiscussionCommentInput!) { updateDiscussionComment(input:$input) { comment { ${COMMENT} } } }`, { input: { commentId: id, body } }, token);
     return data.updateDiscussionComment.comment;
   }
-  async remove(id: string, token: string): Promise<void> {
-    await this.graph(G.DeleteResponse, 'mutation DeleteComment($input:DeleteDiscussionCommentInput!) { deleteDiscussionComment(input:$input) { clientMutationId } }', { input: { id } }, token);
+  async remove(id: string, token: string): Promise<G.Comment | null> {
+    const data = await this.graph(G.DeleteResponse, `mutation DeleteComment($input:DeleteDiscussionCommentInput!) { deleteDiscussionComment(input:$input) { comment { ${COMMENT} } } }`, { input: { id } }, token);
+    return data.deleteDiscussionComment.comment;
   }
-  async react(id: string, reaction: string, add: boolean, token: string): Promise<void> {
+  async react(id: string, reaction: string, add: boolean, token: string): Promise<v.InferOutput<typeof G.ReactionSubject>> {
     const input = { subjectId: id, content: reaction };
-    if (add) await this.graph(G.AddReactionResponse, `mutation React($input:AddReactionInput!) { addReaction(input:$input) { subject { id ${GRAPH.reactions} } } }`, { input }, token);
-    else await this.graph(G.RemoveReactionResponse, `mutation Unreact($input:RemoveReactionInput!) { removeReaction(input:$input) { subject { id ${GRAPH.reactions} } } }`, { input }, token);
+    if (add) return (await this.graph(G.AddReactionResponse, `mutation React($input:AddReactionInput!) { addReaction(input:$input) { subject { id ${GRAPH.reactions} } } }`, { input }, token)).addReaction.subject;
+    return (await this.graph(G.RemoveReactionResponse, `mutation Unreact($input:RemoveReactionInput!) { removeReaction(input:$input) { subject { id ${GRAPH.reactions} } } }`, { input }, token)).removeReaction.subject;
   }
-  async moderate(id: string, minimized: boolean, token: string): Promise<void> {
-    if (minimized) await this.graph(G.MinimizeResponse, 'mutation Minimize($input:MinimizeCommentInput!) { minimizeComment(input:$input) { clientMutationId } }', { input: { subjectId: id, classifier: 'OFF_TOPIC' } }, token);
+  async moderate(id: string, minimized: boolean, token: string, reason: string): Promise<void> {
+    if (minimized) await this.graph(G.MinimizeResponse, 'mutation Minimize($input:MinimizeCommentInput!) { minimizeComment(input:$input) { clientMutationId } }', { input: { subjectId: id, classifier: reason } }, token);
     else await this.graph(G.UnminimizeResponse, 'mutation Unminimize($input:UnminimizeCommentInput!) { unminimizeComment(input:$input) { clientMutationId } }', { input: { subjectId: id } }, token);
   }
   async markdown(text: string, token: string): Promise<string> {
@@ -163,7 +164,7 @@ export class GitHub {
     let response: Response;
     try {
       response = await this.transport(new Request('https://github.com/login/oauth/access_token', {
-        method: 'POST', headers: { Accept: 'application/json', 'User-Agent': 'giscus-workers/2.0' },
+        method: 'POST', headers: { Accept: 'application/json', 'User-Agent': 'giscusflare/0.1' },
         body: new URLSearchParams({ client_id: this.config.clientId, client_secret: this.keys.clientSecret, ...parameters }),
         redirect: 'manual', signal: AbortSignal.timeout(15000),
       }));

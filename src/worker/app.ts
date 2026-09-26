@@ -36,7 +36,7 @@ app.use('*', async (c, next) => {
   requireCondition(c.req.url.length <= 8192, 414, 'BAD_INPUT', 'The request URL is too long.');
   await next();
 });
-app.get('/healthz', c => security(json({ status: 'ok', version: '2.0.0' })));
+app.get('/healthz', c => security(json({ status: 'ok', version: '0.1.0-dev' })));
 const widget = (rawURL: string, env: Env, pathLang?: string) => {
   const url = new URL(rawURL), query = R.queryObject(url);
   if (pathLang) { requireCondition(!query.lang || query.lang === pathLang, 400, 'BAD_INPUT', 'The path and query specify different languages.'); query.lang = pathLang; }
@@ -57,6 +57,25 @@ app.get('/auth/callback', rateLimit('auth'), async c => {
   const response = documentHTML('GitHub sign-in', '<main class="auth-page"><h1>GitHub sign-in</h1><p id="auth-status" role="status">Signing in...</p><a id="auth-return">Return to page</a></main>', '/auth-complete.js', result);
   response.headers.append('Set-Cookie', cookieHeader(c.get('config').origin, state.attempt, '', true));
   return security(response);
+});
+// Native consumers authenticate with explicit bearer capabilities. CORS never
+// grants credentialed-cookie access; the body gate checks repository scope.
+app.use('/api/*', async (c, next) => {
+  const origin = c.req.header('Origin'), config = c.get('config');
+  const native = Boolean(origin && origin !== config.origin);
+  if (native) requireCondition(Object.values(config.repositories).some(p => p.origins.includes(origin!)), 403, 'ORIGIN', 'This website is not allowed.');
+  if (c.req.method === 'OPTIONS') {
+    requireCondition(origin && c.req.header('Access-Control-Request-Method') === 'POST' && c.req.path !== '/api/auth/prepare', 403, 'ORIGIN', 'This operation does not support native requests.');
+    c.res = new Response(null, { status: 204 });
+  } else await next();
+  // Apply after the security wrapper creates its response, including errors.
+  if (native) {
+    c.res.headers.set('Access-Control-Allow-Origin', origin!);
+    c.res.headers.set('Vary', 'Origin');
+    c.res.headers.set('Access-Control-Allow-Methods', 'POST');
+    c.res.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    c.res.headers.set('Access-Control-Max-Age', '600');
+  }
 });
 app.use('/api/*', async (c, next) => {
   const auth = c.req.path === '/api/auth/prepare';

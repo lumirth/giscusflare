@@ -16,13 +16,13 @@ async function run(): Promise<void> {
     // Save the attempt ID in the opener before navigating to GitHub.
     await new Promise<void>((resolve, reject) => {
       const listener = (event: MessageEvent) => {
-        if (event.origin === location.origin && event.source === window.opener && event.data?.giscusAuthAck === data.attempt) {
+        if (event.origin === (config.openerOrigin || location.origin) && event.source === window.opener && event.data?.giscusAuthAck === data.attempt) {
           clearTimeout(timer); window.removeEventListener('message', listener); resolve();
         }
       };
       const timer = setTimeout(() => { window.removeEventListener('message', listener); reject(new Error('The originating widget could not be reached. Return to page and try again.')); }, 5000);
       window.addEventListener('message', listener);
-      window.opener.postMessage({ giscusAuth: { attempt: data.attempt, challenge: config.challenge } }, location.origin);
+      window.opener.postMessage({ giscusAuth: { attempt: data.attempt, challenge: config.challenge } }, config.openerOrigin || location.origin);
     });
   }
   navigateAuthorization(authorize);

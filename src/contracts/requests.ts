@@ -1,5 +1,5 @@
 import * as v from 'valibot';
-import { Capability, CategoryName, Cursor, DiscussionNumber, EmptyCapability, EmptyNodeID, IdempotencyKey, Language, Markdown, NodeID, Order, PageURL, Reaction, RepositoryName, SafeLine, Theme } from './primitives.js';
+import { Capability, CategoryName, Cursor, DiscussionNumber, EmptyCapability, EmptyNodeID, IdempotencyKey, Language, Markdown, NodeID, Order, Origin, PageURL, Reaction, RepositoryName, SafeLine, Theme } from './primitives.js';
 import { parse } from './parse.js';
 import { AppError } from '../domain/errors.js';
 
@@ -40,10 +40,10 @@ export const CommentRequest = v.strictObject({ config: Widget, body: Markdown, r
 export const EditRequest = v.strictObject({ config: Widget, id: NodeID, body: Markdown, key: IdempotencyKey });
 export const DeleteRequest = v.strictObject({ config: Widget, id: NodeID, key: IdempotencyKey });
 export const ReactionRequest = v.strictObject({ config: Widget, id: v.union([NodeID, v.literal('discussion')]), reaction: Reaction, add: v.boolean(), key: IdempotencyKey });
-export const ModerateRequest = v.strictObject({ config: Widget, id: NodeID, minimized: v.boolean(), key: IdempotencyKey });
+export const ModerateRequest = v.strictObject({ config: Widget, id: NodeID, minimized: v.boolean(), reason: v.optional(v.picklist(['ABUSE', 'DUPLICATE', 'OFF_TOPIC', 'OUTDATED', 'RESOLVED', 'SPAM']), 'OFF_TOPIC'), key: IdempotencyKey });
 export const PreviewRequest = v.strictObject({ config: Widget, body: Markdown });
 export const InfoRequest = v.strictObject({ repo: RepositoryName, origin: PageURL });
-export const AuthPrepare = v.strictObject({ repo: RepositoryName, origin: PageURL, challenge: Capability, mode: v.picklist(['popup', 'redirect']) });
+export const AuthPrepare = v.strictObject({ repo: RepositoryName, origin: PageURL, challenge: Capability, mode: v.picklist(['popup', 'redirect']), openerOrigin: v.optional(Origin) });
 export const AuthProof = v.strictObject({ repo: RepositoryName, origin: PageURL, attempt: Capability, verifier: Capability });
 export const AuthConsume = v.strictObject({ ...AuthProof.entries, ticket: Capability });
 export const LogoutRequest = InfoRequest;

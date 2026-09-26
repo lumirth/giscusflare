@@ -14,3 +14,5 @@ export * as primitives from './contracts/primitives.js';
 export { parse, parseJSON } from './contracts/parse.js';
 export { app } from './worker/app.js';
 export * as authorization from './domain/authorization.js';
+
+export { ConversationController } from './conversation/controller.js';

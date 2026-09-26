@@ -35,7 +35,7 @@ export async function decrypt<S extends Schema>(schema: S, text: string, secret:
     const [version, nonce, body, extra] = text.split('.');
     if (version !== '2' || !nonce || !body || extra || unb64(nonce).length !== 12) throw new Error('envelope');
     const bytes = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(nonce), additionalData: encoder.encode('giscus:v2:' + purpose) }, await aesKey(secret), unb64(body));
-    value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as unknown;
+    value = JSON.parse(new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes)) as unknown;
   } catch { throw new AppError(503, 'STORAGE', 'The service could not decrypt a stored record.'); }
   return parse(schema, value, 'storage');
 }

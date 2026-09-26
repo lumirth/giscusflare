@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import type { MutationResult } from '../contracts/results.js';
 import { configuration, secrets, type ConfigBindings, type RepositoryPolicy } from '../contracts/config.js';
 import { parse, type Schema } from '../contracts/parse.js';
 import * as R from '../contracts/requests.js';
@@ -107,7 +108,7 @@ export class RepositoryEngine {
     this.store.limit('preview:' + c.session!.user.login, 30, 60000);
     return { html: await c.client.markdown(input.request.body, c.token) };
   }
-  async #write(c: Context, key: string, payload: unknown, create: boolean, action: (discussion: G.Discussion) => Promise<string>): Promise<{ id: string; number: number }> {
+  async #write(c: Context, key: string, payload: unknown, create: boolean, action: (discussion: G.Discussion) => Promise<Omit<MutationResult, 'number'>>): Promise<MutationResult> {
     requireCondition(c.session, 401, 'AUTH_REQUIRED', 'Sign in to continue.');
     const receiptKey = 'receipt:' + await hash(c.session.user.login + ':' + key), fingerprint = await hash(JSON.stringify(payload));
     return this.store.lock(receiptKey, async () => {
@@ -122,7 +123,7 @@ export class RepositoryEngine {
       this.store.limit('write:' + c.session!.user.login, 30, 60000); this.store.limit('all-writes', 180, 60000);
       this.store.put(receiptKey, S.Receipt, { version: 2, fingerprint, state: 'pending', result: null }, this.store.now() + 86400000);
       try {
-        const id = await action(discussion), answer = { id, number: discussion.number };
+        const result = await action(discussion), answer = { ...result, number: discussion.number };
         this.store.put(receiptKey, S.Receipt, { version: 2, fingerprint, state: 'done', result: answer }, this.store.now() + 86400000);
         return answer;
       } catch (error) {
@@ -146,7 +147,8 @@ export class RepositoryEngine {
         replyId = parent.replyTo?.id || parent.id;
         if (parent.replyTo) { const root = await this.#target(c, discussion, replyId); requireCondition(root.__typename === 'DiscussionComment' && !root.replyTo, 403, 'PERMISSION', 'The reply does not have a valid top-level comment.'); }
       }
-      return (await c.client.comment(discussion.id, request.body, replyId, c.token)).id;
+      const comment = await c.client.comment(discussion.id, request.body, replyId, c.token);
+      return { id: comment.id, comment };
     });
   }
   async edit(raw: C.EditCall) {
@@ -154,7 +156,8 @@ export class RepositoryEngine {
     return this.#write(c, r.key, ['edit', r], false, async discussion => {
       const target = await this.#target(c, discussion, r.id);
       requireCondition(target.__typename === 'DiscussionComment' && target.viewerCanUpdate, 403, 'PERMISSION', 'You cannot edit this comment.');
-      return (await c.client.edit(r.id, r.body, c.token)).id;
+      const comment = await c.client.edit(r.id, r.body, c.token);
+      return { id: comment.id, comment };
     });
   }
   async remove(raw: C.DeleteCall) {
@@ -162,7 +165,8 @@ export class RepositoryEngine {
     return this.#write(c, r.key, ['delete', r], false, async discussion => {
       const target = await this.#target(c, discussion, r.id);
       requireCondition(target.__typename === 'DiscussionComment' && target.viewerCanDelete, 403, 'PERMISSION', 'You cannot delete this comment.');
-      await c.client.remove(r.id, c.token); return r.id;
+      const comment = await c.client.remove(r.id, c.token);
+      return comment?.deletedAt ? { id: r.id, comment } : { id: r.id, removed: true };
     });
   }
   async reaction(raw: C.ReactionCall) {
@@ -170,15 +174,19 @@ export class RepositoryEngine {
     return this.#write(c, r.key, ['reaction', r], r.id === 'discussion' && r.add, async discussion => {
       requireCondition(!discussion.locked, 403, 'LOCKED', 'This discussion is locked.');
       const id = r.id === 'discussion' ? discussion.id : r.id;
-      await this.#target(c, discussion, id); await c.client.react(id, r.reaction, r.add, c.token); return id;
+      await this.#target(c, discussion, id);
+      return { id, reactions: await c.client.react(id, r.reaction, r.add, c.token) };
     });
   }
   async moderate(raw: C.ModerateCall) {
     const input = parse(C.ModerateCall, raw), r = input.request, c = await this.#context(r.config, input.session, true);
     return this.#write(c, r.key, ['moderate', r], false, async discussion => {
       const target = await this.#target(c, discussion, r.id);
-      requireCondition(target.__typename === 'DiscussionComment' && target.viewerCanMinimize, 403, 'PERMISSION', 'You cannot moderate this comment.');
-      await c.client.moderate(r.id, r.minimized, c.token); return r.id;
+      requireCondition(target.__typename === 'DiscussionComment' && (r.minimized ? target.viewerCanMinimize : target.viewerCanUnminimize), 403, 'PERMISSION', 'You cannot moderate this comment.');
+      await c.client.moderate(r.id, r.minimized, c.token, r.reason);
+      const updated = await this.#target(c, discussion, r.id);
+      requireCondition(updated.__typename === 'DiscussionComment', 502, 'UPSTREAM_SCHEMA', 'GitHub returned an invalid comment.');
+      return { id: r.id, comment: updated };
     });
   }
   async authPrepare(raw: C.PrepareCall) { const input = parse(C.PrepareCall, raw); return this.#base(input.request.repo).auth.prepare(input); }

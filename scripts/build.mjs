@@ -1,4 +1,5 @@
 import { build } from 'esbuild';
+import postcss from 'postcss';
 import { mkdir, readFile, writeFile, readdir } from 'node:fs/promises';
 import { gzipSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
@@ -8,7 +9,7 @@ process.chdir(fileURLToPath(new URL('../', import.meta.url)));
 await mkdir('dist', { recursive: true });
 const worker = await build({ entryPoints: ['src/worker/entry.ts'], outfile: 'dist/worker.mjs', bundle: true, format: 'esm', platform: 'neutral', target: 'es2022', external: ['cloudflare:workers'], minify: true, legalComments: 'eof', metafile: true });
 await build({ entryPoints: ['src/testing.ts'], outfile: 'dist/testing.mjs', bundle: true, format: 'esm', platform: 'node', target: 'node22', legalComments: 'eof' });
-for (const name of ['client', 'widget', 'auth-window', 'auth-complete', 'setup']) {
+for (const name of ['client', 'widget', 'native', 'auth-window', 'auth-complete', 'setup']) {
   const result = await build({ entryPoints: [`src/browser/${name}.ts`], outfile: `public/${name}.js`, bundle: true, format: name === 'client' ? 'iife' : 'esm', platform: 'browser', target: 'es2022', minify: true, legalComments: 'eof', metafile: true });
   const imports = Object.keys(result.metafile.inputs);
   if (imports.some(p => /node_modules\/(hono|valibot)/.test(p))) throw new Error(`${name}.js includes Hono or Valibot. Remove the server import.`);
@@ -22,3 +23,16 @@ if (sizes['dist/worker.mjs'].gzip > 3 * 1024 * 1024) throw new Error('The Worker
 await writeFile('dist/sizes.json', JSON.stringify(sizes, null, 2) + '\n');
 await writeFile('dist/worker-metafile.json', JSON.stringify(worker.metafile, null, 2) + '\n');
 console.log(JSON.stringify({ build: 'passed', sizes }, null, 2));
+
+// Native presentation styles are scoped and never reset the host document.
+const sheet = postcss.parse(await readFile('public/widget.css', 'utf8'));
+sheet.walkRules(rule => {
+  if (rule.parent?.type === 'atrule' && /keyframes$/.test(rule.parent.name)) return;
+  rule.selectors = rule.selectors.map(selector => {
+    if(selector.includes(':root'))return selector.replaceAll(':root','.giscusflare');
+    if(selector.trim()==='body')return '.giscusflare';
+    return '.giscusflare ' + selector;
+  });
+});
+await writeFile('public/native.css', sheet.toString());
+await build({entryPoints:['src/browser/native.ts'],outdir:'dist/browser',bundle:true,splitting:true,format:'esm',platform:'browser',target:'es2022',legalComments:'eof'});

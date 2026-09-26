@@ -11,9 +11,11 @@ import type { AppEnv } from './types.js';
 /** Reuse the bounded JSON read in Hono's validator. */
 export const boundedJSON: MiddlewareHandler<AppEnv> = async (c, next) => {
   requireCondition(c.req.method === 'POST', 405, 'METHOD', 'Use POST for API operations.');
-  requireCondition(c.req.header('Origin') === c.get('config').origin, 403, 'ORIGIN', 'The request must originate at the comments service.');
+  const origin = c.req.header('Origin');
+  const native = origin !== c.get('config').origin;
+  requireCondition(origin && (!native || c.req.path !== '/api/auth/prepare'), 403, 'ORIGIN', 'This operation must originate at the comments service.');
   const site = c.req.header('Sec-Fetch-Site');
-  requireCondition(!site || site === 'same-origin', 403, 'ORIGIN', 'Cross-site API calls are not accepted.');
+  requireCondition(native || !site || site === 'same-origin', 403, 'ORIGIN', 'Invalid service request origin.');
   const type = (c.req.header('Content-Type') || '').split(';')[0]?.trim().toLowerCase();
   requireCondition(type === 'application/json', 415, 'MEDIA_TYPE', 'Use application/json.');
   const max = 96 * 1024, declared = c.req.header('Content-Length');
@@ -30,8 +32,19 @@ export const boundedJSON: MiddlewareHandler<AppEnv> = async (c, next) => {
   const bytes = new Uint8Array(count); let offset = 0;
   for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
   let value: unknown;
-  try { value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as unknown; }
+  try { value = JSON.parse(new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes)) as unknown; }
   catch { throw new AppError(400, 'BAD_INPUT', 'The request body is not valid JSON.'); }
+  if (native) {
+    // Preflight permits known hosts; the actual request also binds that host to
+    // this repository and the page in the request. No ambient cookie authority.
+    const scope = value && typeof value === 'object' ? value as Record<string, unknown> : {};
+    const raw = scope.config && typeof scope.config === 'object' ? scope.config as Record<string, unknown> : scope;
+    const repositories = c.get('config').repositories;
+    requireCondition(typeof raw.repo === 'string' && typeof raw.origin === 'string', 403, 'ORIGIN', 'A page and repository are required.');
+    const repoPolicy = repositories[raw.repo];
+    let pageOrigin = ''; try { pageOrigin = new URL(raw.origin).origin; } catch { /* rejected below */ }
+    requireCondition(repoPolicy?.origins.includes(origin) && pageOrigin === origin, 403, 'ORIGIN', 'This page is not allowed to use this repository.');
+  }
   c.req.bodyCache.json = Promise.resolve(value);
   const header = c.req.header('Authorization');
   if (header) {
