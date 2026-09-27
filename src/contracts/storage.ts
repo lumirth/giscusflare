@@ -25,3 +25,5 @@ export type Session = v.InferOutput<typeof Session>;
 export type OAuthAttempt = v.InferOutput<typeof OAuthAttempt>;
 
 export const Tombstone=v.strictObject({number:PositiveInteger});
+
+export const CommentCount = v.strictObject({ count: Count });

@@ -78,3 +78,16 @@ GitHub exposes no comment reaction-order query. A ranked read therefore costs on
 The OAuth handoff has a small, independent `/auth.css` stylesheet. It does not
 load widget presentation styles. Its status and fallback link remain available
 when navigation fails; popup and full-window authentication share this shell.
+
+## Counts outside the conversation
+
+`POST /api/counts` accepts `{repo, origin, strict: true, terms: [...]}` and returns
+`{counts: {"page-term": 3}}`. Send up to 20 page terms per request. Counts include
+top-level comments, matching the conversation heading; replies are excluded. An
+absent discussion returns zero without creating one. This public read uses the
+same repository, category, origin checks and permanent page mappings as threads.
+
+The repository policy `countCacheMs` defaults to 60000 and accepts 0–300000.
+Zero disables caching. Confirmed zeroes are cached too; writes invalidate the
+page's count. A cache miss batches GitHub summary queries without fetching comment
+or reply bodies. Clients should keep their links usable if counts fail to load.

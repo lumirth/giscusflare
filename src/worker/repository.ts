@@ -23,6 +23,7 @@ export function repositoryClass(transport?: FetchLike) {
       catch { console.error('giscus: expiry alarm could not be scheduled'); }
       return output;
     }
+    counts(input: R.CountsRequest) { return this.#call(() => this.#engine.counts(input)); }
     info(input: R.InfoRequest) { return this.#call(() => this.#engine.info(input)); }
     thread(input: C.ThreadCall) { return this.#call(() => this.#engine.thread(input)); }
     replies(input: C.RepliesCall) { return this.#call(() => this.#engine.replies(input)); }

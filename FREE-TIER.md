@@ -8,6 +8,8 @@ Scripts and styles use Workers Static Assets. Rendering the widget's HTML does n
 
 Readers trigger refreshes by writing, clicking Refresh, or returning to the page after the focus throttle expires. Open tabs do not poll comments every minute. Sign-in polling runs only during an authorization attempt.
 
+Page-list counts use `/api/counts`: up to 20 terms per request, cached for 60 seconds by default, including empty conversations. Overlapping batches share reads. A cold batch needs repository metadata and up to two summary queries; warm batches need no GitHub request. Count clients do not need to load threads or poll.
+
 Installation tokens are cached and refreshed under a lock. Concurrent requests share the refreshed token.
 
 ## Remaining costs

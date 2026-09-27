@@ -71,3 +71,10 @@ export const DiscussionActionRequest=v.strictObject({config:Widget,key:Idempoten
 export const BlockRequest=v.strictObject({config:Widget,key:IdempotencyKey,id:NodeID,scope:v.picklist(['account','organization']),add:v.boolean()});
 export type DiscussionActionRequest=v.InferOutput<typeof DiscussionActionRequest>;
 export type BlockRequest=v.InferOutput<typeof BlockRequest>;
+
+/** Public root-comment counts for lists; no session or conversation bodies. */
+export const CountsRequest = v.strictObject({
+  repo: RepositoryName, origin: PageURL, strict: v.optional(v.boolean(), true),
+  terms: v.pipe(v.array(v.pipe(Term, v.check(s => Boolean(s.trim())))), v.minLength(1), v.maxLength(20)),
+});
+export type CountsRequest = v.InferOutput<typeof CountsRequest>;

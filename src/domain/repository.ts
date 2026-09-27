@@ -88,6 +88,43 @@ export class RepositoryEngine {
     const categoryId = repositoryScope(meta, input.repo, base.policy);
     return { repo: meta.nameWithOwner, repoId: meta.id, category: base.policy.category, categoryId, defaultCommentOrder: base.policy.defaultCommentOrder };
   }
+  async #countKey(p: RepositoryPolicy, strict: boolean, term: string): Promise<string> {
+    return 'count:' + await hash(JSON.stringify([p.category, p.categoryId, strict, term]));
+  }
+  async counts(raw: R.CountsRequest): Promise<{counts: Record<string, number>}> {
+    const input = parse(R.CountsRequest, raw), base = this.#base(input.repo);
+    parentOrigin(base.policy, input.origin);
+    // Serialize overlapping batches so simultaneous page visits share their reads.
+    return this.store.lock('counts', async () => {
+      const terms = [...new Set(input.terms)], counts: Record<string, number> = Object.create(null);
+      const missing: {term:string;key:string}[] = [];
+      for (const term of terms) {
+        const key = await this.#countKey(base.policy, input.strict, term);
+        const cached = base.policy.countCacheMs ? this.store.get(key, S.CommentCount) : null;
+        if (cached) counts[term] = cached.count;
+        else missing.push({term,key});
+      }
+      if (!missing.length) return {counts};
+      const token = await base.client.installation(), meta = await base.client.repository(token);
+      const categoryId = repositoryScope(meta, input.repo, base.policy);
+      const pages = await Promise.all(missing.map(async p => {
+        const mapping = 'mapping:' + await hash(JSON.stringify([meta.id, categoryId, input.strict, p.term]));
+        return {...p, mapping, number: this.store.get(mapping, S.Mapping)?.number ?? null};
+      }));
+      const summaries = await base.client.counts(pages, input.strict, base.policy.category, token);
+      for (const [i, p] of pages.entries()) {
+        const summary = summaries[i];
+        if (summary) {
+          discussionScope(summary, input.repo, meta.id, categoryId);
+          this.store.put(p.mapping, S.Mapping, {version:2,number:summary.number});
+        }
+        const count = summary?.comments.totalCount ?? 0;
+        counts[p.term] = count;
+        if (base.policy.countCacheMs) this.store.put(p.key, S.CommentCount, {count}, this.store.now()+base.policy.countCacheMs);
+      }
+      return {counts};
+    });
+  }
   async thread(raw: C.ThreadCall): Promise<ThreadView> {
     const input = parse(C.ThreadCall, raw), c = await this.#context(input.request.config, input.session);
     const discussion = await this.#load(c, input.request.order, input.request.cursor, true, input.request.replyPrefetch), page = discussion?.comments.pageInfo;
@@ -123,7 +160,9 @@ export class RepositoryEngine {
       this.store.limit('write:' + c.session!.user.login, 30, 60000); this.store.limit('all-writes', 180, 60000);
       this.store.put(receiptKey, S.Receipt, { version: 2, fingerprint, state: 'pending', result: null }, this.store.now() + 86400000);
       try {
-        const result = await action(discussion), answer = { ...result, number: discussion.number };
+        const result = await action(discussion);
+        this.store.delete(await this.#countKey(c.policy, c.widget.strict, c.widget.term));
+        const answer = { ...result, number: discussion.number };
         this.store.put(receiptKey, S.Receipt, { version: 2, fingerprint, state: 'done', result: answer }, this.store.now() + 86400000);
         return answer;
       } catch (error) {

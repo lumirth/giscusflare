@@ -141,6 +141,40 @@ export class GitHub {
     const result = await this.graph(G.SearchResponse, QUERIES.search, { query }, token);
     return result.search.nodes.filter((node): node is G.DiscussionSummary => node !== null).filter(d => !config.strict || d.body.includes(term));
   }
+  /** Batch minimal summaries. Search is only used until a mapping is known. */
+  async counts(pages: { term: string; number: number | null }[], strict: boolean, category: string, token: string): Promise<(G.DiscussionCount | null)[]> {
+    const output: (G.DiscussionCount | null)[] = pages.map(() => null);
+    const known = pages.map((p, i) => ({...p, i})).filter(p => p.number !== null);
+    const unknown = pages.map((p, i) => ({...p, i})).filter(p => p.number === null);
+    const fields = `number body ${GRAPH.scope} comments { totalCount }`;
+    if (known.length) {
+      const variables: Record<string, unknown> = this.#scope();
+      for (const p of known) variables['n' + p.i] = p.number;
+      const data = await this.graph(v.object({repository: v.nullable(v.record(v.string(), v.nullable(G.DiscussionCount)))}),
+        `query CommentCounts($owner:String!,$name:String!,${known.map(p => '$n'+p.i+':Int!').join(',')}) { repository(owner:$owner,name:$name) { ${known.map(p => 'p'+p.i+':discussion(number:$n'+p.i+') { '+fields+' }').join(' ')} } }`, variables, token);
+      requireCondition(data.repository, 403, 'PUBLIC_ONLY', 'The repository is not accessible.');
+      for (const p of known) {
+        requireCondition(Object.hasOwn(data.repository, 'p'+p.i), 502, 'UPSTREAM_SCHEMA', 'GitHub omitted a count result.');
+        output[p.i] = data.repository['p'+p.i]!;
+      }
+    }
+    if (unknown.length) {
+      const variables: Record<string, string> = {};
+      const searchTerms = new Map<number,string>();
+      for (const p of unknown) {
+        const term = strict ? await sha1(p.term) : p.term;
+        searchTerms.set(p.i, term);
+        variables['q'+p.i] = `repo:${this.repo} category:${JSON.stringify(category)} ${strict ? 'in:body' : 'in:title'} ${JSON.stringify(term)} sort:created-asc`;
+      }
+      const data = await this.graph(v.record(v.string(), v.object({nodes: v.pipe(v.array(v.nullable(G.DiscussionCount)), v.maxLength(10))})),
+        `query FindCounts(${unknown.map(p => '$q'+p.i+':String!').join(',')}) { ${unknown.map(p => 'p'+p.i+':search(type:DISCUSSION,query:$q'+p.i+',first:10) { nodes { ... on Discussion { '+fields+' } } }').join(' ')} }`, variables, token);
+      for (const p of unknown) {
+        requireCondition(data['p'+p.i], 502, 'UPSTREAM_SCHEMA', 'GitHub omitted a count result.');
+        output[p.i] = data['p'+p.i]!.nodes.find(d => d && (!strict || d.body.includes(searchTerms.get(p.i)!))) ?? null;
+      }
+    }
+    return output;
+  }
   async thread(number: number, order: 'oldest' | 'newest', cursor: string, token: string, includeComments=true, replyPrefetch=5): Promise<G.Discussion | null> {
     const variables = { ...this.#scope(), number, replyPrefetch, first: order === 'oldest' ? (includeComments?20:0) : null, last: order === 'newest' ? (includeComments?20:0) : null, after: order === 'oldest' && cursor ? cursor : null, before: order === 'newest' && cursor ? cursor : null };
     const data = await this.graph(G.ThreadResponse, QUERIES.thread, variables, token);

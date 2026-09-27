@@ -82,6 +82,24 @@ export class FakeGitHub {
         const nodes=this.hideSearch?[]:this.discussions.filter(d=>x.query.includes('in:body')?d.body.includes(term):d.title.includes(term));
         data={search:{discussionCount:nodes.length,nodes:nodes.slice(0,10).map(d=>this.discussion(d,user))}};break;
       }
+      case 'FindCounts': {
+        data={};
+        for(const [key,query] of Object.entries(x)) {
+          check(query.startsWith('repo:example/comments category:"Announcements" '),'scoped count search');
+          const term=JSON.parse(query.slice(query.indexOf('in:')+ (query.includes('in:body')?8:9),query.lastIndexOf(' sort:')));
+          const nodes=this.hideSearch?[]:this.discussions.filter(d=>query.includes('in:body')?d.body.includes(term):d.title.includes(term));
+          data['p'+key.slice(1)]={nodes:nodes.slice(0,10).map(d=>({...this.discussion(d,user),comments:{totalCount:d.comments.length}}))};
+        }
+        break;
+      }
+      case 'CommentCounts': {
+        data={repository:{}};
+        for(const [key,number] of Object.entries(x).filter(([key])=>/^n[0-9]+$/.test(key))){
+          const d=this.discussions.find(d=>d.number===number);
+          data.repository['p'+key.slice(1)]=d?{...this.discussion(d,user),comments:{totalCount:d.comments.length}}:null;
+        }
+        break;
+      }
       case 'Thread': {check(([0,20].includes(x.first)&&x.last===null)||([0,20].includes(x.last)&&x.first===null),'exclusive cursor direction');const d=this.discussions.find(d=>d.number===x.number);data={repository:{viewerPermission:user==='maintainer'?'ADMIN':'READ',isPrivate:this.meta.isPrivate,discussion:d?this.discussion(d,user,x):null}};break;}
       case 'Target': {const t=this.locate(x.id);data={node:t?t.d===t.node?{__typename:'Discussion',...this.discussion(t.d,user)}:{__typename:'DiscussionComment',...this.comment(t.node,user),discussion:this.discussion(t.d,user)}:null};break;}
       case 'Replies': {const t=this.locate(x.id);data={node:t?{id:t.node.id,discussion:this.discussion(t.d,user),replies:connection(t.node.replies.map(c=>this.comment(c,user)),{last:50,before:x.before})}:null};break;}

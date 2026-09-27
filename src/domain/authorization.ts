@@ -33,7 +33,7 @@ export function repositoryScope(meta: Repository, repo: string, p: RepositoryPol
   }
   return category.id;
 }
-export function discussionScope(discussion: DiscussionSummary, repo: string, repositoryId: string, categoryId: string): void {
+export function discussionScope(discussion: Pick<DiscussionSummary, "repository" | "category">, repo: string, repositoryId: string, categoryId: string): void {
   requireCondition(!discussion.repository.isPrivate && discussion.repository.nameWithOwner.toLowerCase() === repo && discussion.repository.id === repositoryId,
     403, 'PUBLIC_ONLY', 'This discussion is not in the configured public repository.');
   requireCondition(discussion.category.id === categoryId, 403, 'CATEGORY', 'This discussion is in a different category.');

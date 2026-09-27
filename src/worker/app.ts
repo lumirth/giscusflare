@@ -79,13 +79,16 @@ app.use('/api/*', async (c, next) => {
 });
 app.use('/api/*', async (c, next) => {
   const auth = c.req.path === '/api/auth/prepare';
-  const read = ['/api/config', '/api/thread', '/api/replies', '/api/auth/poll'].includes(c.req.path);
+  const read = ['/api/counts', '/api/config', '/api/thread', '/api/replies', '/api/auth/poll'].includes(c.req.path);
   await rateLimit(auth ? 'auth' : read ? 'read' : 'write')(c, next);
 });
 app.use('/api/*', boundedJSON);
 app.use('/api/*', async (c, next) => { await next(); c.res = security(c.res); });
 app.post('/api/config', contract(R.InfoRequest), async c => {
   const input = c.req.valid('json'); return json(unwrap(await repository(c.env, input.repo).info(input)));
+});
+app.post('/api/counts', contract(R.CountsRequest), async c => {
+  const input = c.req.valid('json'); return json(unwrap(await repository(c.env, input.repo).counts(input)));
 });
 app.post('/api/thread', contract(R.ThreadRequest), async c => {
   const request = c.req.valid('json'); return json(unwrap(await repository(c.env, request.config.repo).thread({ request, session: c.get('session') })));
