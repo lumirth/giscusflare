@@ -19,10 +19,12 @@ Updated 2026-09-26. Development is on `main`.
 
 JSDOM tests establish DOM and event behavior. Layout and native editing require browser checks.
 
-## Release gaps
+## Kukas production adoption
 
-Physical iOS, Firefox, all themes/locales and the full moderation permission matrix need further coverage. The paid staging account and local tests do not establish Cloudflare Free-plan CPU capacity.
+Kukas approved and enabled its separate native presentation on 2026-09-26. Eligible Posts and Notes at [kukas.me](https://kukas.me) use it; the site and Worker workshops are removed. The service is `kukas-giscusflare`, maintained by the separate consumer repository. The former `kukas-giscusflare-staging` Worker was retired after transferring its existing Repository storage and updating the public Kukas Comments GitHub App callback.
 
-The bounded acceptance pass is complete; see [results and limits](CONFIDENCE.md). Kukas's separate headless presentation is available at `kukas.me/comments-workshop/` for design review. Production Kukas comments remain disabled pending design approval.
+The cutover browser check loaded existing comments and completed GitHub sign-in back to an authenticated composer. This establishes that deployed integration; it does not expand the earlier browser/content or resource samples.
 
-Staging deployment is maintained by `kukas-giscusflare`; its README records the preview routes.
+## Broader release qualification
+
+[Release work](IMPLEMENTATION.md) is the remaining qualification checklist. [Bounded confidence](CONFIDENCE.md) preserves the dated evidence and its limits. Kukas adoption is complete; a stable general-purpose release and Free-plan capacity claims remain separate work.

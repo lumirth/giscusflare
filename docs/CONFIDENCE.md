@@ -1,6 +1,6 @@
 # Bounded acceptance — 2026-09-26
 
-This pass is sufficient to start the Kukas presentation on the existing paid staging deployment. It is not a declaration of complete browser coverage or Cloudflare Free-plan readiness.
+This is the historical bounded pass that allowed Kukas presentation work to proceed. The user subsequently approved and deployed Kukas comments; see [current status](STATUS.md). These measurements remain dated staging evidence, not a declaration of complete browser coverage or Cloudflare Free-plan readiness.
 
 ## Checked
 
@@ -10,7 +10,7 @@ This pass is sufficient to start the Kukas presentation on the existing paid sta
 - Core: 89 automated tests passing. The previous 11 workerd checks remain applicable; runtime service behavior did not change in this pass.
 - Consumer TypeScript build and a check of the shipped Kukas import graph: it reaches no standard-presentation or native-mount modules.
 
-The separate Kukas browser pass covers Toast/undo, reaction picker, reply expansion and focus, Preview/Write with grouped undo, light/dark surfaces and footer wrapping. Presentation review remains open.
+The separate Kukas browser pass covers Toast/undo, reaction picker, reply expansion and focus, Preview/Write with grouped undo, light/dark surfaces and footer wrapping. Kukas presentation review subsequently completed; the user approved production activation.
 
 ## Resource sample
 
@@ -18,10 +18,10 @@ The separate Kukas browser pass covers Toast/undo, reaction picker, reply expans
 
 Most sampled stateless requests used 1–9ms CPU. Outliers reached 12–14ms, including thread, replies and authentication-window requests. Durable Object operations used 0–10ms. Multi-second wall times include upstream network waits and are not CPU time. Cold starts may contribute, but this sample does not identify isolates and cannot establish that explanation.
 
-Cloudflare's [Workers limits](https://developers.cloudflare.com/workers/platform/limits/) list 10ms CPU per Free-plan invocation. The observed outliers therefore leave Free-plan qualification open. Before claiming that support, profile those paths and repeat a bounded cold/warm sample on the intended configuration. Paid staging is suitable for continuing design work.
+Cloudflare's [Workers limits](https://developers.cloudflare.com/workers/platform/limits/) list 10ms CPU per Free-plan invocation. The observed outliers therefore leave Free-plan qualification open. Before claiming that support, profile those paths and repeat a bounded cold/warm sample on the intended configuration. The later production rollout does not resolve that measurement gap.
 
-The current build reports approximately 28KiB gzip for the Worker, 52KiB for the standard widget's initial JavaScript graph, and 664KiB including lazy math. These are build estimates, not transferred-byte measurements; CSS and fonts are separate. Math remains a configurable rendering capability and lazy import. No polling was enabled for this pass.
+The build measured during this pass reported approximately 28KiB gzip for the Worker, 52KiB for the standard widget's initial JavaScript graph, and 664KiB including lazy math. These are build estimates, not transferred-byte measurements; CSS and fonts are separate. Math remains a configurable rendering capability and lazy import. No polling was enabled for this pass.
 
-## Deferred public-release coverage
+## Remaining qualification
 
-Physical iOS/Firefox, optional popup authentication, every theme/locale, the complete real-token moderation matrix, and Free-tier traffic/storage qualification. Tests already cover response-loss recovery and permission boundaries; this pass did not repeat all of them manually.
+The actionable checklist lives in [broader release work](IMPLEMENTATION.md). Physical-device/browser, moderation, optional-authentication and Free-plan coverage remain separate from the completed Kukas rollout. Preserve the limits above when reporting confidence; no additional qualification was performed during documentation closeout.

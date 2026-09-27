@@ -1,14 +1,14 @@
-# Release work
+# Broader Giscusflare release qualification
 
 The shared model, reusable interactions, iframe/native embedding and standard presentation are implemented. [Status](STATUS.md) records verification; [Design](DESIGN.md) defines ownership and behavior.
 
-## Gate for starting Kukas
+## Scope
 
-The bounded desktop journey, narrow-screen check and resource sample are recorded in [Confidence](CONFIDENCE.md). They are sufficient to proceed with the separate Kukas presentation. The broader items below are public-release qualification, not prerequisites for each design iteration.
+The user-approved Kukas integration is deployed. Its design and activation gates are complete. This document is the single remaining qualification checklist for broader Giscusflare release claims; it is not an instruction to reopen Kukas design or begin this work automatically. See [bounded evidence](CONFIDENCE.md) for what was actually checked.
 
 ## Standard presentation
 
-Compare directly with Giscus on the same discussion, across themes and narrow/wide layouts. Check loading, colors, borders, spacing, author rows, reactions, folding, sorting and the composer. Record intentional differences in [Presentation](PRESENTATION.md). Visual parity does not require copying Giscus's UI implementation.
+Compare directly with Giscus on the same discussion, across supported themes/locales and narrow/wide layouts. Check loading, colors, borders, spacing, author rows, reactions, folding, sorting and the composer. Record intentional differences in [Presentation](PRESENTATION.md). Visual parity does not require copying Giscus's UI implementation.
 
 ## Real GitHub permissions
 
@@ -26,8 +26,6 @@ Run a rich-content corpus through Preview and published comments: Markdown struc
 
 Measure Worker CPU, GitHub requests, storage operations and browser resources under representative traffic. Local tests and a paid staging account do not establish Free-plan capacity. Keep deployment instructions and the capability matrix current.
 
-## Kukas presentation
+## Public API and packaging
 
-Refine Kukas's native presentation in `kukas-giscusflare` using public core APIs. Keep anonymous Post/Note Toasts in their separate service. If the presentation needs private core access, improve the public contract first.
-
-Production Kukas comments stay disabled until visual approval. Stabilize the customization API after the standard presentation and Kukas both exercise it.
+Before a stable public release, qualify the package/deployment instructions and versioning contract against both the standard presentation and the shipped Kukas consumer. Keep custom presentations on supported core APIs. Anonymous Post/Note Toasts remain in their separate service; they are outside this comments qualification work.
