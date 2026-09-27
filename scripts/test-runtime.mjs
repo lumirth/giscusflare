@@ -89,6 +89,10 @@ try {
   await check('widget HTML has the configured frame boundary', async () => { const r=await request('/widget?'+new URLSearchParams(widget));assert.equal(r.status,200);assert.ok(r.headers.get('Content-Security-Policy').includes(blog)); });
   await check('Valibot rejects malformed JSON before a repository operation', async () => { const r=await request('/api/thread',{config:widget,order:'invalid'});assert.equal(r.status,400); });
   await check('named Repository RPC reads a validated GitHub thread', async () => { const data=await decode(await request('/api/thread',{config:widget}));assert.ok(data && typeof data==='object'); });
+  await check('batch counts cross the native RPC boundary', async () => {
+    const data = await decode(await request('/api/counts', {repo:widget.repo, origin:widget.origin, strict:false, terms:['article','missing']}));
+    assert.deepEqual(data,{counts:{article:23,missing:0}});
+  });
   await check('SQLite-backed RPC probe writes its first durable counter', async () => { assert.deepEqual(await decode(await request('/__test/probe')),{counter:1}); });
 
   const verifier=randomBytes(32).toString('base64url');

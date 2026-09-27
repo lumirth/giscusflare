@@ -104,7 +104,7 @@ export class RepositoryEngine {
         if (cached) counts[term] = cached.count;
         else missing.push({term,key});
       }
-      if (!missing.length) return {counts};
+      if (!missing.length) return {counts: Object.fromEntries(Object.entries(counts))};
       const token = await base.client.installation(), meta = await base.client.repository(token);
       const categoryId = repositoryScope(meta, input.repo, base.policy);
       const pages = await Promise.all(missing.map(async p => {
@@ -122,7 +122,7 @@ export class RepositoryEngine {
         counts[p.term] = count;
         if (base.policy.countCacheMs) this.store.put(p.key, S.CommentCount, {count}, this.store.now()+base.policy.countCacheMs);
       }
-      return {counts};
+      return {counts: Object.fromEntries(Object.entries(counts))};
     });
   }
   async thread(raw: C.ThreadCall): Promise<ThreadView> {

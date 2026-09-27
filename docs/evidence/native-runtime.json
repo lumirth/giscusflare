@@ -24,6 +24,10 @@
       "status": "passed"
     },
     {
+      "name": "batch counts cross the native RPC boundary",
+      "status": "passed"
+    },
+    {
       "name": "SQLite-backed RPC probe writes its first durable counter",
       "status": "passed"
     },
