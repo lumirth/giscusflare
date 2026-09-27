@@ -46,6 +46,8 @@ export interface ConversationState {
   order: CommentOrder;
   nextCursor: string | null;
   loading: boolean;
+  /** A reader-selected order is being prepared; background refresh stays quiet. */
+  sorting: boolean;
   error: string;
   lastRefresh: number;
   operations: ReadonlyMap<string, OperationState>;
@@ -101,6 +103,7 @@ export class ConversationController {
       order,
       nextCursor: null,
       loading: false,
+      sorting: false,
       error: "",
       lastRefresh: 0,
       expanded: new Set(),
@@ -272,6 +275,7 @@ export class ConversationController {
       profiles:[],ranking:null,ready: false, thread: null, viewer: null, archived: false, unavailable: false, canCompose: false,
       comments: [],
       loading: false,
+      sorting: false,
       nextCursor: null,
       operations: new Map(),
     });
@@ -288,7 +292,7 @@ export class ConversationController {
     this.#abort?.abort();
     this.#refreshing = undefined;
     this.#ranked=undefined;
-    this.#patch({order,ranking:null,...(typeof order==='string'?{comments:[],nextCursor:null}:{})});
+    this.#patch({order,sorting:true,ranking:null,...(typeof order==='string'?{comments:[],nextCursor:null}:{})});
     await this.refresh();
   }
   async refresh(more = false): Promise<void> {
@@ -438,7 +442,7 @@ export class ConversationController {
       return false;
     } finally {
       if (generation === this.#generation && !this.#disposed)
-        this.#patch({ loading: false });
+        this.#patch({ loading: false, sorting: false });
     }
   }
   async loadReplies(parentId: string): Promise<void> {
@@ -640,7 +644,7 @@ export class ConversationController {
       // A read begun before this successful write cannot overwrite the result.
       this.#generation++;
       this.#abort?.abort();
-      this.#state = { ...this.#state, loading: false };
+      this.#state = { ...this.#state, loading: false, sorting: false };
       this.#reconcile(result, operation);
       if (!this.#state.thread)
         await this.refresh();

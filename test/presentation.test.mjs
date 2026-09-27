@@ -110,3 +110,18 @@ test('reaction counts and repository roles do not imply viewer selection or auth
   assert.equal(target.querySelectorAll('.gsc-direct-reaction-button').length,6,'unselected reactions keep their counts');
  } finally {mounted.dispose();target.remove();globalThis.fetch=original;}
 });
+
+test('named sort retains focus and its selected styling throughout deferred ranking', async()=>{
+ const originalFetch=globalThis.fetch;let release;
+ const data={discussion:{id:'D_1',number:1,url:'https://github.com/example/comments/discussions/1',locked:false,comments:{nodes:[],totalCount:0,pageInfo:{}},reactionGroups:[]},viewer:null,archived:false,nextCursor:null,profiles:['appreciated']};
+ globalThis.fetch=async url=>url.includes('/ranking')?new Promise(resolve=>{release=()=>resolve(Response.json({status:'ready',ids:[],observedAt:Date.now(),revision:1}));}):Response.json(data);
+ const target=document.createElement('div');document.body.append(target);const mounted=mountComments(target,{service:'https://comments.example',page:config,appearance:config,draftRecovery:false});
+ const until=async predicate=>{for(let i=0;i<100&&!predicate();i++)await new Promise(r=>setTimeout(r,1));assert.ok(predicate());};
+ try{
+  await until(()=>mounted.state.ready&&!mounted.state.loading);
+  const button=[...target.querySelectorAll('.gsc-right-header button')].find(b=>b.textContent==='appreciated');button.focus();button.click();await until(()=>release);
+  assert.equal(document.activeElement,button);assert.equal(button.isConnected,true);
+  assert.ok(target.querySelector('.gsc-loading'),'sorting has visible loading feedback');assert.equal(button.getAttribute('aria-pressed'),'true');assert.ok(button.parentElement.classList.contains('BtnGroup-item--selected'),'named sorts keep the same visible selected treatment as Oldest and Newest');
+  release();await until(()=>!mounted.state.loading);assert.equal(target.querySelector('.gsc-loading'),null);assert.equal(document.activeElement,button);assert.ok(button.parentElement.classList.contains('BtnGroup-item--selected'));
+ }finally{mounted.dispose();target.remove();globalThis.fetch=originalFetch;}
+});

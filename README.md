@@ -21,10 +21,10 @@ Each page maps to a GitHub discussion. Readers sign in with GitHub to comment or
 
 ## Make it fit your website
 
-Install the browser package from the [1.0.0 release](https://github.com/lumirth/giscusflare/releases/tag/v1.0.0):
+Install the browser package from the [1.0.1 release](https://github.com/lumirth/giscusflare/releases/tag/v1.0.1):
 
 ```sh
-npm install https://github.com/lumirth/giscusflare/releases/download/v1.0.0/giscusflare-1.0.0.tgz
+npm install https://github.com/lumirth/giscusflare/releases/download/v1.0.1/giscusflare-1.0.1.tgz
 ```
 
 With npm 12, add `--allow-remote=root` to this command to allow the release URL. See [npm's URL dependency setting](https://docs.npmjs.com/cli/install/#allow-remote).

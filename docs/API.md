@@ -67,6 +67,7 @@ Read `conversation.state` as an immutable snapshot:
 - `thread` holds the discussion's identity, URL, state, count and reactions.
 - `comments` is the displayed root-comment collection. Each root has `replies.items`, `replies.count` and a reply cursor.
 - `ready`, `loading`, `error` and `unavailable` describe the current read.
+- `sorting` stays true while a reader-selected order loads, including ranking and comment hydration. Use it for sort feedback while keeping background refresh quiet.
 - `viewer` identifies the signed-in reader. `canCompose` also accounts for discussion and repository state.
 - `operations` records pending, failed and uncertain writes.
 

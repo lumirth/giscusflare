@@ -284,10 +284,11 @@ export function createStandardPresentation(
               </div>
               <ul class="BtnGroup gsc-right-header" aria-label=${t.commentOrder}>
                 ${(["oldest", "newest"] as const).map((order) => html`<li class=${"BtnGroup-item " + (state.order === order ? "BtnGroup-item--selected" : "")}><button type="button" class="btn" aria-pressed=${String(state.order === order)} @click=${attempt(() => model.setOrder(order))}>${t[order]}</button></li>`)}
-                ${state.profiles.map(profile=>html`<li class="BtnGroup-item"><button type="button" class="btn" aria-pressed=${String(typeof state.order==='object'&&state.order.profile===profile)} @click=${attempt(()=>model.setOrder({profile}))}>${profile}</button></li>`)}
+                ${state.profiles.map(profile=>html`<li class=${"BtnGroup-item " + (typeof state.order==='object'&&state.order.profile===profile ? "BtnGroup-item--selected" : "")}><button type="button" class="btn" aria-pressed=${String(typeof state.order==='object'&&state.order.profile===profile)} @click=${attempt(()=>model.setOrder({profile}))}>${profile}</button></li>`)}
               </ul>
               ${discussion ? menu(discussion) : nothing}
             </div>
+            ${state.sorting ? html`<div class="gsc-loading" role="status"><div class="gsc-loading-image" aria-hidden="true"></div><p class="gsc-loading-text">${t.loading}</p></div>` : nothing}
             <div class="gsc-timeline">
               ${repeat(state.comments, (c) => c.id, comment)}
             </div>
