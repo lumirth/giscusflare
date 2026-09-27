@@ -16,6 +16,10 @@
       "status": "passed"
     },
     {
+      "name": "widget cache hits retain frame policy and no-store with immutable Cache API headers",
+      "status": "passed"
+    },
+    {
       "name": "Valibot rejects malformed JSON before a repository operation",
       "status": "passed"
     },

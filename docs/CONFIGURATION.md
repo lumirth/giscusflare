@@ -93,9 +93,11 @@ The optional `RANKING_BUDGET` JSON variable sets these deployment-wide defaults:
 | Setting | Default |
 | --- | --- |
 | `maxRequestsPerHour` | `240` GitHub calls |
-| `maxRowsWrittenPerDay` | `25000` SQLite rows |
+| `maxRowsWrittenPerDay` | `32000` SQLite rows |
 | `maxRowsReadPerDay` | `500000` SQLite rows |
-| `maxOrderBytes` | `8388608` bytes per complete order |
+| `maxOrderBytes` | `524288` bytes per serialized ID array |
+
+Row allowances are conservative reservations, not measured row usage. The 512 KiB ID-array ceiling bounds response size; operators can raise it for larger threads after measuring their Worker CPU costs.
 
 The service divides call and row allowances equally among explicitly ranking-enabled repositories. The order-size limit applies to each result. Leave room for sessions, ordinary reads and writes, and other services in your Cloudflare account. Increasing the allocation does not increase the provider's limits.
 

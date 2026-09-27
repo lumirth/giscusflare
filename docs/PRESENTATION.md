@@ -29,3 +29,9 @@ A narrow desktop WebKit check found equal document scroll and client widths, wit
 Native undo was compared with a plain textarea using the same keystrokes, including a Preview/Write round trip. A DOM regression test checks node stability. It cannot verify the browser's undo stack.
 
 See [Verification evidence](CONFIDENCE.md) for the remaining browser coverage.
+
+## Release comparison
+
+The September 27 comparison used the pre-redesign core at `d8eb06b` and the replacement in the same browser tab at 390 CSS pixels. Both used the same fixture and anonymous viewer state. The local host wrapper was corrected to the previously recorded 8px mobile gutter; the widget styles were unchanged. The checked comment, reply, header and composer geometry and styles matched. The extra Refresh and Toggle theme buttons belong to the new local test page.
+
+The independent Kukas presentation was compared with the archive used by its previous site build. Its desktop light rendering and narrow dark reply-editing state matched across the rendered elements, including the distinct tab and textarea materials. Kukas keeps its own host spacing and presentation styles; the default widget's gutter is not a shared downstream setting.

@@ -37,7 +37,7 @@ export type OrderResult =
   | { status: 'paused'; reason: 'budget' | 'upstream' | 'freshness' | 'size' | 'inputs'; retryAt: number | null };
 export interface Sql { exec(query: string, ...bindings: (string | number | null)[]): Iterable<Record<string, unknown>> }
 export interface Storage { sql: Sql; transactionSync<T>(action: () => T): T }
-export const DEFAULT_RANKING_LIMITS = Object.freeze({ maxAgeSeconds: 600, maxRequestsPerHour: 240, maxRowsWrittenPerDay: 25_000, maxRowsReadPerDay: 500_000, maxOrderBytes: 8 * 1024 * 1024 });
+export const DEFAULT_RANKING_LIMITS = Object.freeze({ maxAgeSeconds: 600, maxRequestsPerHour: 240, maxRowsWrittenPerDay: 32_000, maxRowsReadPerDay: 500_000, maxOrderBytes: 512 * 1024 });
 
 export function validateOptions(options: RankingOptions): RankingOptions {
   const integer = (n: number, low: number, high: number) => Number.isSafeInteger(n) && n >= low && n <= high;

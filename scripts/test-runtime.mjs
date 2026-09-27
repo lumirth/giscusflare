@@ -46,7 +46,7 @@ try {
   localFixture.close?.();
   const config = {
     name: 'giscus-v2-runtime-test', main: entry, compatibility_date: '2026-09-25',
-    assets: { directory: resolve(root, 'public'), binding: 'ASSETS', run_worker_first: ['/api/v1/*','/auth/*','/widget','/*/widget','/healthz','/__test/*'] },
+    assets: { directory: resolve(root, 'public'), binding: 'ASSETS', run_worker_first: ['/api/*','/auth/*','/widget','/*/widget','/healthz','/__test/*'] },
     durable_objects: { bindings: [{ name: 'REPOSITORY_STORE', class_name: 'Repository' }, { name: 'PROBE', class_name: 'Probe' }] },
     migrations: [{ tag: 'test-initial', new_sqlite_classes: ['Repository','Probe'] }], ...rates,
     vars: {
@@ -89,6 +89,16 @@ try {
   await check('Hono handles requests in workerd', async () => { const r = await request('/healthz'); assert.equal(r.status,200); });
   await check('ASSETS serves static files', async () => { const r=await request('/client.js'); assert.equal(r.status,200); assert.match(await r.text(),/giscus/); });
   await check('widget HTML has the configured frame boundary', async () => { const r=await request('/widget?'+new URLSearchParams(widget));assert.equal(r.status,200);assert.ok(r.headers.get('Content-Security-Policy').includes(blog)); });
+  await check('widget cache hits retain frame policy and no-store with immutable Cache API headers', async () => {
+    const query=new URLSearchParams(widget);
+    const cached=await decode(await request('/__test/widget-cache?'+query));
+    assert.deepEqual(cached,{hit:true,immutable:true});
+    const response=await request('/widget?'+query);
+    assert.equal(response.status,200);
+    assert.equal(response.headers.get('Cache-Control'),'no-store');
+    assert.ok(response.headers.get('Content-Security-Policy').includes(blog));
+    assert.match(await response.text(),/bootstrap/);
+  });
   await check('Valibot rejects malformed JSON before a repository operation', async () => { const r=await request('/api/v1/thread',{config:widget,order:'invalid'});assert.equal(r.status,400); });
   await check('named Repository RPC reads a validated GitHub thread', async () => { const data=await decode(await request('/api/v1/thread',{config:widget}));assert.ok(data && typeof data==='object'); });
   await check('batch counts cross the native RPC boundary', async () => {

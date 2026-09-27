@@ -53,7 +53,8 @@ const widget = async (c:import('hono').Context<AppEnv>, pathLang?: string) => {
   if (pathLang) { requireCondition(!query.lang || query.lang === pathLang, 400, 'BAD_INPUT', 'The path and query specify different languages.'); query.lang = pathLang; }
   const input = parse(R.WidgetQuery, query), p = authorizeWidget(configuration(env), input);
   const response=await publicRead(c,{config:input},async()=>(await repository(env,input.repo)).widget({request:parse(R.ThreadRequest,{config:input,order:p.defaultCommentOrder}),session:''}));
-  response.headers.set('Cache-Control','no-store');return response;
+  const html=new Response(response.body,response);
+  html.headers.set('Cache-Control','no-store');return html;
 };
 app.get('/widget', rateLimit('read'), c => widget(c));
 app.get('/:lang/widget', rateLimit('read'), c => widget(c,c.req.param('lang')));

@@ -1,6 +1,8 @@
 /** workerd tests with simulated GitHub responses. */
 import { DurableObject } from 'cloudflare:workers';
 import { serializeRead, readResponse } from '../src/worker/read-response.js';
+import { configuration } from '../src/contracts/config.js';
+import { hash } from '../src/domain/crypto.js';
 import { app } from '../src/worker/app.js';
 import { repositoryClass } from '../src/worker/repository.js';
 import { FakeGitHub } from './github-fixture.mjs';
@@ -19,6 +21,14 @@ export class Probe extends DurableObject {
 export default {
   async fetch(request: Request, env: any, ctx: any): Promise<Response> {
     const url = new URL(request.url);
+    if (url.pathname === '/__test/widget-cache') {
+      const key=new URL('/widget?'+url.searchParams.toString(),url);
+      key.searchParams.set('policy',await hash(JSON.stringify(configuration(env))));
+      const cached=await caches.default.match(new Request(key));
+      let immutable=false;
+      if(cached){try{cached.headers.set('X-Test','probe');}catch{immutable=true;}}
+      return Response.json({hit:Boolean(cached),immutable});
+    }
     if (url.pathname === '/__test/serialized-read') {
       const stub = env.PROBE.get(env.PROBE.idFromName('serialized-read'));
       return readResponse(await stub.serializedRead());
