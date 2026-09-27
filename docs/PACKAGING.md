@@ -6,6 +6,8 @@ Install the browser and Worker modules from the GitHub release archive:
 npm install https://github.com/lumirth/giscusflare/releases/download/v1.0.0/giscusflare-1.0.0.tgz
 ```
 
+With npm 12, add `--allow-remote=root` to this command to allow the release URL. See [npm's URL dependency setting](https://docs.npmjs.com/cli/install/#allow-remote).
+
 The release tag, archive and package manifest use the same version. Keep the archive URL in your package manifest and commit your package-manager lockfile. To upgrade, install the archive for the chosen release, rebuild your website and redeploy its service together.
 
 The package exports the default presentation as `giscusflare`, conversation behavior as `giscusflare/headless`, composer bindings as `giscusflare/interactions`, content rendering as `giscusflare/content`, and the service as `giscusflare/worker`.

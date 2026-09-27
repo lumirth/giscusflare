@@ -27,6 +27,8 @@ Install the browser package from the [1.0.0 release](https://github.com/lumirth/
 npm install https://github.com/lumirth/giscusflare/releases/download/v1.0.0/giscusflare-1.0.0.tgz
 ```
 
+With npm 12, add `--allow-remote=root` to this command to allow the release URL. See [npm's URL dependency setting](https://docs.npmjs.com/cli/install/#allow-remote).
+
 Mount the default interface in your own page:
 
 ```js
