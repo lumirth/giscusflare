@@ -71,7 +71,7 @@ export class ConversationController {
   #editors = new Map<string, Editor>();
   #reactionIntents = new Map<string, ReactionIntent>();
   #draftListeners = new Set<() => void>();
-  #refreshing?: Promise<void>;
+  #refreshing?: { work: Promise<boolean>; reportErrors: boolean };
   replyPrefetch = 5;
   subscribeDrafts(listener: () => void): () => void {
     this.#draftListeners.add(listener);
@@ -310,26 +310,40 @@ export class ConversationController {
     this.#state = { ...this.#state, order, comments: [], nextCursor: null };
     await this.refresh();
   }
-  refresh(more = false): Promise<void> {
-    if (this.#refreshing && !more) return this.#refreshing;
-    const work = this.#refresh(more);
-    this.#refreshing = work;
-    void work
+  async refresh(more = false): Promise<void> {
+    await this.#startRefresh(more, false);
+  }
+  /** Refresh retained content quietly; false lets the scheduler back off on failure. */
+  revalidate(): Promise<boolean> {
+    return this.#startRefresh(false, true);
+  }
+  #startRefresh(more: boolean, background: boolean): Promise<boolean> {
+    if (this.#refreshing && !more) {
+      if (!background) this.#refreshing.reportErrors = true;
+      return this.#refreshing.work;
+    }
+    const flight = {
+      work: Promise.resolve(false),
+      reportErrors: !background || !this.#state.view,
+    };
+    flight.work = this.#refresh(more, background, () => flight.reportErrors);
+    this.#refreshing = flight;
+    void flight.work
       .finally(() => {
-        if (this.#refreshing === work) this.#refreshing = undefined;
+        if (this.#refreshing === flight) this.#refreshing = undefined;
       })
       .catch(() => {});
-    return work;
+    return flight.work;
   }
-  async #refresh(more = false): Promise<void> {
+  async #refresh(more: boolean, background: boolean, reportErrors: () => boolean): Promise<boolean> {
     this.#live();
-    if (more && (!this.#state.nextCursor || this.#state.loading)) return;
+    if (more && (!this.#state.nextCursor || this.#state.loading)) return false;
     const generation = ++this.#generation,
       previous = this.#state;
     this.#abort?.abort();
     this.#abort = new AbortController();
     const signal = this.#abort.signal;
-    this.#patch({ loading: true, error: "" });
+    this.#patch({ loading: true, ...(!background ? { error: "" } : {}) });
     try {
       const fetchPage = (cursor: string) =>
         this.transport.request<ThreadView>(
@@ -401,14 +415,16 @@ export class ConversationController {
         }
         comments[i] = { ...item, replies };
       }
-      if (generation !== this.#generation || this.#disposed) return;
-      this.#patch({ view, comments, nextCursor, lastRefresh: Date.now() });
+      if (generation !== this.#generation || this.#disposed) return false;
+      this.#patch({ view, comments, nextCursor, lastRefresh: Date.now(), error: "" });
+      return true;
     } catch (error) {
-      if (generation === this.#generation && !signal.aborted)
+      if (generation === this.#generation && !signal.aborted && reportErrors())
         this.#patch({
           error:
             error instanceof Error ? error.message : "Unable to load comments.",
         });
+      return false;
     } finally {
       if (generation === this.#generation && !this.#disposed)
         this.#patch({ loading: false });

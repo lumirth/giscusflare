@@ -70,7 +70,7 @@ export class FetchScheduler {
     try {
       success = await this.refresh();
     } catch {
-      /* A failed background read is surfaced by the model. */
+      /* Treat unexpected failures as unsuccessful reads for backoff. */
     } finally {
       this.#pending = false;
       this.#failures = success ? 0 : this.#failures + 1;

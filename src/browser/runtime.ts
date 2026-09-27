@@ -132,10 +132,7 @@ export function createConversation(
   if (!options.host) window.addEventListener("storage", storage);
   const scheduler = new FetchScheduler(
     policy,
-    async () => {
-      await controller.refresh();
-      return !controller.state.error;
-    },
+    () => controller.revalidate(),
     () => controller.state.lastRefresh,
     () =>
       initialized &&

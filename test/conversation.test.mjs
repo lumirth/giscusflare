@@ -194,3 +194,39 @@ test('reaction ranking reads the complete discussion and keeps ties chronologica
   controller.dispose();
  }finally{f.close();}
 });
+
+test('background revalidation retains content and drafts while foreground refresh still reports failures', async () => {
+ const f=fixture({seed:true}); let fail=false;
+ try {
+  const c=await conversation(f,undefined,'oldest',async()=>{if(fail)throw new Error('Network unavailable');});
+  const comments=c.state.comments, lastRefresh=c.state.lastRefresh;
+  c.setDraft('main','Keep my writing'); fail=true;
+  assert.equal(await c.revalidate(),false);
+  assert.equal(c.state.error,''); assert.equal(c.state.comments,comments);
+  assert.equal(c.state.lastRefresh,lastRefresh); assert.equal(c.draft(),'Keep my writing');
+  await c.refresh(); assert.equal(c.state.error,'Network unavailable');
+  assert.equal(await c.revalidate(),false);
+  assert.equal(c.state.error,'Network unavailable','background work must not erase a foreground error');
+  fail=false; assert.equal(await c.revalidate(),true); assert.equal(c.state.error,'');
+  c.dispose();
+ }finally{f.close();}
+});
+
+test('a foreground refresh joining background work still reports its failure', async () => {
+ const f=fixture({seed:true}); let hold=false, reject;
+ try {
+  const c=await conversation(f,undefined,'oldest',async()=>{if(hold)return new Promise((_,no)=>{reject=no;});});
+  hold=true; const background=c.revalidate(); const foreground=c.refresh();
+  reject(new Error('Network unavailable')); assert.equal(await background,false); await foreground;
+  assert.equal(c.state.error,'Network unavailable'); c.dispose();
+ }finally{f.close();}
+});
+
+
+test('revalidation without an initial snapshot still exposes a load failure', async () => {
+ const f=fixture();try{
+  const c=new core.ConversationController(f.config,{request:async()=>{throw new Error('Network unavailable');}});
+  assert.equal(await c.revalidate(),false);
+  assert.equal(c.state.error,'Network unavailable'); assert.equal(c.state.view,null); c.dispose();
+ }finally{f.close();}
+});
