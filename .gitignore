@@ -21,3 +21,5 @@ public/themes/
 public/chunks/
 
 /public/widget.css
+
+.DS_Store
