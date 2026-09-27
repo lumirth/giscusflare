@@ -10,12 +10,18 @@ import type { AppEnv } from './types.js';
 
 /** Reuse the bounded JSON read in Hono's validator. */
 export const boundedJSON: MiddlewareHandler<AppEnv> = async (c, next) => {
-  requireCondition(c.req.method === 'POST', 405, 'METHOD', 'Use POST for API operations.');
-  const origin = c.req.header('Origin');
+  requireCondition(['GET','POST'].includes(c.req.method),405,'METHOD','Use GET to read or POST to write.');
+  const origin = c.req.header('Origin') || (c.req.method==='GET'?new URL(c.req.url).origin:undefined);
   const native = origin !== c.get('config').origin;
-  requireCondition(origin && (!native || c.req.path !== '/api/auth/prepare'), 403, 'ORIGIN', 'This operation must originate at the comments service.');
+  requireCondition(origin && (!native || c.req.path !== '/api/v1/auth/prepare'), 403, 'ORIGIN', 'This operation must originate at the comments service.');
   const site = c.req.header('Sec-Fetch-Site');
   requireCondition(native || !site || site === 'same-origin', 403, 'ORIGIN', 'Invalid service request origin.');
+  let value:unknown;
+  if(c.req.method==='GET'){
+    const url=new URL(c.req.url);
+    requireCondition(url.searchParams.size===1&&url.searchParams.has('input'),400,'BAD_INPUT','A read input is required.');
+    try{value=JSON.parse(url.searchParams.get('input')!);}catch{throw new AppError(400,'BAD_INPUT','Invalid read input.');}
+  }else{
   const type = (c.req.header('Content-Type') || '').split(';')[0]?.trim().toLowerCase();
   requireCondition(type === 'application/json', 415, 'MEDIA_TYPE', 'Use application/json.');
   const max = 96 * 1024, declared = c.req.header('Content-Length');
@@ -31,9 +37,9 @@ export const boundedJSON: MiddlewareHandler<AppEnv> = async (c, next) => {
   } finally { await reader.cancel().catch(() => undefined); }
   const bytes = new Uint8Array(count); let offset = 0;
   for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
-  let value: unknown;
   try { value = JSON.parse(new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes)) as unknown; }
   catch { throw new AppError(400, 'BAD_INPUT', 'The request body is not valid JSON.'); }
+  }
   if (native) {
     // Preflight permits known hosts; the actual request also binds that host to
     // this repository and the page in the request. No ambient cookie authority.
@@ -41,9 +47,9 @@ export const boundedJSON: MiddlewareHandler<AppEnv> = async (c, next) => {
     const raw = scope.config && typeof scope.config === 'object' ? scope.config as Record<string, unknown> : scope;
     const repositories = c.get('config').repositories;
     requireCondition(typeof raw.repo === 'string' && typeof raw.origin === 'string', 403, 'ORIGIN', 'A page and repository are required.');
-    const repoPolicy = repositories[raw.repo];
+    const repoPolicy = Object.hasOwn(repositories,raw.repo)?repositories[raw.repo]:c.get('config').openHosting;
     let pageOrigin = ''; try { pageOrigin = new URL(raw.origin).origin; } catch { /* rejected below */ }
-    requireCondition(repoPolicy?.origins.includes(origin) && pageOrigin === origin, 403, 'ORIGIN', 'This page is not allowed to use this repository.');
+    requireCondition((repoPolicy?.origins==='*'||repoPolicy?.origins.includes(origin)) && pageOrigin === origin, 403, 'ORIGIN', 'This page is not allowed to use this repository.');
   }
   c.req.bodyCache.json = Promise.resolve(value);
   const header = c.req.header('Authorization');
@@ -57,7 +63,8 @@ export const boundedJSON: MiddlewareHandler<AppEnv> = async (c, next) => {
 
 /** Validate route input through Standard Schema v1. */
 export function contract<S extends StandardSchemaV1>(schema: S) {
-  return validator('json', async (input: unknown) => {
+  return validator('json', async (input: unknown,c) => {
+    if(c.req.method==='GET')input=await c.req.json();
     const result = await schema['~standard'].validate(input);
     if (result.issues !== undefined) throw new AppError(400, 'BAD_INPUT', 'The request contains missing or invalid fields.');
     return result.value as StandardSchemaV1.InferOutput<S>;

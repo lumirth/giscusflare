@@ -22,7 +22,7 @@ export function createStandardPresentation(
       target.classList.add("giscusflare");
       const previousTheme = target.getAttribute("data-theme"),
         previousDir = target.getAttribute("dir");
-      const model = runtime.controller;
+      const model = runtime;
       let error = "",
         disposed = false,
         drawing = false;
@@ -112,7 +112,7 @@ export function createStandardPresentation(
         runtime.interactions.focus(name);
       };
       function content(c: Comment, reply: boolean) {
-        const t = strings(runtime.config.lang);
+        const t = strings(runtime.appearance.lang);
         return html` ${
           model.editors.has("edit:" + c.id)
             ? composer("edit:" + c.id)
@@ -153,7 +153,7 @@ export function createStandardPresentation(
                 !c.deletedAt && !c.isMinimized
                   ? html`<div class="gsc-reply-footer">
                       <div class="gsc-reply-reactions">${react(c, "top")}</div>
-                      ${c.isAnswer ? html`<span class="color-text-success">${icon("check")}${strings(runtime.config.lang).answered}</span>` : nothing}
+                      ${c.isAnswer ? html`<span class="color-text-success">${icon("check")}${strings(runtime.appearance.lang).answered}</span>` : nothing}
                     </div>`
                   : nothing
               }
@@ -163,10 +163,10 @@ export function createStandardPresentation(
       }
       function comment(c: RootComment) {
         const state = model.state,
-          t = strings(runtime.config.lang),
+          t = strings(runtime.appearance.lang),
           visible = state.visibleReplies.get(c.id) || 5,
-          replies = c.replies.nodes.slice(-visible),
-          hidden = Math.max(0, c.replies.totalCount - replies.length),
+          replies = c.replies.items.slice(-visible),
+          hidden = Math.max(0, c.replies.count - replies.length),
           replying = model.editors.has("reply:" + c.id);
         return html`<article class="gsc-comment" id=${"comment-" + c.id}>
           <div
@@ -181,13 +181,13 @@ export function createStandardPresentation(
                 ? html`<div class="gsc-comment-footer">
                     <div class="gsc-comment-reactions">${react(c, "top")}</div>
                     <div class="gsc-comment-replies-count color-text-secondary">
-                      ${message(runtime.config.lang, "replies", c.replies.totalCount)}
+                      ${message(runtime.appearance.lang, "replies", c.replies.count)}
                     </div>
                   </div>`
                 : nothing
             }
             ${
-              c.replies.totalCount
+              c.replies.count
                 ? html`<div class="gsc-replies color-bg-inset">
                     ${
                       hidden
@@ -205,7 +205,7 @@ export function createStandardPresentation(
                               ?disabled=${state.loadingReplies.has(c.id)}
                               @click=${attempt(() => model.revealReplies(c.id))}
                             >
-                              ${state.loadingReplies.has(c.id) ? t.loadingReplies : message(runtime.config.lang, "showPreviousReplies", hidden)}
+                              ${state.loadingReplies.has(c.id) ? t.loadingReplies : message(runtime.appearance.lang, "showPreviousReplies", hidden)}
                             </button>
                           </div>`
                         : nothing
@@ -214,7 +214,7 @@ export function createStandardPresentation(
                   </div>`
                 : nothing
             }
-            ${replying ? composer("reply:" + c.id) : !state.view?.discussion?.locked && !state.view?.archived && !state.view?.unavailable ? html`<div class="gsc-reply-box color-bg-tertiary"><button type="button" class="form-control color-text-secondary color-border-primary w-full cursor-text rounded border px-2 py-1 text-left focus:border-transparent" @click=${replyTo(c.id)}>${t.writeReply}</button></div>` : nothing}
+            ${replying ? composer("reply:" + c.id) : state.canCompose ? html`<div class="gsc-reply-box color-bg-tertiary"><button type="button" class="form-control color-text-secondary color-border-primary w-full cursor-text rounded border px-2 py-1 text-left focus:border-transparent" @click=${replyTo(c.id)}>${t.writeReply}</button></div>` : nothing}
           </div>
         </article>`;
       }
@@ -231,46 +231,40 @@ export function createStandardPresentation(
         try {
           used = new Set();
           const state = model.state,
-            t = strings(runtime.config.lang),
-            discussion = state.view?.discussion;
-          target.dataset.theme = runtime.config.theme;
-          target.dir = /^(ar|he|fa|ur)(-|$)/.test(runtime.config.lang)
+            t = strings(runtime.appearance.lang),
+            discussion = state.thread;
+          target.dataset.theme = runtime.appearance.theme;
+          target.dir = /^(ar|he|fa|ur)(-|$)/.test(runtime.appearance.lang)
             ? "rtl"
             : "ltr";
-          if (!state.view && !state.error && !error && !runtime.session.error) {
+          if (!state.ready && !state.error && !error && !runtime.authenticationError) {
             render(html`<div class="gsc-loading" role="status">
               <div class="gsc-loading-image" aria-hidden="true"></div>
               <p class="gsc-loading-text">${t.loading}</p>
             </div>`, root);
             return;
           }
-          const writable =
-            !state.view?.archived &&
-            !state.view?.unavailable &&
-            !discussion?.locked;
+          const writable = state.canCompose;
           const total =
-            discussion?.reactionGroups.reduce(
-              (sum, g) => sum + g.users.totalCount,
-              0,
-            ) || 0;
+            Object.values(discussion?.reactions ?? {}).reduce((sum, g) => sum + g.count, 0) || 0;
           const comments = html`<section class="gsc-comments">
             <div class="gsc-header">
               <div class="gsc-left-header">
                 <a
                   class="gsc-comments-count link-primary"
-                  href=${discussion?.url || "https://github.com/" + runtime.config.repo + "/discussions"}
+                  href=${discussion?.url || "https://github.com/" + runtime.page.repo + "/discussions"}
                   target="_blank"
                   rel="noopener noreferrer"
-                  >${message(runtime.config.lang, "comments", discussion?.comments.totalCount || 0)}</a
+                  >${message(runtime.appearance.lang, "comments", discussion?.commentCount || 0)}</a
                 >${
-                  state.comments.some((c) => c.replies.totalCount)
+                  state.comments.some((c) => c.replies.count)
                     ? html`<span>·</span
                         ><span
                           >${message(
-                            runtime.config.lang,
+                            runtime.appearance.lang,
                             "replies",
                             state.comments.reduce(
-                              (n, c) => n + c.replies.totalCount,
+                              (n, c) => n + c.replies.count,
                               0,
                             ),
                             state.nextCursor ? "+" : "",
@@ -290,19 +284,20 @@ export function createStandardPresentation(
               </div>
               <ul class="BtnGroup gsc-right-header" aria-label=${t.commentOrder}>
                 ${(["oldest", "newest"] as const).map((order) => html`<li class=${"BtnGroup-item " + (state.order === order ? "BtnGroup-item--selected" : "")}><button type="button" class="btn" aria-pressed=${String(state.order === order)} @click=${attempt(() => model.setOrder(order))}>${t[order]}</button></li>`)}
+                ${state.profiles.map(profile=>html`<li class="BtnGroup-item"><button type="button" class="btn" aria-pressed=${String(typeof state.order==='object'&&state.order.profile===profile)} @click=${attempt(()=>model.setOrder({profile}))}>${profile}</button></li>`)}
               </ul>
               ${discussion ? menu(discussion) : nothing}
             </div>
             <div class="gsc-timeline">
               ${repeat(state.comments, (c) => c.id, comment)}
             </div>
-            ${state.nextCursor ? html`<div class="gsc-pagination"><button type="button" class="gsc-pagination-button" ?disabled=${state.loading} @click=${attempt(() => model.refresh(true))}>${t.more}</button></div>` : nothing}
+            ${state.nextCursor ? html`<div class="gsc-pagination"><button type="button" class="gsc-pagination-button" ?disabled=${state.loading} @click=${attempt(() => model.loadMore())}>${t.more}</button></div>` : nothing}
           </section>`;
           render(
             html` ${
-              runtime.config.reactionsEnabled
+              runtime.appearance.reactionsEnabled
                 ? html`<section class="gsc-reactions">
-                    <h4 class="gsc-reactions-count"><a class="link-primary" href=${discussion?.url || "https://github.com/" + runtime.config.repo + "/discussions"} target="_blank" rel="noopener noreferrer">${message(runtime.config.lang, "reactions", total)}</a></h4>
+                    <h4 class="gsc-reactions-count"><a class="link-primary" href=${discussion?.url || "https://github.com/" + runtime.page.repo + "/discussions"} target="_blank" rel="noopener noreferrer">${message(runtime.appearance.lang, "reactions", total)}</a></h4>
                     <div class="gsc-discussion-reactions">
                       ${react(discussion || null, "bottom")}
                     </div>
@@ -310,9 +305,9 @@ export function createStandardPresentation(
                 : nothing
             }
             ${
-              error || state.error || runtime.session.error
+              error || state.error || runtime.authenticationError
                 ? html`<div class="flash flash-error" role="alert">
-                    ${error || state.error || runtime.session.error}<button
+                    ${error || state.error || runtime.authenticationError}<button
                       class="ml-2 color-text-link"
                       type="button"
                       @click=${() => {
@@ -325,10 +320,10 @@ export function createStandardPresentation(
                   </div>`
                 : nothing
             }
-            ${!writable ? html`<p class="flash">${state.view?.unavailable ? t.discussionUnavailable : state.view?.archived ? t.archived : t.locked}</p>` : nothing}
-            ${runtime.config.inputPosition === "top" && writable ? composer("main") : nothing}
+            ${!writable ? html`<p class="flash">${state.unavailable ? t.discussionUnavailable : state.archived ? t.archived : t.locked}</p>` : nothing}
+            ${runtime.appearance.inputPosition === "top" && writable ? composer("main") : nothing}
             ${comments}
-            ${runtime.config.inputPosition === "bottom" && writable ? composer("main") : nothing}`,
+            ${runtime.appearance.inputPosition === "bottom" && writable ? composer("main") : nothing}`,
             root,
           );
           sweep(composers, "composer:");
@@ -341,8 +336,7 @@ export function createStandardPresentation(
           drawing = false;
         }
       }
-      const stop = model.subscribe(draw),
-        auth = runtime.session.subscribe(draw);
+      const stop = model.subscribe(draw);
       draw();
       return {
         update() {
@@ -351,7 +345,6 @@ export function createStandardPresentation(
         dispose() {
           disposed = true;
           stop();
-          auth();
           for (const map of [composers, headers, reactions, actions])
             for (const p of map.values()) p.dispose();
           root.remove();

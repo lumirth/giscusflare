@@ -24,13 +24,12 @@ export const createReactions: ReactionFactory = ({ runtime, report }) => {
   let disposeMenu: () => void = () => {};
   let menu: HTMLDetailsElement | undefined;
   const choose = async (reaction: Reaction) => {
-    if (!runtime.session.signedIn) return;
+    if (!runtime.signedIn) return;
     if (menu) menu.open = false;
     const selected =
-      input.subject?.reactionGroups.find((g) => g.content === reaction)
-        ?.viewerHasReacted || false;
+      input.subject?.reactions[reaction]?.selected || false;
     try {
-      await runtime.controller.setReaction(
+      await runtime.setReaction(
         input.subject?.id || "discussion",
         reaction,
         !selected,
@@ -40,20 +39,20 @@ export const createReactions: ReactionFactory = ({ runtime, report }) => {
     }
   };
   const draw = () => {
-    const t = strings(runtime.config.lang),
-      groups = input.subject?.reactionGroups || [],
-      signedIn = runtime.session.signedIn;
+    const t = strings(runtime.appearance.lang),
+      groups = Object.entries(input.subject?.reactions ?? {}).map(([content,value]) => ({content:content as Reaction,...value})),
+      signedIn = runtime.signedIn;
     // Treat the translation's link marker as a slot; never insert translation HTML.
     const [beforeSignIn = "", signInLabel = t.signIn, afterSignIn = ""] =
-      message(runtime.config.lang, "signInToAddYourReaction").split(/<a>|<\/a>/);
+      message(runtime.appearance.lang, "signInToAddYourReaction").split(/<a>|<\/a>/);
     const id = input.subject?.id || "discussion",
-      operation = runtime.controller.operationFor("reaction", id);
+      operation = runtime.operationFor("reaction", id);
     const blocked =
       !signedIn ||
       Boolean(
-        runtime.controller.state.view?.archived ||
-        runtime.controller.state.view?.unavailable ||
-        runtime.controller.state.view?.discussion?.locked,
+        runtime.state.archived ||
+        runtime.state.unavailable ||
+        runtime.state.thread?.locked,
       );
     render(
       html` <details class="gsc-reactions-menu">
@@ -68,7 +67,7 @@ export const createReactions: ReactionFactory = ({ runtime, report }) => {
             class=${"color-border-primary color-text-secondary color-bg-overlay gsc-reactions-popover text-sm open left " + input.position}
           >
             <p class=${signedIn ? "m-2 overflow-hidden text-ellipsis whitespace-nowrap" : "m-2"}>
-              ${signedIn ? (current ? reactionLabel(t, current) : message(runtime.config.lang, "pickYourReaction")) : html`${beforeSignIn}<button type="button" class="color-text-link hover:underline" @click=${() => runtime.session.signIn().catch(report)}>${signInLabel}</button>${afterSignIn}`}
+              ${signedIn ? (current ? reactionLabel(t, current) : message(runtime.appearance.lang, "pickYourReaction")) : html`${beforeSignIn}<button type="button" class="color-text-link hover:underline" @click=${() => runtime.signIn().catch(report)}>${signInLabel}</button>${afterSignIn}`}
             </p>
             <div class="color-border-primary my-2 border-t"></div>
             <div class="m-2 gsc-emoji-grid">
@@ -76,7 +75,7 @@ export const createReactions: ReactionFactory = ({ runtime, report }) => {
                 (reaction) =>
                   html` <button
                     type="button"
-                    class=${"gsc-emoji-button " + (groups.find((g) => g.content === reaction)?.viewerHasReacted ? "has-reacted color-bg-info color-border-tertiary" : "")}
+                    class=${"gsc-emoji-button " + (groups.find((g) => g.content === reaction)?.selected ? "has-reacted color-bg-info color-border-tertiary" : "")}
                     aria-label=${reactionLabel(t, reaction)}
                     ?disabled=${blocked}
                     @click=${() => choose(reaction)}
@@ -105,27 +104,27 @@ export const createReactions: ReactionFactory = ({ runtime, report }) => {
         </details>
         <div class="gsc-direct-reaction-buttons">
           ${repeat(
-            groups.filter((g) => g.users.totalCount > 0),
+            groups.filter((g) => g.count > 0),
             (g) => g.content,
             (g) =>
               html` <button
                 type="button"
-                class=${"gsc-direct-reaction-button gsc-social-reaction-summary-item " + (g.viewerHasReacted ? "has-reacted" : "")}
-                aria-label=${reactionLabel(t, g.content) + ": " + g.users.totalCount}
+                class=${"gsc-direct-reaction-button gsc-social-reaction-summary-item " + (g.selected ? "has-reacted" : "")}
+                aria-label=${reactionLabel(t, g.content) + ": " + g.count}
                 title=${reactionLabel(t, g.content)}
-                aria-pressed=${String(g.viewerHasReacted)}
+                aria-pressed=${String(g.selected)}
                 ?disabled=${blocked}
                 @click=${() => choose(g.content)}
               >
                 <span class="gsc-direct-reaction-button-emoji"
                   >${reactionEmoji[g.content]}</span
                 ><span class="gsc-social-reaction-summary-item-count"
-                  >${g.users.totalCount}</span
+                  >${g.count}</span
                 >
               </button>`,
           )}
         </div>
-        ${operation?.status === "uncertain" ? html`<button class="color-text-link text-xs" @click=${() => runtime.controller.retryReaction(id).catch(report)}>${t.retry}</button>` : nothing}`,
+        ${operation?.status === "uncertain" ? html`<button class="color-text-link text-xs" @click=${() => runtime.retryReaction(id).catch(report)}>${t.retry}</button>` : nothing}`,
       element,
     );
     if (!menu) {

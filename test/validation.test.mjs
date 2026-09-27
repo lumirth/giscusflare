@@ -20,7 +20,7 @@ test('strict input schemas reject unknown fields while GitHub schemas tolerate a
   for(const property of ['isPrivate','isArchived','id']){const broken={...meta};delete broken[property];assert.throws(()=>parse(g.Repository,broken,'upstream'),e=>e.status===502&&e.code==='UPSTREAM_SCHEMA');}
 });
 test('configuration validates every repository policy and does not coerce case-colliding keys',()=>{
-  for(const repositories of [[],{}, {'Example/Comments':{origins:[BLOG],category:'Announcements'}},{[REPO]:{origins:['*'],category:'Announcements'}},{[REPO]:{origins:[BLOG],category:'Announcements',defaultCommentOrder:'latest'}},{[REPO]:{origins:[BLOG],category:'Announcements',typo:true}}])assert.throws(()=>parse(c.RepositoryPolicies,repositories,'config'));
+  for(const repositories of [[], {'Example/Comments':{origins:[BLOG],category:'Announcements'}},{[REPO]:{origins:['*'],category:'Announcements'}},{[REPO]:{origins:[BLOG],category:'Announcements',defaultCommentOrder:'latest'}},{[REPO]:{origins:[BLOG],category:'Announcements',typo:true}}])assert.throws(()=>parse(c.RepositoryPolicies,repositories,'config'));
   assert.equal(parse(c.RepositoryPolicies,{[REPO]:{origins:[BLOG],category:'Announcements'}})[REPO].defaultCommentOrder,'oldest');
 });
 test('URLs reject credentials, unsafe schemes, external backlinks, and control characters',()=>{
@@ -29,30 +29,30 @@ test('URLs reject credentials, unsafe schemes, external backlinks, and control c
   assert.throws(()=>parse(r.Widget,{repo:REPO,origin:BLOG,term:'article\nrepo:evil'}));
 });
 test('comment length is constrained in bytes as well as characters',()=>{
-  const f=fixture();assert.doesNotThrow(()=>parse(r.CommentRequest,{config:f.config,body:'a'.repeat(60000),key:'k'.repeat(32)}));
-  assert.throws(()=>parse(r.CommentRequest,{config:f.config,body:'😀'.repeat(16000),key:'k'.repeat(32)}));
-  assert.throws(()=>parse(r.CommentRequest,{config:f.config,body:'   ',key:'k'.repeat(32)}));f.close();
+  const f=fixture();assert.doesNotThrow(()=>parse(r.CommentRequest,{config:f.config,body:'a'.repeat(60000),key:Date.now()+'.'+'k'.repeat(32)}));
+  assert.throws(()=>parse(r.CommentRequest,{config:f.config,body:'😀'.repeat(16000),key:Date.now()+'.'+'k'.repeat(32)}));
+  assert.throws(()=>parse(r.CommentRequest,{config:f.config,body:'   ',key:Date.now()+'.'+'k'.repeat(32)}));f.close();
 });
 test('stored records and RPC arguments must match their schemas',()=>{
   assert.throws(()=>parse(stored.Mapping,{version:1,number:1},'storage'),e=>e.code==='STORAGE');
   assert.throws(()=>parse(stored.RateWindow,{count:'1',resets:1000},'storage'));
-  const f=fixture();assert.throws(()=>parse(rpc.CommentCall,{request:{config:f.config,body:'text',key:'k'.repeat(32)},session:'bad'}));f.close();
+  const f=fixture();assert.throws(()=>parse(rpc.CommentCall,{request:{config:f.config,body:'text',key:Date.now()+'.'+'k'.repeat(32)},session:'bad'}));f.close();
 });
 test('Hono rejects invalid route input before calling the repository',async()=>{
-  const f=fixture();for(const body of [{config:{...f.config,number:'1'}},{config:f.config,order:'latest'},{config:f.config,unknown:1}])await expectJSON(await f.request('/api/thread',body),400);
+  const f=fixture();for(const body of [{config:{...f.config,number:'1'}},{config:f.config,order:'latest'},{config:f.config,unknown:1}])await expectJSON(await f.request('/api/v1/thread',body),400);
   assert.equal(f.counts.rpc.length,0);f.close();
 });
 test('streamed size limit and Content-Type are enforced before the Standard Schema validator',async()=>{
-  const f=fixture();await expectJSON(await f.request('/api/thread','{}','',{'Content-Type':'text/plain'}),415);
-  await expectJSON(await f.request('/api/thread','{'),400);
-  await expectJSON(await f.request('/api/thread','{"x":"'+'x'.repeat(100000)+'"}'),413);
-  const request=new Request(f.env.PUBLIC_ORIGIN+'/api/thread',{method:'POST',headers:{Origin:f.env.PUBLIC_ORIGIN,'Content-Type':'application/json'},body:new ReadableStream({start(c){c.enqueue(new TextEncoder().encode('x'.repeat(97000)));c.enqueue(new TextEncoder().encode('x'.repeat(3000)));c.close();}}),duplex:'half'});
+  const f=fixture();await expectJSON(await f.request('/api/v1/thread','{}','',{'Content-Type':'text/plain'}),415);
+  await expectJSON(await f.request('/api/v1/thread','{'),400);
+  await expectJSON(await f.request('/api/v1/thread','{"x":"'+'x'.repeat(100000)+'"}'),413);
+  const request=new Request(f.env.PUBLIC_ORIGIN+'/api/v1/thread',{method:'POST',headers:{Origin:f.env.PUBLIC_ORIGIN,'Content-Type':'application/json'},body:new ReadableStream({start(c){c.enqueue(new TextEncoder().encode('x'.repeat(97000)));c.enqueue(new TextEncoder().encode('x'.repeat(3000)));c.close();}}),duplex:'half'});
   await expectJSON(await core.app.fetch(request,f.env),413);assert.equal(f.counts.rpc.length,0);f.close();
 });
 test('invalid stored session returns 401 without exposing credentials',async()=>{
   const f=fixture(),cap=await f.session();const id=await core.cryptography.hash(cap);
   f.sql.exec('UPDATE records_v2 SET value=? WHERE key=?',JSON.stringify({version:2,ciphertext:'malformed'}),'session:'+id);
-  const output=await expectJSON(await f.request('/api/thread',{config:f.config},cap),401);assert.ok(!JSON.stringify(output).includes('malformed'));f.close();
+  const output=await expectJSON(await f.request('/api/v1/thread',{config:f.config},cap),401);assert.ok(!JSON.stringify(output).includes('malformed'));f.close();
 });
 
 // Removed options fail validation instead of silently selecting a voting mode.

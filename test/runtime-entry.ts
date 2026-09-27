@@ -1,5 +1,6 @@
 /** workerd tests with simulated GitHub responses. */
 import { DurableObject } from 'cloudflare:workers';
+import { serializeRead, readResponse } from '../src/worker/read-response.js';
 import { app } from '../src/worker/app.js';
 import { repositoryClass } from '../src/worker/repository.js';
 import { FakeGitHub } from './github-fixture.mjs';
@@ -7,6 +8,7 @@ import { FakeGitHub } from './github-fixture.mjs';
 const github = new FakeGitHub({ seed: true });
 export class Repository extends repositoryClass(request => github.fetch(request)) {}
 export class Probe extends DurableObject {
+  serializedRead() { return serializeRead(new Response('hello🌿'.repeat(32768), { status: 202, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'X-Giscusflare-Expires': '2000000000000', 'Cache-Control': 'public, max-age=60' } })); }
   increment(): number {
     const sql = this.ctx.storage.sql;
     sql.exec('CREATE TABLE IF NOT EXISTS probe (id INTEGER PRIMARY KEY, counter INTEGER NOT NULL)');
@@ -17,6 +19,10 @@ export class Probe extends DurableObject {
 export default {
   async fetch(request: Request, env: any, ctx: any): Promise<Response> {
     const url = new URL(request.url);
+    if (url.pathname === '/__test/serialized-read') {
+      const stub = env.PROBE.get(env.PROBE.idFromName('serialized-read'));
+      return readResponse(await stub.serializedRead());
+    }
     if (url.pathname === '/__test/probe') {
       const stub = env.PROBE.get(env.PROBE.idFromName('persistent-probe'));
       return Response.json({ counter: await stub.increment() });

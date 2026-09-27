@@ -1,27 +1,25 @@
-# Bounded acceptance — 2026-09-26
+# Verification evidence
 
-This is the historical bounded pass that allowed Kukas presentation work to proceed. The user subsequently approved and deployed Kukas comments; see [current status](STATUS.md). These measurements remain dated staging evidence, not a declaration of complete browser coverage or Cloudflare Free-plan readiness.
+Recorded checks and measurements from September 26, 2026. See [Testing](../TESTING.md) to repeat them and [Release checklist](IMPLEMENTATION.md) for remaining work.
 
-## Checked
+## Automated checks
 
-- Real GitHub App sign-in and same-window return, writing, Preview/Write, grouped native undo/redo, posting and author editing.
-- Existing retained fixture: Markdown emphasis, code/copy controls, tasks, table, math, long URLs and nine-reply folding. No new corpus was needed.
-- 390px desktop WebKit: zero document overflow and 8px host gutters after fixing the native CSS scoper. The summary and sorting controls now wrap intentionally.
-- Core: 89 automated tests passing. The previous 11 workerd checks remain applicable; runtime service behavior did not change in this pass.
-- Consumer TypeScript build and a check of the shipped Kukas import graph: it reaches no standard-presentation or native-mount modules.
+`npm run check:release` checks TypeScript, builds the distributable files, runs Node and workerd tests, and checks package contents. The tests cover request validation, origin policies, conversation state, rendering, and mutation behavior. Mocked GitHub responses cannot establish which operations GitHub permits for a real App user token.
 
-The separate Kukas browser pass covers Toast/undo, reaction picker, reply expansion and focus, Preview/Write with grouped undo, light/dark surfaces and footer wrapping. Kukas presentation review subsequently completed; the user approved production activation.
+## Browser observations
 
-## Resource sample
+A bounded desktop WebKit pass on September 26, 2026 exercised GitHub sign-in, the return to the host page, writing, Preview/Write, posting, author editing, and grouped native undo and redo. A retained discussion supplied Markdown emphasis, code, tasks, a table, math, long URLs, and nine replies.
 
-[Sanitized samples](evidence/bounded-worker-samples.json) retain only operation paths, execution model, CPU, wall time and outcome. No headers, credentials, query strings or user identifiers are retained. These are an interactive staging sample, not a load test or percentile estimate.
+At a narrow viewport, the native widget had no document overflow and preserved the host's 8px gutter. The pass also checked reply folding, reaction controls, and several light and dark themes. [Presentation evidence](PRESENTATION.md) has the measurements and screenshots.
 
-Most sampled stateless requests used 1–9ms CPU. Outliers reached 12–14ms, including thread, replies and authentication-window requests. Durable Object operations used 0–10ms. Multi-second wall times include upstream network waits and are not CPU time. Cold starts may contribute, but this sample does not identify isolates and cannot establish that explanation.
+Physical iOS, Firefox, the full theme and locale matrix, optional authentication settings, and real-token moderation remain untested.
 
-Cloudflare's [Workers limits](https://developers.cloudflare.com/workers/platform/limits/) list 10ms CPU per Free-plan invocation. The observed outliers therefore leave Free-plan qualification open. Before claiming that support, profile those paths and repeat a bounded cold/warm sample on the intended configuration. The later production rollout does not resolve that measurement gap.
+## Worker resource sample
 
-The build measured during this pass reported approximately 28KiB gzip for the Worker, 52KiB for the standard widget's initial JavaScript graph, and 664KiB including lazy math. These are build estimates, not transferred-byte measurements; CSS and fonts are separate. Math remains a configurable rendering capability and lazy import. No polling was enabled for this pass.
+[Sanitized samples](evidence/bounded-worker-samples.json) contain operation paths, execution model, CPU time, wall time, and outcome. They omit headers, credentials, query strings, and user identifiers. The sample came from interactive staging use, not a load test.
 
-## Remaining qualification
+Most sampled stateless requests used 1 to 9 ms of CPU. Some thread, replies, and authentication-window requests used 12 to 14 ms. Durable Object operations used 0 to 10 ms. Multi-second wall times included network waits. The sample does not identify isolates, so it cannot establish whether cold starts caused the higher CPU times.
 
-The actionable checklist lives in [broader release work](IMPLEMENTATION.md). Physical-device/browser, moderation, optional-authentication and Free-plan coverage remain separate from the completed Kukas rollout. Preserve the limits above when reporting confidence; no additional qualification was performed during documentation closeout.
+These outliers exceed the documented 10 ms Workers Free CPU allowance. Profile the affected paths and repeat cold and warm requests on the Free plan. [Free-tier estimates](../FREE-TIER.md) cover the other quotas.
+
+The sampled build reported about 28 KiB gzip for the Worker, 52 KiB for the standard widget's initial JavaScript graph, and 664 KiB with lazy math included. These are historical build sizes, not measured transfers. CSS and fonts are separate. Use the current build's `dist/sizes.json` for current sizes.

@@ -15,16 +15,22 @@ export const GRAPH = {
   scope: 'repository { id nameWithOwner isPrivate } category { id name }',
   page: 'totalCount pageInfo { startCursor endCursor hasNextPage hasPreviousPage }',
 };
-export const COMMENT = `isAnswer viewerCanMarkAsAnswer viewerCanUnmarkAsAnswer id body bodyHTML createdAt lastEditedAt url authorAssociation viewerDidAuthor viewerCanUpdate viewerCanDelete viewerCanMinimize viewerCanUnminimize deletedAt isMinimized minimizedReason author { login avatarUrl url } replyTo { id } ${GRAPH.reactions}`;
-export const SUMMARY = `id number title body bodyHTML url locked closed viewerCanClose viewerCanReopen viewerCanDelete viewerCanUpdate answer { id } ${GRAPH.scope} ${GRAPH.reactions}`;
+export const COMMENT = `isAnswer id body bodyHTML createdAt lastEditedAt url authorAssociation viewerDidAuthor viewerCanUpdate viewerCanDelete viewerCanMinimize viewerCanUnminimize deletedAt isMinimized minimizedReason author { login avatarUrl url } replyTo { id } ${GRAPH.reactions}`;
+export const IDENTITY = `id number ${GRAPH.scope}`;
+export const ACCESS = `${IDENTITY} locked`;
+export const TARGET_COMMENT = `id viewerCanUpdate viewerCanDelete viewerCanMinimize viewerCanUnminimize replyTo { id } discussion { ${IDENTITY} }`;
+export const SUMMARY = `id number title body bodyHTML url locked closed answer { id } ${GRAPH.scope} ${GRAPH.reactions}`;
+const REPOSITORY = 'id nameWithOwner isPrivate isArchived discussionCategories(first:100) { nodes { id name isAnswerable } }';
 export const QUERIES = {
   repository: 'query Repository($owner:String!,$name:String!) { repository(owner:$owner,name:$name) { id nameWithOwner isPrivate isArchived discussionCategories(first:100) { nodes { id name isAnswerable } } } }',
-  thread: `query Thread($owner:String!,$name:String!,$number:Int!,$first:Int,$last:Int,$after:String,$before:String,$replyPrefetch:Int!) { repository(owner:$owner,name:$name) { isPrivate viewerPermission discussion(number:$number) { ${SUMMARY} comments(first:$first,last:$last,after:$after,before:$before) { ${GRAPH.page} nodes { ${COMMENT} replies(last:$replyPrefetch) { ${GRAPH.page} nodes { ${COMMENT} } } } } } } }`,
-  search: `query FindDiscussion($query:String!) { search(type:DISCUSSION,query:$query,first:10) { discussionCount nodes { ... on Discussion { ${SUMMARY} } } } }`,
-  target: `query Target($id:ID!) { node(id:$id) { __typename ... on Discussion { ${SUMMARY} } ... on DiscussionComment { ${COMMENT} discussion { ${SUMMARY} } } } }`,
-  replies: `query Replies($id:ID!,$before:String) { node(id:$id) { ... on DiscussionComment { id discussion { ${SUMMARY} } replies(last:50,before:$before) { ${GRAPH.page} nodes { ${COMMENT} } } } } }`,
+  thread: `query Thread($owner:String!,$name:String!,$number:Int!,$first:Int,$last:Int,$after:String,$before:String,$replyPrefetch:Int!) { repository(owner:$owner,name:$name) { isPrivate discussion(number:$number) { ${SUMMARY} comments(first:$first,last:$last,after:$after,before:$before) { ${GRAPH.page} nodes { ${COMMENT} replies(last:$replyPrefetch) { ${GRAPH.page} nodes { ${COMMENT} } } } } } } }`,
+  search: `query FindDiscussion($query:String!,$strict:Boolean!) { search(type:DISCUSSION,query:$query,first:10) { nodes { ... on Discussion { ${IDENTITY} body @include(if:$strict) } } } }`,
+  access: `query DiscussionAccess($owner:String!,$name:String!,$number:Int!) { repository(owner:$owner,name:$name) { isPrivate discussion(number:$number) { ${ACCESS} } } }`,
+  target: `query Target($id:ID!) { node(id:$id) { __typename ... on Discussion { ${IDENTITY} } ... on DiscussionComment { ${TARGET_COMMENT} } } }`,
+  commentRefresh: `query CommentRefresh($id:ID!) { node(id:$id) { ... on DiscussionComment { ${COMMENT} discussion { ${IDENTITY} } } } }`,
+  replies: `query Replies($id:ID!,$before:String) { node(id:$id) { ... on DiscussionComment { id replyTo { id } discussion { ${IDENTITY} } replies(last:50,before:$before) { ${GRAPH.page} nodes { ${COMMENT} } } } } }`,
 };
-async function limitedText(response: Response, max = 4 * 1024 * 1024): Promise<string> {
+export async function limitedText(response: Response, max = 4 * 1024 * 1024): Promise<string> {
   const reader = response.body?.getReader();
   requireCondition(reader, 502, 'UPSTREAM', 'GitHub returned an empty response.');
   const chunks: Uint8Array[] = []; let length = 0;
@@ -43,15 +49,22 @@ async function limitedText(response: Response, max = 4 * 1024 * 1024): Promise<s
   catch { throw new AppError(502, 'UPSTREAM_SCHEMA', 'GitHub returned invalid text.'); }
 }
 export class GitHub {
+  #deadlines = new WeakMap<Response, ReturnType<typeof setTimeout>>();
+  async #text(response:Response,max?:number):Promise<string>{
+    try{return await limitedText(response,max);}
+    finally{const timer=this.#deadlines.get(response);if(timer!==undefined)clearTimeout(timer);this.#deadlines.delete(response);}
+  }
   constructor(readonly repo: string, readonly config: PublicConfig, readonly keys: SecretConfig, readonly store: Store, readonly transport: FetchLike = request => fetch(request)) {}
   #scope(): { owner: string; name: string } { const [owner, name] = this.repo.split('/'); return { owner: owner!, name: name! }; }
   async #response(path: string, token: string, method: 'GET' | 'POST' | 'PUT' | 'DELETE', body?: unknown, text = false): Promise<Response> {
-    const headers = new Headers({ Accept: text ? 'text/html' : 'application/vnd.github+json', Authorization: 'Bearer ' + token, 'User-Agent': 'giscusflare/0.1', 'X-GitHub-Api-Version': '2022-11-28' });
+    const headers = new Headers({ Accept: text ? 'text/html' : 'application/vnd.github+json', Authorization: 'Bearer ' + token, 'User-Agent': 'giscusflare/1', 'X-GitHub-Api-Version': '2022-11-28' });
     if (body !== undefined) headers.set('Content-Type', 'application/json');
     let response: Response;
-    try { response = await this.transport(new Request('https://api.github.com' + path, { method, headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }), redirect: 'manual', signal: AbortSignal.timeout(15000) })); }
-    catch { throw new AppError(502, 'WRITE_UNCERTAIN', 'The connection to GitHub ended before a response arrived.'); }
-    if (response.ok) return response;
+    const abort = new AbortController(), timer = setTimeout(() => abort.abort(), 15000);
+    try { response = await this.transport(new Request('https://api.github.com' + path, { method, headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }), redirect: 'manual', signal: abort.signal })); }
+    catch { clearTimeout(timer); throw new AppError(502, 'WRITE_UNCERTAIN', 'The connection to GitHub ended before a response arrived.'); }
+    if (response.ok) { this.#deadlines.set(response,timer); return response; }
+    clearTimeout(timer);
     await response.body?.cancel().catch(() => undefined);
     if (response.status === 401) throw new AppError(401, 'GITHUB_AUTH', 'GitHub authorization is no longer valid. Sign in again.');
     if (response.status === 429 || (response.status === 403 && (response.headers.get('X-RateLimit-Remaining') === '0' || response.headers.has('Retry-After')))) {
@@ -65,7 +78,7 @@ export class GitHub {
   }
   async #rest<S extends Schema>(schema: S, path: string, token: string, method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET', body?: unknown): Promise<v.InferOutput<S>> {
     const response = await this.#response(path, token, method, body);
-    return parse(schema, parseJSON(await limitedText(response), 'upstream'), 'upstream');
+    return parse(schema, parseJSON(await this.#text(response), 'upstream'), 'upstream');
   }
   async graph<S extends Schema>(schema: S, query: string, variables: Record<string, unknown>, token: string): Promise<v.InferOutput<S>> {
     const envelope = await this.#rest(G.GraphQLEnvelope, '/graphql', token, 'POST', { query, variables });
@@ -81,31 +94,11 @@ export class GitHub {
     }
     return parse(schema, envelope.data, 'upstream');
   }
-  async authority(token:string):Promise<{permission:string|null;organization:boolean}> {
-    const result=await this.graph(v.object({repository:v.nullable(v.object({viewerPermission:v.nullable(v.string()),owner:v.object({__typename:v.string()})}))}),
-      'query Authority($owner:String!,$name:String!){repository(owner:$owner,name:$name){viewerPermission owner{__typename}}}',this.#scope(),token);
-    requireCondition(result.repository,403,'PERMISSION','This repository is not accessible.');
-    return {permission:result.repository.viewerPermission,organization:result.repository.owner.__typename==='Organization'};
-  }
-  async discussionAction(id:string,action:string,token:string,body='',title=''):Promise<void> {
-    const specs:Record<string,{name:string;type:string;input:Record<string,unknown>}>={
-      lock:{name:'lockLockable',type:'LockLockableInput',input:{lockableId:id}},
-      unlock:{name:'unlockLockable',type:'UnlockLockableInput',input:{lockableId:id}},
-      close:{name:'closeDiscussion',type:'CloseDiscussionInput',input:{discussionId:id}},
-      reopen:{name:'reopenDiscussion',type:'ReopenDiscussionInput',input:{discussionId:id}},
-      answer:{name:'markDiscussionCommentAsAnswer',type:'MarkDiscussionCommentAsAnswerInput',input:{id}},
-      unanswer:{name:'unmarkDiscussionCommentAsAnswer',type:'UnmarkDiscussionCommentAsAnswerInput',input:{id}},
-      delete:{name:'deleteDiscussion',type:'DeleteDiscussionInput',input:{id}},
-      edit:{name:'updateDiscussion',type:'UpdateDiscussionInput',input:{discussionId:id,body,title}},
-    };
-    const spec=specs[action];requireCondition(spec,400,'BAD_INPUT','Unknown discussion action.');
-    await this.graph(v.object({[spec.name]:v.object({clientMutationId:v.nullable(v.string())})}),
-      `mutation DiscussionAction($input:${spec.type}!){${spec.name}(input:$input){clientMutationId}}`,{input:spec.input},token);
-  }
-  async block(login:string,organization:boolean,add:boolean,token:string):Promise<void> {
-    const owner=this.#scope().owner;
-    const path=organization?`/orgs/${owner}/blocks/${encodeURIComponent(login)}`:`/user/blocks/${encodeURIComponent(login)}`;
-    const response=await this.#response(path,token,add?'PUT':'DELETE');await response.body?.cancel();
+  /** Ranking handles field-level GraphQL errors without confusing them with deletions. */
+  async rankingGraph(query:string,variables:Record<string,unknown>,token:string):Promise<unknown>{
+    const payload=await this.#rest(G.GraphQLEnvelope,'/graphql',token,'POST',{query,variables});
+    if(payload.errors?.some(error=>error.type==='RATE_LIMITED'))throw new AppError(429,'RATE_LIMIT','GitHub rate limit reached.',60);
+    return payload;
   }
   async installation(): Promise<string> {
     return this.store.lock('installation', async () => {
@@ -135,11 +128,13 @@ export class GitHub {
       throw error;
     }
   }
-  async find(config: Widget, category: string, token: string): Promise<G.DiscussionSummary[]> {
+  async find(config: Widget, category: string, token: string): Promise<G.DiscussionIdentity[]> {
     const term = config.strict ? await sha1(config.term) : config.term;
     const query = `repo:${this.repo} category:${JSON.stringify(category)} ${config.strict ? 'in:body' : 'in:title'} ${JSON.stringify(term)} sort:created-asc`;
-    const result = await this.graph(G.SearchResponse, QUERIES.search, { query }, token);
-    return result.search.nodes.filter((node): node is G.DiscussionSummary => node !== null).filter(d => !config.strict || d.body.includes(term));
+    const match = v.object({ ...G.DiscussionIdentity.entries, body: config.strict ? G.DiscussionSummary.entries.body : v.optional(G.DiscussionSummary.entries.body) });
+    const schema = v.object({ search: v.object({ nodes: v.pipe(v.array(v.nullable(match)), v.maxLength(10)) }) });
+    const result = await this.graph(schema, QUERIES.search, { query, strict: config.strict }, token);
+    return result.search.nodes.filter(node => node !== null).filter(d => !config.strict || d.body!.includes(term));
   }
   /** Batch minimal summaries. Search is only used until a mapping is known. */
   async counts(pages: { term: string; number: number | null }[], strict: boolean, category: string, token: string): Promise<(G.DiscussionCount | null)[]> {
@@ -175,15 +170,37 @@ export class GitHub {
     }
     return output;
   }
+  async access(number: number, token: string): Promise<G.DiscussionAccess | null> {
+    const data = await this.graph(G.DiscussionAccessResponse, QUERIES.access, { ...this.#scope(), number }, token);
+    requireCondition(data.repository && !data.repository.isPrivate, 403, 'PUBLIC_ONLY', 'The configured repository must remain public.');
+    return data.repository.discussion;
+  }
   async thread(number: number, order: 'oldest' | 'newest', cursor: string, token: string, includeComments=true, replyPrefetch=5): Promise<G.Discussion | null> {
     const variables = { ...this.#scope(), number, replyPrefetch, first: order === 'oldest' ? (includeComments?20:0) : null, last: order === 'newest' ? (includeComments?20:0) : null, after: order === 'oldest' && cursor ? cursor : null, before: order === 'newest' && cursor ? cursor : null };
     const data = await this.graph(G.ThreadResponse, QUERIES.thread, variables, token);
     requireCondition(data.repository && !data.repository.isPrivate, 403, 'PUBLIC_ONLY', 'The configured repository must remain public.');
-    return data.repository.discussion ? {...data.repository.discussion,viewerCanLock:['ADMIN','MAINTAIN','WRITE','TRIAGE'].includes(data.repository.viewerPermission||'')} : null;
+    return data.repository.discussion;
+  }
+  /** The installation credential validates scope and reads the page in one call. */
+  async combinedThread(number:number, order:'oldest'|'newest',cursor:string,token:string,replyPrefetch:number,includeComments=true){
+    const query=QUERIES.thread.replace('query Thread(', 'query CombinedThread(').replace(' { isPrivate discussion(number:',` { ${REPOSITORY} discussion(number:`);
+    const data=await this.graph(G.CombinedThreadResponse,query,{...this.#scope(),number,replyPrefetch,first:order==='oldest'?(includeComments?20:0):null,last:order==='newest'?(includeComments?20:0):null,after:order==='oldest'&&cursor?cursor:null,before:order==='newest'&&cursor?cursor:null},token);
+    requireCondition(data.repository,404,'NOT_FOUND','The repository is not accessible to this GitHub App.');
+    return data.repository;
+  }
+  async hydrate(ids:string[],token:string,replyPrefetch:number):Promise<(G.RootComment & {discussion:G.DiscussionIdentity}|null)[]>{
+    const schema=v.object({nodes:v.array(v.nullable(v.object({...G.RootComment.entries,discussion:G.DiscussionIdentity})))});
+    const data=await this.graph(schema,`query Hydrate($ids:[ID!]!,$replyPrefetch:Int!){nodes(ids:$ids){... on DiscussionComment{${COMMENT} discussion{${IDENTITY}} replies(last:$replyPrefetch){${GRAPH.page} nodes{${COMMENT}}}}}}`,{ids,replyPrefetch},token);
+    requireCondition(data.nodes.length===ids.length,502,'UPSTREAM_SCHEMA','GitHub omitted a requested comment.');return data.nodes;
   }
   async target(id: string, token: string): Promise<G.Target> {
     const result = await this.graph(G.TargetResponse, QUERIES.target, { id }, token);
     requireCondition(result.node, 404, 'NOT_FOUND', 'Comment or discussion not found.'); return result.node;
+  }
+  async commentRefresh(id: string, token: string): Promise<G.CommentRefresh> {
+    const result = await this.graph(G.CommentRefreshResponse, QUERIES.commentRefresh, { id }, token);
+    requireCondition(result.node, 404, 'NOT_FOUND', 'Comment not found.');
+    return result.node;
   }
   async replies(parentId: string, cursor: string, token: string): Promise<v.InferOutput<typeof G.RepliesResponse>['node']> {
     const result = await this.graph(G.RepliesResponse, QUERIES.replies, { id: parentId, before: cursor || null }, token);
@@ -218,21 +235,24 @@ export class GitHub {
   }
   async markdown(text: string, token: string): Promise<string> {
     const response = await this.#response('/markdown', token, 'POST', { mode: 'gfm', context: this.repo, text }, true);
-    return limitedText(response);
+    return this.#text(response);
   }
   async exchange(parameters: Record<string, string>): Promise<G.OAuthToken> {
-    let response: Response;
+    const abort = new AbortController(), timer = setTimeout(() => abort.abort(), 15000);
     try {
-      response = await this.transport(new Request('https://github.com/login/oauth/access_token', {
-        method: 'POST', headers: { Accept: 'application/json', 'User-Agent': 'giscusflare/0.1' },
-        body: new URLSearchParams({ client_id: this.config.clientId, client_secret: this.keys.clientSecret, ...parameters }),
-        redirect: 'manual', signal: AbortSignal.timeout(15000),
+      const response = await this.transport(new Request('https://github.com/login/oauth/access_token', {
+        method:'POST',headers:{Accept:'application/json','User-Agent':'giscusflare/1'},
+        body:new URLSearchParams({client_id:this.config.clientId,client_secret:this.keys.clientSecret,...parameters}),
+        redirect:'manual',signal:abort.signal,
       }));
-    } catch { throw new AppError(502, 'OAUTH', 'GitHub sign-in failed. Start again.'); }
-    requireCondition(response.ok, 502, 'OAUTH', 'GitHub sign-in could not be completed.');
-    const raw = parseJSON(await limitedText(response, 16384), 'upstream');
-    if (v.is(v.object({ error: v.string() }), raw)) throw new AppError(401, 'GITHUB_AUTH', 'GitHub did not authorize this session. Sign in again.');
-    return parse(G.OAuthToken, raw, 'upstream');
+      if(!response.ok){await response.body?.cancel();throw new AppError(502,'OAUTH','GitHub sign-in could not be completed.');}
+      const raw=parseJSON(await limitedText(response,16384),'upstream');
+      if(v.is(v.object({error:v.string()}),raw))throw new AppError(401,'GITHUB_AUTH','GitHub did not authorize this session. Sign in again.');
+      return parse(G.OAuthToken,raw,'upstream');
+    }catch(error){
+      if(error instanceof AppError)throw error;
+      throw new AppError(502,'OAUTH','GitHub sign-in failed. Start again.');
+    }finally{clearTimeout(timer);}
   }
   async viewer(token: string): Promise<User> {
     const user = await this.#rest(G.Viewer, '/user', token);

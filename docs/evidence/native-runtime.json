@@ -28,6 +28,10 @@
       "status": "passed"
     },
     {
+      "name": "serialized RPC preserves a large Unicode body, status and expiry headers",
+      "status": "passed"
+    },
+    {
       "name": "SQLite-backed RPC probe writes its first durable counter",
       "status": "passed"
     },

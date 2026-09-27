@@ -13,13 +13,29 @@ export function fixture({seed=false,origin=SERVICE,blog=BLOG,privateKey=PRIVATE_
   const counts={read:0,write:0,auth:0,rpc:[],denied:false};
   const env={PUBLIC_ORIGIN:origin,GITHUB_APP_ID:'12345',GITHUB_CLIENT_ID:'Iv1.fixture',GITHUB_CLIENT_SECRET:'fixture-client-secret',GITHUB_PRIVATE_KEY:privateKey,SESSION_SECRET:core.cryptography.random(),REPOSITORIES:{[REPO]:{origins:[blog],category:'Announcements'}},ASSETS:{fetch:async()=>new Response('not found',{status:404})}};
   for(const [name,kind] of [['READ_LIMITER','read'],['WRITE_LIMITER','write'],['AUTH_LIMITER','auth']])env[name]={limit:async()=>{counts[kind]++;return {success:!counts.denied};}};
-  const engine=new core.RepositoryEngine(env,store,upstream.fetch);
-  const methods=['counts','info','thread','replies','comment','edit','remove','reaction','moderate','preview','discussionAction','block','authPrepare','authCallback','authPoll','authConsume','logout'];
-  const stub=Object.fromEntries(methods.map(name=>[name,async input=>{counts.rpc.push(name);return core.result(()=>engine[name](input));}]));
+  const engine=new core.RepositoryEngine(env,store,upstream.fetch,{sql,transactionSync:fn=>{sql.db.exec('BEGIN');try{const result=fn();sql.db.exec('COMMIT');return result;}catch(error){sql.db.exec('ROLLBACK');throw error;}}});
+  const methods=['ranking','hydrate','counts','info','thread','replies','comment','edit','remove','reaction','moderate','preview','authPrepare','authCallback','authPoll','authConsume','logout'];
+  const cache=new core.ReadCache(clock);
+  const stub=Object.fromEntries(methods.map(name=>[name,async input=>{
+    counts.rpc.push(name);
+    if(['ranking','hydrate','counts','info','thread','replies'].includes(name)){
+      try{
+        if(input.session||name==='ranking')return core.serializeRead(Response.json(await engine[name](input)));
+        const settings=core.configSchemas.configuration(env);const p=settings.repositories[REPO]||settings.openHosting;
+        return core.serializeRead(await cache.response(name+JSON.stringify(input),name==='counts'?p.countCacheMs:p.displayCacheMs,()=>engine[name](input)));
+      }catch(error){const e=core.failure(error);return core.serializeRead(Response.json({error:e},{status:e.status}));}
+    }
+    try{return await core.result(()=>engine[name](input));}
+    finally{if(['comment','edit','remove','reaction','moderate'].includes(name))cache.invalidate();}
+  }]));
+  stub.widget=async input=>{const wire=await stub.thread(input),response=core.readResponse(wire);if(!response.ok)return wire;const html=core.widgetHTML(input.request.config,core.configSchemas.configuration(env).repositories[REPO],{view:await response.json(),expires:Number(response.headers.get('X-Giscusflare-Expires'))});html.headers.set('X-Giscusflare-Expires',response.headers.get('X-Giscusflare-Expires'));html.headers.set('Cache-Control',response.headers.get('Cache-Control'));return core.serializeRead(html);};
   env.REPOSITORY_STORE={idFromName:name=>name,get:name=>stub};
   const config=core.parse(core.requests.Widget,{repo:REPO,origin:blog+'/article',term:'article'});
   async function request(path,body,cap='',headers={}) {
-    return core.app.fetch(new Request(origin+path,{method:body===undefined?'GET':'POST',headers:{Origin:origin,'Sec-Fetch-Site':'same-origin',...(body===undefined?{}:{'Content-Type':'application/json'}),...(cap?{Authorization:'Bearer '+cap}:{}),...headers},...(body===undefined?{}:{body:typeof body==='string'?body:JSON.stringify(body)})}),env);
+    const read=['/api/v1/ranking','/api/v1/hydrate','/api/v1/thread','/api/v1/replies','/api/v1/config','/api/v1/counts'].includes(path);
+    const get=read&&body&&typeof body==='object';
+    return core.app.fetch(new Request(origin+path+(get?'?'+new URLSearchParams({input:JSON.stringify(body)}):''),{method:get||body===undefined?'GET':'POST',headers:{Origin:origin,'Sec-Fetch-Site':'same-origin',...(get||body===undefined?{}:{'Content-Type':'application/json'}),...(cap?{Authorization:'Bearer '+cap}:{}),...headers},...(get||body===undefined?{}:{body:typeof body==='string'?body:JSON.stringify(body)})}),env);
+
   }
   async function session(user='reader', overrides={}){
     const cap=core.cryptography.random(),id=await core.cryptography.hash(cap);
@@ -31,14 +47,14 @@ export function fixture({seed=false,origin=SERVICE,blog=BLOG,privateKey=PRIVATE_
 export async function expectJSON(response,status=200){const value=await response.json();if(response.status!==status)throw new Error(`Expected HTTP ${status}, got ${response.status}: ${JSON.stringify(value)}`);return value;}
 export async function login(f,{mode='popup'}={}) {
   const verifier=core.cryptography.random(),challenge=await core.cryptography.hash(verifier);
-  const prepared=await f.request('/api/auth/prepare',{repo:REPO,origin:f.config.origin,challenge,mode});
+  const prepared=await f.request('/api/v1/auth/prepare',{repo:REPO,origin:f.config.origin,challenge,mode});
   const cookie=prepared.headers.get('Set-Cookie')?.split(';')[0];
   const data=await expectJSON(prepared),authorize=new URL(data.authorizeURL);
   const callback=await f.request('/auth/callback?'+new URLSearchParams({state:authorize.searchParams.get('state'),code:'fixture_'+authorize.searchParams.get('code_challenge')}),undefined,'',{Cookie:cookie});
   const html=await callback.text();
   if(callback.status!==200)throw new Error('Callback failed: '+html);
-  const ready=await expectJSON(await f.request('/api/auth/poll',{repo:REPO,origin:f.config.origin,attempt:data.attempt,verifier}));
-  const consumed=await expectJSON(await f.request('/api/auth/consume',{repo:REPO,origin:f.config.origin,attempt:data.attempt,verifier,ticket:ready.ticket}));
+  const ready=await expectJSON(await f.request('/api/v1/auth/poll',{repo:REPO,origin:f.config.origin,attempt:data.attempt,verifier}));
+  const consumed=await expectJSON(await f.request('/api/v1/auth/consume',{repo:REPO,origin:f.config.origin,attempt:data.attempt,verifier,ticket:ready.ticket}));
   return {cap:consumed.session,attempt:data.attempt,verifier,challenge,cookie,authorize,html,ticket:ready.ticket};
 }
 export {core,FakeGitHub};

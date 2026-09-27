@@ -8,7 +8,7 @@ back.href = config.origin;
 setTimeout(() => { back.hidden = false; }, 1800);
 async function run(): Promise<void> {
   if (config.mode === 'popup' && !window.opener) throw new Error('Return to the page and start sign-in from the comments.');
-  const response = await fetch('/api/auth/prepare', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(config), credentials: 'same-origin', cache: 'no-store' });
+  const response = await fetch('/api/v1/auth/prepare', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(config), credentials: 'same-origin', cache: 'no-store' });
   const data = await response.json() as { attempt?: string; authorizeURL?: string; error?: { message?: string } };
   if (!response.ok || !data.attempt || !data.authorizeURL) throw new Error(data.error?.message || 'Could not start sign-in.');
   const authorize = new URL(data.authorizeURL);

@@ -1,51 +1,57 @@
 # Security
 
-This code has not had an independent security audit. [Verification](VERIFICATION.md) records which automated checks ran.
+giscusflare handles GitHub authorization and public discussion content. This document describes its access controls, session storage, and rendering rules.
 
-## Repository access
+## Repository and website access
 
-The service accepts configured public repositories. For each thread, comment, or reply, it checks the repository, category, and parent discussion. It checks GitHub's viewer permissions before an edit, deletion, or moderation action. GitHub also authorizes the write.
+The Worker accepts configured public repositories on github.com. It checks the repository, category, discussion, and parent comment before acting on an object ID. It checks the reader's permissions before edits, deletions, and moderation. GitHub also authorizes the write using the acting user's App-issued token.
 
-Schemas check data types and formats. They do not grant access. A valid comment ID can still belong to another discussion.
+Each repository has a website-origin list, or an explicit `"*"` policy for open hosting. Iframe responses restrict their ancestors through Content Security Policy. Native requests require an allowed browser Origin and a matching repository and page origin. Sessions belong to one repository and website. The iframe loader checks both the origin and source of messages.
 
-Browser writes require the comments service's exact Origin and reject cross-site fetch metadata. The body reader limits JSON while streaming. API routes expose specific operations rather than a general GitHub proxy.
+These checks restrict browser embedding and API use. They do not make GitHub discussions private or stop a scripted client from forging an Origin header. Readers can still participate directly on GitHub. See [configuration](docs/CONFIGURATION.md).
 
-## Sign-in
+## Request handling
 
-Sign-in starts in a first-party popup or page on the comments service. That page creates a random attempt and an HttpOnly cookie. The callback must return the same cookie.
+Reads use GET with bounded input; writes use POST with a bounded JSON body. Schemas validate request structure, configuration, stored records, and GitHub responses.
 
-The server creates a PKCE verifier for GitHub. The widget creates a separate verifier for the final handoff. Before navigating to GitHub, the popup sends its attempt ID to the widget and waits for acknowledgement. The widget can then poll for completion if the popup loses its opener.
+Iframe API requests require the service's Origin and same-origin fetch metadata when supplied. Native requests use explicit bearer sessions. CORS does not grant access through ambient cookies. Authorization preparation runs on the comments service itself.
 
-The callback exchanges GitHub's authorization code. To receive an application session, the widget must present the original verifier, attempt ID, and one-use ticket. Abandoned authorizations expire without creating a long-lived session.
+The service exposes specific discussion operations, not a general GitHub proxy. Per-IP rate limits apply at Cloudflare locations. They are not global usage or spending caps.
 
-Full-page sign-in returns only to an approved page and requires the stored browser proof. When both popups and storage are unavailable, the widget reports an error instead of starting that flow.
+## GitHub sign-in
 
-## Sessions and keys
+Sign-in begins on the comments service in a popup or full page. That page creates a random authorization attempt and an HttpOnly cookie. The GitHub callback must return the same cookie. GitHub authorization uses PKCE.
 
-The browser receives an opaque session token scoped to its repository and website origin. GitHub access and refresh tokens stay encrypted on the server. AES-GCM authenticates the record key, purpose, and application identity. Web Crypto signs GitHub App JWTs with RSA.
+The browser has a separate verifier for the final handoff. It must present that verifier, the attempt ID, and a one-use ticket to receive a service session. An abandoned attempt expires without creating a long-lived session.
 
-The application session is a bearer credential. Code injected into the trusted blog could steal or use it. Server-side GitHub tokens reduce exposure but do not protect a compromised blog.
+Full-page sign-in returns only to an approved website and requires the saved browser proof. Popup sign-in can poll for completion if it loses its opener. If neither the required storage nor popup flow is available, the application reports a sign-in failure.
 
-Sessions expire or can be revoked locally. Token refresh uses a lock. Changing `SESSION_SECRET` invalidates existing sessions. If a connection fails after GitHub rotates a refresh token, the reader may need to sign in again.
+## Sessions and encryption
 
-## Comment HTML
+The browser receives an opaque service session. GitHub access and refresh tokens stay encrypted on the server with AES-GCM. Encryption authenticates the record's purpose and identity. Web Crypto signs GitHub App JWTs with RSA.
 
-The renderer parses GitHub HTML in an inert template and builds new nodes from an allowlist. It excludes executable elements, forms, SVG, MathML, arbitrary styles, custom elements, event attributes, and embedded media. It prefixes IDs and restricts link protocols.
+The service session is a bearer credential. JavaScript injected into a trusted site could steal or use it. Native embedding shares the site's JavaScript and storage context.
 
-This renderer supports a subset of Markdown HTML. It does not render MathJax, Mermaid, raw SVG, or general embeds. Custom CSS is trusted operator configuration and must come from an approved origin.
+Sessions expire and can be revoked locally. Token refresh runs under a lock. A lost response after GitHub rotates a refresh token can require a new sign-in. Changing `SESSION_SECRET` makes existing encrypted sessions unreadable.
 
-Widget and callback responses set a Content Security Policy. The widget allows only configured frame ancestors. The parent loader checks both message origin and source.
+## Comment rendering
+
+The shared renderer rebuilds allowed HTML in an inert document fragment. It filters elements, attributes, link protocols, and IDs. It rejects executable markup, forms, arbitrary embedded media, event attributes, and untrusted styles.
+
+Code controls and lazy MathJax rendering run after sanitization. Preview and posted comments use the same rendering contract.
+
+Custom CSS comes from approved origins. Custom code, math, and full-content renderers are trusted application code and must return safe DOM. Review them as part of the site that installs them.
 
 ## Interrupted writes
 
-The service records a pending receipt before sending a write. The receipt contains an idempotency key and content fingerprint. If GitHub's response is incomplete, the service keeps the receipt pending rather than automatically resubmitting.
+Before sending a write, the service stores a receipt with an idempotency key and content fingerprint. An incomplete response leaves an uncertain receipt. It does not trigger a new write automatically.
 
-Inspect GitHub before trying the write again. For an unresolved discussion creation, use the existing discussion's number while search indexing catches up.
+Inspect GitHub before resubmitting an uncertain comment. Keep the existing retry identity. An unresolved discussion-creation record remains until recovery finds the discussion, so a retry does not create a second one.
 
-## Deployment and logs
+## Deployment and reports
 
-Keep secrets out of source control and public assets. Do not enable shared caching for API or callback responses. These responses use `Cache-Control: no-store`.
+Keep credentials out of source control, browser assets, and embed code. Browser-facing API and callback responses use `Cache-Control: no-store`. The service caches validated anonymous reads internally with their original expiry; authenticated responses bypass those shared caches. Avoid logging bodies, bearer tokens, or authorization callback URLs.
 
-Avoid logging request bodies, session tokens, or callback URLs. The supplied configuration disables Workers observability, but account-level settings can still collect request data.
+Install the App only on intended repositories. Review Cloudflare logging and account controls separately from the application's settings.
 
-Limit the App's installation to the intended public repositories. Review Cloudflare limits, GitHub API usage, and logging before exposing the service.
+For a security report, include the affected version, a minimal reproduction, and the expected permission boundary. Remove credentials, session values, and private user data before sharing a report. If a credential was exposed, revoke it through the service that issued it.

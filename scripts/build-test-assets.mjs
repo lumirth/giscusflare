@@ -15,3 +15,8 @@ await build({
     });
   } }]
 });
+
+await build({ entryPoints: ['src/testing.ts'], outfile: 'dist/testing.mjs', bundle: true, format: 'esm', platform: 'node', target: 'node22', legalComments: 'eof' });
+await build({ entryPoints: ['src/browser/markdown.ts'], outfile: 'dist/markdown-browser.mjs', bundle: true, format: 'esm', platform: 'browser', target: 'es2022' });
+const example = await build({entryPoints:['examples/custom.ts'],outdir:'public',entryNames:'custom-example',chunkNames:'chunks/example-[name]-[hash]',bundle:true,splitting:true,format:'esm',platform:'browser',target:'es2022',minify:true,metafile:true});
+if(Object.keys(example.metafile.inputs).some(name=>name.endsWith('/widget.ts')||name.endsWith('/native.ts')||name.includes('/standard/')))throw new Error('Custom consumer imports the default presentation.');

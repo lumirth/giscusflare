@@ -43,7 +43,11 @@ export class BrowserSession implements Transport {
   async request<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
     if (this.#disposed) throw new Error('This session has been disposed.');
     if (!/^[a-z]+(?:\/[a-z]+)?$/.test(path)) throw new Error('Invalid API operation.');
-    const response = await fetch(this.service + '/api/' + path, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(this.#token ? { Authorization: 'Bearer ' + this.#token } : {}) }, body: JSON.stringify(body), credentials: 'omit', cache: 'no-store', signal });
+    const read=['config','counts','thread','replies','ranking','hydrate'].includes(path);
+    const response=await fetch(this.service+'/api/v1/'+path+(read?'?'+new URLSearchParams({input:JSON.stringify(body)}):''),{
+      method:read?'GET':'POST',headers:{...(read?{}:{'Content-Type':'application/json'}),...(this.#token?{Authorization:'Bearer '+this.#token}:{})},
+      ...(read?{}:{body:JSON.stringify(body)}),credentials:'omit',cache:'no-store',signal,
+    });
     let data: unknown; try { data = await response.json(); } catch { throw new ApiError('The comments service returned an invalid response.', response.status, 'UPSTREAM'); }
     if (!response.ok) {
       const error = data && typeof data === 'object' ? (data as {error?: {message?: unknown; code?: unknown}}).error : undefined;

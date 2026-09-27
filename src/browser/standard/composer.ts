@@ -22,25 +22,25 @@ export const createComposer: ComposerFactory = ({ runtime, report }, name) => {
   let previewSignature = "",
     preview: Node | string = "";
   const update = () => {
-    const t = strings(runtime.config.lang),
+    const t = strings(runtime.appearance.lang),
       state = binding?.state;
     const writing = state?.mode !== "preview",
-      signedIn = runtime.session.signedIn,
+      signedIn = runtime.signedIn,
       reply = name.startsWith("reply:"),
       edit = name.startsWith("edit:");
     const signature = JSON.stringify([
       state?.previewPending,
       state?.previewBody,
       state?.previewHTML,
-      runtime.config.lang,
+      runtime.appearance.lang,
     ]);
     if (signature !== previewSignature) {
       previewSignature = signature;
       preview = state?.previewPending
-        ? message(runtime.config.lang, "loadingPreview")
+        ? message(runtime.appearance.lang, "loadingPreview")
         : state?.previewHTML
           ? runtime.renderContent(state.previewHTML, state.previewBody)
-          : message(runtime.config.lang, "nothingToPreview");
+          : message(runtime.appearance.lang, "nothingToPreview");
     }
     render(
       html` <div
@@ -73,8 +73,8 @@ export const createComposer: ComposerFactory = ({ runtime, report }, name) => {
             <button
               type="button"
               class="gsc-toolbar-item"
-              aria-label=${message(runtime.config.lang, state?.fixedWidth ? "disableFixedWidth" : "enableFixedWidth")}
-              title=${message(runtime.config.lang, state?.fixedWidth ? "disableFixedWidth" : "enableFixedWidth")}
+              aria-label=${message(runtime.appearance.lang, state?.fixedWidth ? "disableFixedWidth" : "enableFixedWidth")}
+              title=${message(runtime.appearance.lang, state?.fixedWidth ? "disableFixedWidth" : "enableFixedWidth")}
               aria-pressed=${String(Boolean(state?.fixedWidth))}
               @click=${() => binding?.toggleFixedWidth()}
             >
@@ -90,7 +90,7 @@ export const createComposer: ComposerFactory = ({ runtime, report }, name) => {
               dir="auto"
               class=${"form-control input-contrast gsc-comment-box-textarea " + (state?.fixedWidth ? "gsc-is-fixed-width" : "")}
               aria-label=${reply ? t.reply : t.comments}
-              placeholder=${signedIn ? (reply ? message(runtime.config.lang, "writeAReply") : t.placeholder) : message(runtime.config.lang, "signInToComment")}
+              placeholder=${signedIn ? (reply ? message(runtime.appearance.lang, "writeAReply") : t.placeholder) : message(runtime.appearance.lang, "signInToComment")}
             ></textarea>
             <div
               class="form-control input-contrast gsc-comment-box-textarea-extras"
@@ -115,13 +115,13 @@ export const createComposer: ComposerFactory = ({ runtime, report }, name) => {
         </div>
         ${state?.error ? html`<p class="color-text-danger px-2" role="alert">${state.error}</p>` : nothing}
         <div class="gsc-comment-box-bottom">
-          ${signedIn && !reply && !edit ? html`<button type="button" class="link-secondary text-sm inline-flex items-center gap-2" @click=${() => runtime.session.signOut().catch(report)}>${icons.signOut}${t.signOut}</button>` : nothing}
+          ${signedIn && !reply && !edit ? html`<button type="button" class="link-secondary text-sm inline-flex items-center gap-2" @click=${() => runtime.signOut().catch(report)}>${icons.signOut}${t.signOut}</button>` : nothing}
           <div class="gsc-comment-box-buttons">
             ${reply || edit ? html`<button type="button" class="btn ml-1" @click=${() => binding?.cancel()}>${t.cancel}</button>` : nothing}
             <button
               type="submit"
               class="btn btn-primary inline-flex items-center ml-1 gap-2"
-              ?disabled=${state?.pending || (signedIn && !runtime.controller.draft(name).trim())}
+              ?disabled=${state?.pending || (signedIn && !runtime.draft(name).trim())}
             >
               ${signedIn ? nothing : icons.github}${signedIn ? (edit ? t.save : reply ? t.reply : t.post) : t.signIn}
             </button>

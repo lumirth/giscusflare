@@ -6,7 +6,7 @@ export const createHeader: HeaderFactory = ({ runtime }) => {
   return {
     element,
     update({ comment: c, reply }) {
-      const t = strings(runtime.config.lang),
+      const t = strings(runtime.appearance.lang),
         date = new Date(c.createdAt);
       element.className = reply ? "gsc-reply-header" : "gsc-comment-header";
       render(
@@ -31,13 +31,13 @@ export const createHeader: HeaderFactory = ({ runtime }) => {
               ><time
                 class="whitespace-nowrap"
                 datetime=${c.createdAt}
-                title=${date.toLocaleString(runtime.config.lang)}
-                >${relativeDate(date, runtime.config.lang)}</time
+                title=${date.toLocaleString(runtime.appearance.lang)}
+                >${relativeDate(date, runtime.appearance.lang)}</time
               ></a
             >
-            ${c.authorAssociation && c.authorAssociation !== "NONE" ? html`<div class="hidden text-xs leading-[18px] sm:inline-flex"><span class="color-box-border-info font-medium capitalize rounded-xl border px-[7px]">${message(runtime.config.lang, c.authorAssociation)}</span></div>` : nothing}
+            ${c.authorAssociation && c.authorAssociation !== "NONE" ? html`<div class="hidden text-xs leading-[18px] sm:inline-flex"><span class="color-box-border-info font-medium capitalize rounded-xl border px-[7px]">${message(runtime.appearance.lang, c.authorAssociation)}</span></div>` : nothing}
           </div>
-          ${c.lastEditedAt ? html`<span class="color-text-secondary" title=${new Date(c.lastEditedAt).toLocaleString(runtime.config.lang)}>${t.edited}</span>` : nothing}`,
+          ${c.lastEditedAt ? html`<span class="color-text-secondary" title=${new Date(c.lastEditedAt).toLocaleString(runtime.appearance.lang)}>${t.edited}</span>` : nothing}`,
         element,
       );
     },

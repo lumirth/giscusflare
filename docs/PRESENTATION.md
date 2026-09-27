@@ -1,46 +1,31 @@
 # Standard presentation
 
-The visual reference is Giscus itself, pinned at `3d6430237108ca4ee3eb6a1a20595201c09c72d5` and checked against the live widget at giscus.app. GitHub Discussions supplies the data and APIs; its website is not the visual acceptance reference.
+The standard widget follows [giscus](https://giscus.app/). Its reference source is pinned at commit `3d6430237108ca4ee3eb6a1a20595201c09c72d5`.
 
-## Default appearance
+## Appearance and behavior
 
-The standard presentation uses Giscus's named themes, Octicons, eight emoji reactions, compact author rows, reply timeline, latest-five folding, segmented sorting and bottom composer. Write/Preview tabs, the Markdown footer and editor focus ring follow Giscus. Initial loading uses its Mona animation, including the light, dark and dimmed variants from GitHub's asset servers.
+The widget uses giscus themes, Octicons, eight emoji reactions, compact author rows, a reply timeline, and a bottom composer by default. Replies initially fold to the latest five. Readers can change the sort order and expand more replies. The editor has Write and Preview tabs, Markdown help, and a focus ring. The initial loader uses giscus's Mona animation.
 
-The implementation uses separate Lit templates over the public conversation runtime. A replacement presentation can use `giscusflare/headless` without loading these templates or styles. The [independent example](../examples/custom.ts) demonstrates that boundary. The separate `kukas-giscusflare` consumer also exercises this boundary with its own Note-like presentation.
+Below 440px of available width, the header wraps its sorting and menu controls onto a separate row. The widget adds no outer gutter. The host page controls that spacing.
 
-## Intentional differences
+Comment menus expose edit, delete and hide actions according to the reader's permissions. Discussion administration stays on GitHub. Emoji reactions retain their GitHub meaning; GitHub upvotes are separate.
 
-| Difference | Reason |
-| --- | --- |
-| Header wraps below 440px of available container width | Keep the comment summary together and move sorting/menu controls to their own row. |
-| Persistent editor and decoration nodes | Preserve native undo grouping and editing history through Preview. |
-| Optimistic reaction queue | Show changes immediately while serializing writes and reconciling GitHub results. |
-| Five prefetched replies, bounded pages on demand | Limit initial API work; allow larger threads to expand in the widget. |
-| Contextual author/discussion menus | Provide permission-checked editing and moderation, plus GitHub report links. |
-| No disabled upvote control | A working upvote mutation has not been verified with App-issued user tokens. |
-| Lowercase giscusflare attribution | Identify the service in use. |
-| Shared sanitized content renderer, lazy math | Give standard and custom presentations the same content capabilities. |
-| Native embedding and scoped styles | Support direct integration alongside iframe isolation. |
-| Configurable recovery and fetching | Let deployments choose persistence and background-work budgets. |
+The editor keeps its textarea and decoration nodes stable to preserve browser undo history through typing and preview changes. Reactions appear immediately, then reconcile with serialized GitHub writes. Reply pagination fetches bounded pages instead of loading every reply at once.
 
-Additional menus use the active Giscus theme's border, overlay, text and focus colors. Styling differences need a reason; a separate implementation alone is not one.
+## Custom presentations
 
-## Browser checks on 2026-09-26
+The standard templates use the public conversation runtime. A custom presentation can import `giscusflare/headless` without importing the standard templates or styles. See [Extending giscusflare](EXTENDING.md) and the [custom presentation example](../examples/custom.ts).
 
-Both widgets displayed `lumirth/kukas-comments` discussion 1. Light, Dark, Dark Dimmed, NoBorder Light, Purple Dark, Light High Contrast and Fro were inspected visually. Computed colors, padding, line heights and border radii were compared for author rows, prose, reaction controls, sorting and the editor.
+Use the shared content renderer for preview and published content. It handles sanitization, code controls, and optional lazy math. A custom theme may need changes to its selectors because the native widget scopes styles to its root.
 
-This pass corrected the attribution link color, post reaction-picker text size, action-menu outline, comment surface background and native theme root scoping. Purple Dark exposed the missing `html` font rule; Fro also uses root-level font settings. Closed popovers can return stale computed styles in WebKit, so inspect them open when checking theme changes.
+## Recorded comparison
 
-Native undo was compared with a plain textarea using the same keyboard sequence. Recreating sibling SVG nodes on each keystroke split WebKit undo into single characters. Stable nodes restored grouped undo, including after Preview/Write. A DOM-mutation regression test covers the triggering behavior; JSDOM alone cannot verify native undo.
+On September 26, 2026, a desktop WebKit comparison inspected Light, Dark, Dark Dimmed, NoBorder Light, Purple Dark, Light High Contrast, and Fro. It compared colors, padding, line heights, and border radii for author rows, prose, reactions, sorting, and the editor.
 
-The earlier 390px iframe check measured equal client and scroll widths and inspected the anonymous composer. Physical iOS, Firefox, every theme/locale, complete real-token moderation and Free-plan CPU qualification remain release work. See [Status](STATUS.md).
+The [theme measurements](evidence/theme-comparison.json), [signed-in light screenshot](evidence/standard-refinement-light.png), and [anonymous light screenshot](evidence/standard-anonymous-light.png) record that pass. Match viewer state when comparing screenshots. Selected reactions and viewer-authored comments use different colors from their anonymous equivalents.
 
-[Measured theme values](evidence/theme-comparison.json) record the compared controls in seven themes. The signed-in light view is shown in [the staging screenshot](evidence/standard-refinement-light.png). Viewer state must match when comparing colors. GitHub's live records confirmed that every visible reaction in this fixture belonged to `lumirth`, who also authored every root comment. On signing out of staging, all four visible reaction pills retained their counts but became neutral, and all three root borders changed to `rgb(208, 215, 222)`. The [anonymous light view](evidence/standard-anonymous-light.png) records that result. The apparent universal highlighting came from the single-author fixture, not from using counts or repository ownership as selection signals.
+A narrow desktop WebKit check found equal document scroll and client widths, with the comment edge at the host's 8px gutter. See the [mobile-width screenshot](evidence/core-mobile-gutters.png).
 
-A mixed-state presentation regression now covers a selected heart beside an unselected thumbs-up with a larger count, viewer-authored and other-authored roots (both marked OWNER), and a refresh clearing viewer flags without losing counts. Live comparisons with multiple participants remain preferable to this fixture for visual review.
+Native undo was compared with a plain textarea using the same keystrokes, including a Preview/Write round trip. A DOM regression test checks node stability. It cannot verify the browser's undo stack.
 
-## Mobile gutter correction
-
-The native CSS scoper now discards empty selector-list entries. An upstream code-block rule ends with a trailing comma; previously, the empty entry became `.giscusflare`, applying 16px code-block padding to the whole widget. The fix removes that unintended root styling rather than offsetting it with negative margins. A regression checks the generated native CSS.
-
-The staging host contributes an 8px gutter at phone widths; the widget contributes none. A 390px WebKit check measured the comment edge at x=8px and document scroll width equal to viewport width. [Mobile screenshot](evidence/core-mobile-gutters.png). This is desktop WebKit at a narrow viewport, not a physical iPhone check.
+See [Verification evidence](CONFIDENCE.md) for the remaining browser coverage.

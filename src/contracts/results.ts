@@ -23,6 +23,7 @@ export interface MutationResult {
 
 /** Read model shared by the service and every conversation client. */
 export interface ThreadView {
+  profiles?:string[];
   unavailable?:boolean;
   discussion:import('./github.js').Discussion|null;
   viewer:{login:string;avatarUrl:string;url:string}|null;

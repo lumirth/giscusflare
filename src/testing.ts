@@ -18,3 +18,9 @@ export * as authorization from './domain/authorization.js';
 export { ConversationController } from './conversation/controller.js';
 
 export {FetchScheduler,fetchPolicy} from './conversation/fetch-policy.js';
+
+export { ReadCache } from './domain/read-cache.js';
+
+export { widgetHTML } from './worker/html.js';
+
+export { serializeRead, readResponse } from './worker/read-response.js';

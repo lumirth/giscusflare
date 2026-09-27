@@ -18,15 +18,15 @@ test('async locking serializes external work and recovers from rejection',async(
 test('expiry alarms target the nearest expiry and remove themselves when idle',async()=>{
  const sql=sqlite();let now=1000,alarm=null;const store=new core.Store(sql,()=>now),state={storage:{getAlarm:async()=>alarm,setAlarm:async x=>{alarm=x;},deleteAlarm:async()=>{alarm=null;}}};store.put('later',s.Mapping,{version:2,number:1},5000);store.put('earlier',s.Mapping,{version:2,number:2},3000);await store.schedule(state);assert.equal(alarm,3000);now=6000;store.prune();await store.schedule(state);assert.equal(alarm,null);sql.db.close();
 });
-test('public widget shell uses native limiting but no Durable Object; thread uses one named RPC',async()=>{
- const f=fixture({seed:true}),q=new URLSearchParams({repo:REPO,origin:BLOG,term:'article'});const shell=await f.request('/widget?'+q);assert.equal(shell.status,200);assert.equal(f.counts.rpc.length,0);assert.equal(f.counts.read,1);
- await expectJSON(await f.request('/api/thread',{config:f.config}));assert.deepEqual(f.counts.rpc,['thread']);assert.equal(f.counts.read,2);f.close();
+test('widget bootstraps its first page through one repository read',async()=>{
+ const f=fixture({seed:true}),q=new URLSearchParams({repo:REPO,origin:BLOG,term:'article'});const shell=await f.request('/widget?'+q);assert.equal(shell.status,200);assert.equal(f.counts.rpc.length,1);assert.equal(f.counts.read,1);assert.match(await shell.text(),/bootstrap/);
+ await expectJSON(await f.request('/api/v1/thread',{config:f.config}));assert.deepEqual(f.counts.rpc,['thread','thread']);assert.equal(f.counts.read,2);f.close();
 });
 test('native limiter rejects without creating a counter Durable Object',async()=>{
- const f=fixture();f.counts.denied=true;await expectJSON(await f.request('/api/thread',{config:f.config}),429);assert.equal(f.counts.rpc.length,0);f.close();
+ const f=fixture();f.counts.denied=true;await expectJSON(await f.request('/api/v1/thread',{config:f.config}),429);assert.equal(f.counts.rpc.length,0);f.close();
 });
 test('same-origin checks and repository allowlist are independent of schema validation',async()=>{
- const f=fixture();await expectJSON(await f.request('/api/thread',{config:f.config},'',{Origin:'https://evil.example'}),403);await expectJSON(await f.request('/api/thread',{config:f.config},'',{'Sec-Fetch-Site':'cross-site'}),403);await expectJSON(await f.request('/api/thread',{config:{...f.config,repo:'evil/repo'}}),403);assert.equal(f.counts.rpc.length,0);f.close();
+ const f=fixture();await expectJSON(await f.request('/api/v1/thread',{config:f.config},'',{Origin:'https://evil.example'}),403);await expectJSON(await f.request('/api/v1/thread',{config:f.config},'',{'Sec-Fetch-Site':'cross-site'}),403);await expectJSON(await f.request('/api/v1/thread',{config:{...f.config,repo:'evil/repo'}}),403);assert.equal(f.counts.rpc.length,0);f.close();
 });
 test('custom CSS host and iframe origins are exact allowlists',async()=>{
  const f=fixture(),url=theme=>'/widget?'+new URLSearchParams({repo:REPO,origin:BLOG,term:'article',theme});const denied=await f.request(url('https://evil.example/theme.css'));assert.equal(denied.status,403);

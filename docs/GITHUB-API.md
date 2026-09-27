@@ -1,40 +1,32 @@
-# GitHub API capabilities for giscusflare
+# GitHub API use
 
-Checked 2026-09-26 against current official documentation and pinned Giscus source. This is a documentation/source review. Real App-token results are recorded separately in [Status](STATUS.md).
+Giscusflare reads public GitHub Discussions through a GitHub App installation. Reader writes use that reader's App-issued token. The service checks repository and target scope separately from the user's permission to act.
 
-## Public operation inventory
+## Comment operations
 
-| Capability | API | Relevant state/authority |
-| --- | --- | --- |
-| Edit comment/reply | `updateDiscussionComment` | `viewerCanUpdate`, `viewerCannotUpdateReasons` |
-| Delete comment/reply | `deleteDiscussionComment` | `viewerCanDelete`; parents with replies are wiped, preserving the thread |
-| Hide/restore comment | `minimizeComment`, `unminimizeComment` | `viewerCanMinimize`, `viewerCanUnminimize`, reason/state |
-| Lock/unlock | `lockLockable`, `unlockLockable` | `locked`, `activeLockReason`; no documented `viewerCanLock` |
-| Close/reopen | `closeDiscussion`, `reopenDiscussion` | `viewerCanClose`, `viewerCanReopen` |
-| Answer selection/removal | `markDiscussionCommentAsAnswer`, `unmarkDiscussionCommentAsAnswer` | Per-viewer capability fields, answerable category |
-| Edit/delete discussion | `updateDiscussion`, `deleteDiscussion` | `viewerCanUpdate`, `viewerCanDelete` |
-| Native upvote/undo | `addUpvote`, `removeUpvote` | `viewerCanUpvote`, `viewerHasUpvoted`, `upvoteCount`; app-token restriction unresolved |
+| Action | GitHub operation |
+| --- | --- |
+| Create a discussion for a page | `createDiscussion` |
+| Add a comment or reply | `addDiscussionComment` |
+| Edit a comment | `updateDiscussionComment` |
+| Delete a comment | `deleteDiscussionComment` |
+| Hide or reveal a comment | `minimizeComment`, `unminimizeComment` |
+| Add or remove an emoji reaction | `addReaction`, `removeReaction` |
 
-Sources: [Discussions schema](https://docs.github.com/en/graphql/reference/discussions), [discussion mutation guide](https://docs.github.com/en/graphql/guides/using-the-graphql-api-for-discussions), [Minimizable](https://docs.github.com/en/graphql/reference/issues#minimizable), [Lockable](https://docs.github.com/en/graphql/reference/issues#lockable). DiscussionComment implements Minimizable even though the generic mutation description incompletely lists types.
+The App needs Discussions read/write permission and the included Metadata read permission. GitHub also checks the acting user's permissions. Locking, closing, answer assignment and account blocking remain GitHub administration actions.
 
-## Authority and verification
+Read [GitHub's Discussions guide](https://docs.github.com/en/graphql/guides/using-the-graphql-api-for-discussions) and [App permission guidance](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/choosing-permissions-for-a-github-app#choosing-permissions-for-graphql-api-access) for the upstream contract.
 
-GitHub App Discussions read/write permissions are the relevant starting point. GitHub does not provide a complete per-mutation GraphQL permission matrix; its [permission guidance](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/choosing-permissions-for-a-github-app#choosing-permissions-for-graphql-api-access) calls for testing intended operations.
+## Display and ranking queries
 
-Reader/moderator operations use the acting user's app-issued token. Access is bounded by both the user and app. Installation tokens must not be substituted to bypass a reader's missing authority. Classic OAuth/PAT scopes and GitHub App permissions are different models. See [user access tokens](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-user-access-token-for-a-github-app).
+Display queries fetch a bounded page of comment content and a small reply preview. Whole-discussion ranking acquires compact inputs separately, then fetches content only for the selected IDs. Profiles share required inputs.
 
-Query viewer capabilities where available and enforce target/repository scope server-side. For locking, establish a conservative server-side capability based on verified repository authority and handle denial from GitHub; authorship alone is insufficient. GitHub's [moderation documentation](https://docs.github.com/en/discussions/managing-discussions-for-your-community/moderating-discussions) identifies triage access as sufficient for discussion moderation, but that does not prove every mutation succeeds for every role.
+GitHub's point cost, returned nodes, resource limits and response bytes are different constraints. A query with a low point cost can still exceed resource limits. Grouped reaction totals avoid fetching individual reactors; selecting fewer fields reduces response parsing and serialization work.
 
-Acceptance should exercise the actual app configuration with an author, unrelated reader and moderator, including revoked access, lock state changes and canonical post-mutation results. Each successful capability needs a real-token test; schema presence and mocked tests alone are insufficient.
+A partial GraphQL error does not establish that an omitted comment was deleted or that discovery reached the end. Incomplete inputs keep ranking work incomplete. Upstream throttling supplies a retry boundary rather than triggering an immediate retry loop.
 
-## Native upvotes: preserve the distinction
+GitHub documents [GraphQL rate and resource limits](https://docs.github.com/en/graphql/overview/rate-limits-and-query-limits-for-the-graphql-api). Cache lifetime and ranking allowances are configured by the service operator, as described in [configuration](CONFIGURATION.md).
 
-Pinned Giscus `3d643023`, `components/Comment.tsx`, disables upvotes with a comment specifically citing GitHub App user tokens. [The referenced issue](https://github.com/orgs/community/discussions/3968) includes GitHub's 2021 confirmation of unsupported integration tokens and a July 2026 user report of the same problem. No resolution is shown. This is evidence against assuming support, not a fresh authenticated reproduction.
+## Reactions and upvotes
 
-The API's existence is established. Its usability in our authentication model is not. Retain an explicit verification gate; do not demand personal access tokens from readers to work around it. Kukas's accepted THUMBS_UP Toast mapping remains unchanged. Emoji reactions and native upvotes have separate identities/counts and must never be silently converted.
-
-## Operations with effects beyond one conversation
-
-[Personal blocking](https://docs.github.com/en/rest/users/blocking#block-a-user) supports GitHub App user tokens with a separate user permission. [Organization blocking](https://docs.github.com/en/rest/orgs/blocking#block-a-user-from-an-organization) supports user/installation tokens with a separate organization permission. These affect the account or organization, not just a blog comment thread.
-
-Offer blocking through contextual comment/discussion controls when the acting user and App have permission. Explicitly identify whether it affects the personal account or organization. Use contextual GitHub action links when API support, deployment permissions, or the need for a broader administration workflow makes a handoff appropriate. Do not use standalone duplicate links or imply a handoff completed the operation. No public abuse-report submission API was established; [GitHub's reporting instructions](https://docs.github.com/en/communities/maintaining-your-safety-on-github/reporting-abuse-or-spam) use GitHub's own interface/forms, so retain that handoff.
+Emoji reactions and GitHub Discussions upvotes are separate data. Giscusflare exposes the eight emoji reactions. A ranking profile can read existing upvote counts, but the interface does not submit upvotes. GitHub's own interface remains available for that action.

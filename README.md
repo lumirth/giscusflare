@@ -1,12 +1,62 @@
+<img src="public/brand/giscusflare-logo.png" alt="giscusflare" width="96" height="96">
+
 # giscusflare
 
-GitHub Discussions comments for Cloudflare Workers, with a replaceable interface and shared conversation APIs.
+GitHub Discussions comments you can customize and deploy on Cloudflare.
 
-**In development.** See [verification status and release gaps](docs/STATUS.md).
+[Try the demo](https://giscusflare.kukas.me/) · [Deploy to Cloudflare](https://deploy.workers.cloudflare.com/?url=https://github.com/lumirth/giscusflare) · [Customization](docs/EXTENDING.md) · [Configuration](docs/CONFIGURATION.md)
 
-## Development
+Use the default GitHub/giscus-inspired interface, replace individual components, or build a comments section to match your website. The [demo](https://giscusflare.kukas.me/) shows one real conversation in two designs.
 
-Use Node 22.16 or newer. Development takes place on `main`.
+- Embed in an iframe or directly in your page.
+- Share sign-in, drafts, replies, editing and reactions across custom interfaces.
+- Keep comments in a public GitHub repository you choose.
+- Allow your own websites, or open your service to others.
+
+## Set up your service
+
+[Deploy to Cloudflare](https://deploy.workers.cloudflare.com/?url=https://github.com/lumirth/giscusflare) creates your source copy and a Worker in your account. Open the Worker's address to connect a GitHub App, choose a comments repository and generate your embed code. [The setup guide](DEPLOY.md) walks through the same steps.
+
+Each page maps to a GitHub discussion. Readers sign in with GitHub to comment or react, and you can manage the conversation on GitHub too. The source copy created during deployment and the repository holding discussions can be separate.
+
+## Make it fit your website
+
+Install the browser package from the [1.0.0 release](https://github.com/lumirth/giscusflare/releases/tag/v1.0.0):
+
+```sh
+npm install https://github.com/lumirth/giscusflare/releases/download/v1.0.0/giscusflare-1.0.0.tgz
+```
+
+Mount the default interface in your own page:
+
+```js
+import { mountComments } from 'giscusflare';
+import 'giscusflare/styles.css';
+
+const comments = mountComments(document.querySelector('#comments'), {
+  service: 'https://your-comments.workers.dev',
+  page: {
+    repo: 'you/comments',
+    origin: location.href,
+    term: 'post:hello-world',
+    strict: true,
+  },
+  appearance: { theme: 'preferred_color_scheme' },
+});
+
+// Change appearance without replacing the conversation or its editors.
+comments.updateAppearance({ theme: 'dark' });
+```
+
+For a different design, use the same conversation API with your own markup. The [forum example](examples/forum.ts) uses shared composer bindings for drafts, preview and submission. Start with [customization](docs/EXTENDING.md) or the [API reference](docs/API.md).
+
+[giscus](https://giscus.app) provides a hosted service with a familiar widget. giscusflare puts the service in your Cloudflare account and adds a JavaScript API for designing the interface. Read [the comparison](docs/COMPARISON.md) if you already use giscus.
+
+## Run it
+
+[Configuration](docs/CONFIGURATION.md) covers websites, repositories and caching. [Cloudflare usage](FREE-TIER.md) explains the resource costs and measurements. [Operations](docs/OPERATIONS.md) covers updates and troubleshooting.
+
+For development, use Node 22.16 or newer:
 
 ```sh
 npm ci
@@ -15,28 +65,6 @@ npm run test:runtime
 npm run demo
 ```
 
-The demo serves an iframe page at `http://127.0.0.1:8788/article` and a native page at `/native`. GitHub, sign-in and comments are simulated locally. The command prints the addresses when using custom ports.
+The local demo simulates GitHub and sign-in. See [contributing](CONTRIBUTING.md) and [testing](TESTING.md).
 
-`npm test` checks TypeScript, builds the package and runs the Node tests. `test:runtime` tests the service in workerd with SQLite and simulated GitHub. [Testing](TESTING.md) describes browser and deployment checks.
-
-## Integration
-
-- `giscusflare` exports the standard Giscus-style interface and native embedding.
-- `giscusflare/styles.css` supplies its scoped styles.
-- `giscusflare/headless` exports the conversation runtime, interactions and content renderer for independent interfaces.
-- `giscusflare/worker` supplies the Cloudflare service.
-
-The API is experimental. Custom presentations share authentication, drafts, pagination, reactions and recovery through the runtime. See [customization](docs/EXTENDING.md) and the [independent example](examples/custom.ts).
-
-The separate `kukas-giscusflare` repository hosts the production service and Kukas's custom presentation. GitHub Discussions in `kukas-comments` hold the actual comments.
-
-## Documentation
-
-- [Deploy](DEPLOY.md)
-- [Architecture](docs/DESIGN.md)
-- [Standard presentation and intentional differences](docs/PRESENTATION.md)
-- [Remaining implementation work](docs/IMPLEMENTATION.md)
-- [Giscus capability reference](docs/CAPABILITIES.md)
-- [GitHub API constraints](docs/GITHUB-API.md)
-- [Free-tier usage](FREE-TIER.md)
-- [Source provenance](docs/PROVENANCE.md) and [third-party notices](THIRD-PARTY-NOTICES.md)
+MIT licensed. See [credits and licenses](THIRD-PARTY-NOTICES.md).

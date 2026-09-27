@@ -39,6 +39,8 @@ export class FakeGitHub {
   groups(node,user){return reactions.map(content=>({content,viewerHasReacted:Boolean(user&&node.votes[content]?.includes(user)),users:{totalCount:node.votes[content]?.length||0}}));}
   comment(c,user,root=false,replyPrefetch=5){const {replies,votes,...value}=c;const result={...clone(value),isAnswer:Boolean(c.isAnswer),viewerCanMarkAsAnswer:user==='maintainer'&&!c.isAnswer,viewerCanUnmarkAsAnswer:user==='maintainer'&&Boolean(c.isAnswer),viewerDidAuthor:c.author?.login===user,viewerCanUpdate:c.author?.login===user,viewerCanDelete:c.author?.login===user||user==='maintainer',viewerCanMinimize:user==='maintainer',viewerCanUnminimize:user==='maintainer',reactionGroups:this.groups(c,user)};if(root)result.replies=connection(replies.map(r=>this.comment(r,user)),{last:replyPrefetch});return result;}
   discussion(d,user,paging){const {comments,votes,...value}=d;const result={...clone(value),viewerCanClose:user==='maintainer'&&!d.closed,viewerCanReopen:user==='maintainer'&&d.closed,viewerCanUpdate:user==='maintainer',viewerCanDelete:user==='maintainer',repository:{...d.repository,isPrivate:d.repository.isPrivate||this.meta.isPrivate},reactionGroups:this.groups(d,user)};if(paging)result.comments=connection(comments.map(c=>this.comment(c,user,true,paging.replyPrefetch)),paging);return result;}
+  identity(d){return {id:d.id,number:d.number,repository:{...clone(d.repository),isPrivate:d.repository.isPrivate||this.meta.isPrivate},category:clone(d.category)};}
+  targetComment(c,user){return {id:c.id,viewerCanUpdate:c.author?.login===user,viewerCanDelete:c.author?.login===user||user==='maintainer',viewerCanMinimize:user==='maintainer',viewerCanUnminimize:user==='maintainer',replyTo:clone(c.replyTo)};}
   locate(id){for(const d of this.discussions){if(d.id===id)return {d,node:d};for(const c of d.comments){if(c.id===id)return {d,node:c};const r=c.replies.find(r=>r.id===id);if(r)return {d,node:r};}}return null;}
   async fetch(request) {
     const url=new URL(request.url),token=(request.headers.get('Authorization')||'').replace(/^Bearer /,'');
@@ -56,16 +58,16 @@ export class FakeGitHub {
       return response({access_token:'ghu_reader',expires_in:28800,refresh_token:'ghr_reader',refresh_token_expires_in:15552000});
     }
     check(url.origin==='https://api.github.com','REST/GraphQL host');check(Boolean(token),'authorization');
-    if(url.pathname==='/repos/example/comments/installation'){check(token.split('.').length===3,'app JWT');return response({id:123});}
-    if(url.pathname==='/app/installations/123/access_tokens'){const b=JSON.parse(payload);check(b.repositories.join()==='comments'&&b.permissions.discussions==='write','restricted app permission scope');this.installations++;return response({token:'ghs_fixture',expires_at:new Date(this.now()+3600000).toISOString()});}
+    if(url.pathname==='/repos/'+this.meta.nameWithOwner+'/installation'){check(token.split('.').length===3,'app JWT');return response({id:123});}
+    if(url.pathname==='/app/installations/123/access_tokens'){const b=JSON.parse(payload);check(b.repositories.join()===this.meta.nameWithOwner.split('/')[1]&&b.permissions.discussions==='write','restricted app permission scope');this.installations++;return response({token:'ghs_fixture',expires_at:new Date(this.now()+3600000).toISOString()});}
     if(url.pathname==='/user'){check(user,'user token');return response({login:user,avatar_url:AUTHOR.avatarUrl,html_url:'https://github.com/'+user});}
     if(url.pathname==='/markdown'){check(user,'authenticated preview');return new Response(render(JSON.parse(payload).text),{headers:{'Content-Type':'text/html'}});}
     if(url.pathname.startsWith('/user/blocks/')){check(user,'user authority for blocking');this.blocked=request.method==='PUT';return new Response(null,{status:204});}
     check(url.pathname==='/graphql'&&request.method==='POST','known endpoint');
-    const {query,variables:x}=JSON.parse(payload),operation=/^(?:query|mutation) (\w+)/.exec(query)?.[1];call.operation=operation;call.variables=x;
+    const {query,variables:x}=JSON.parse(payload),operation=/^(?:query|mutation) (\w+)/.exec(query)?.[1]||(x.discussion?'RankDiscovery':x.ids0?'RankObservation':undefined);call.operation=operation;call.variables=x;call.query=query;
     let data;
     switch(operation){
-      case 'Authority': data={repository:{viewerPermission:user==='maintainer'?'ADMIN':'READ',owner:{__typename:'User'}}};break;
+      case 'Authority': data={repository:{...clone(this.meta),viewerPermission:user==='maintainer'?'ADMIN':'READ',owner:{__typename:'User'}}};break;
       case 'DiscussionAction': {
         check(user==='maintainer','moderator authority');const name=/\{(\w+)\(input/.exec(query)[1],id=x.input.id||x.input.discussionId||x.input.lockableId,t=this.locate(id);check(t,'target exists');
         if(name==='closeDiscussion'||name==='reopenDiscussion')t.d.closed=name==='closeDiscussion';
@@ -75,12 +77,22 @@ export class FakeGitHub {
         if(name==='markDiscussionCommentAsAnswer'||name==='unmarkDiscussionCommentAsAnswer'){t.node.isAnswer=name==='markDiscussionCommentAsAnswer';t.d.answer=t.node.isAnswer?{id}:null;}
         data={[name]:{clientMutationId:null}};break;
       }
-      case 'Repository': check(x.owner==='example'&&x.name==='comments','scoped metadata');data={repository:clone(this.meta)};break;
+      case 'RankDiscovery': {
+        const d=this.discussions.find(d=>d.id===x.discussion);
+        const compact=c=>({...this.comment(c,user),reactionGroups:this.groups(c,user).map(g=>({...g,reactors:g.users})),replies:{totalCount:c.replies.length},upvoteCount:c.upvoteCount||0});
+        data={repository:clone(this.meta),node:d?{...this.discussion(d,user),comments:connection(d.comments.map(compact),{last:100,before:x.cursor})}:null};break;
+      }
+      case 'RankObservation': {
+        data={repository:clone(this.meta)};
+        for(const [key,ids] of Object.entries(x).filter(([key])=>/^ids[0-9]+$/.test(key)))data['batch'+key.slice(3)]=ids.map(id=>{const t=this.locate(id);return t?{...this.comment(t.node,user),discussion:this.discussion(t.d,user),reactionGroups:this.groups(t.node,user).map(g=>({...g,reactors:g.users})),replies:{totalCount:t.node.replies.length},upvoteCount:t.node.upvoteCount||0}:null;});break;
+      }
+      case 'Hydrate':data={nodes:x.ids.map(id=>{const t=this.locate(id);return t?{...this.comment(t.node,user,true,x.replyPrefetch),discussion:this.identity(t.d)}:null;})};break;
+      case 'Repository': check(x.owner+'/'+x.name===this.meta.nameWithOwner,'scoped metadata');data={repository:clone(this.meta)};break;
       case 'FindDiscussion': {
         check(x.query.startsWith('repo:example/comments category:"Announcements" '),'quoted scoped search');
         const term=JSON.parse(/in:(?:body|title) ("(?:\\.|[^"\\])*")/.exec(x.query)?.[1]||'""');
         const nodes=this.hideSearch?[]:this.discussions.filter(d=>x.query.includes('in:body')?d.body.includes(term):d.title.includes(term));
-        data={search:{discussionCount:nodes.length,nodes:nodes.slice(0,10).map(d=>this.discussion(d,user))}};break;
+        check(!/bodyHTML|reactionGroups|comments\s*\{/.test(query),'search selects identity and optional strict body only');data={search:{nodes:nodes.slice(0,10).map(d=>({...this.identity(d),...(x.strict?{body:d.body}:{})}))}};break;
       }
       case 'FindCounts': {
         data={};
@@ -100,9 +112,12 @@ export class FakeGitHub {
         }
         break;
       }
-      case 'Thread': {check(([0,20].includes(x.first)&&x.last===null)||([0,20].includes(x.last)&&x.first===null),'exclusive cursor direction');const d=this.discussions.find(d=>d.number===x.number);data={repository:{viewerPermission:user==='maintainer'?'ADMIN':'READ',isPrivate:this.meta.isPrivate,discussion:d?this.discussion(d,user,x):null}};break;}
-      case 'Target': {const t=this.locate(x.id);data={node:t?t.d===t.node?{__typename:'Discussion',...this.discussion(t.d,user)}:{__typename:'DiscussionComment',...this.comment(t.node,user),discussion:this.discussion(t.d,user)}:null};break;}
-      case 'Replies': {const t=this.locate(x.id);data={node:t?{id:t.node.id,discussion:this.discussion(t.d,user),replies:connection(t.node.replies.map(c=>this.comment(c,user)),{last:50,before:x.before})}:null};break;}
+      case 'DiscussionAccess': {check(!/body|reactionGroups|comments/.test(query),'access excludes display fields');const d=this.discussions.find(d=>d.number===x.number);data={repository:{isPrivate:this.meta.isPrivate,discussion:d?{...this.identity(d),locked:d.locked}:null}};break;}
+      case 'CombinedThread':
+      case 'Thread': {check(([0,20].includes(x.first)&&x.last===null)||([0,20].includes(x.last)&&x.first===null),'exclusive cursor direction');const d=this.discussions.find(d=>d.number===x.number);data={repository:{...clone(this.meta),viewerPermission:user==='maintainer'?'ADMIN':'READ',isPrivate:this.meta.isPrivate,discussion:d?this.discussion(d,user,x):null}};break;}
+      case 'Target': {check(!/body|reactionGroups|author\s*\{|replies\s*\{/.test(query),'target excludes display fields');const t=this.locate(x.id);data={node:t?t.d===t.node?{__typename:'Discussion',...this.identity(t.d)}:{__typename:'DiscussionComment',...this.targetComment(t.node,user),discussion:this.identity(t.d)}:null};break;}
+      case 'CommentRefresh': {const t=this.locate(x.id);data={node:t&&t.node!==t.d?{...this.comment(t.node,user),discussion:this.identity(t.d)}:null};break;}
+      case 'Replies': {const t=this.locate(x.id);data={node:t?{id:t.node.id,replyTo:t.node.replyTo,discussion:this.identity(t.d),replies:connection(t.node.replies.map(c=>this.comment(c,user)),{last:50,before:x.before})}:null};break;}
       case 'CreateDiscussion': {check(token==='ghs_fixture','app authors first discussion');check(x.input.repositoryId==='R_fixture'&&x.input.categoryId==='CAT_fixture','creation scope');const d=this.addThread(x.input.title,{body:x.input.body,bodyHTML:render(x.input.body)});data={createDiscussion:{discussion:{id:d.id,number:d.number}}};break;}
       case 'AddComment': {check(user,'reader authors comments');const d=this.discussions.find(d=>d.id===x.input.discussionId);check(d&&!d.locked,'writable discussion');const c=this.addComment(d,x.input.body,{author:user,replyTo:x.input.replyToId||null});data={addDiscussionComment:{comment:this.comment(c,user)}};break;}
       case 'EditComment': {const t=this.locate(x.input.commentId);check(t?.node.author?.login===user,'editor ownership');t.node.body=x.input.body;t.node.bodyHTML=render(x.input.body);t.node.lastEditedAt=new Date(this.now()).toISOString();data={updateDiscussionComment:{comment:this.comment(t.node,user)}};break;}

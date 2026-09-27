@@ -1,0 +1,38 @@
+name: Project page
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.repository == 'lumirth/giscusflare'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build:website
+        env:
+          GISCUSFLARE_DEMO_ORIGIN: ${{ vars.GISCUSFLARE_DEMO_ORIGIN }}
+          GISCUSFLARE_DEMO_NUMBER: ${{ vars.GISCUSFLARE_DEMO_NUMBER }}
+          GISCUSFLARE_WEBSITE_DOMAIN: ${{ vars.GISCUSFLARE_WEBSITE_DOMAIN }}
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/website
+      - name: Publish
+        id: deployment
+        uses: actions/deploy-pages@v4

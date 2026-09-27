@@ -1,12 +1,12 @@
 import type {
   ReactionRequest,
   ModerationReason,
-  DiscussionActionRequest,
-  BlockRequest,
   Widget,
 } from "../contracts/requests.js";
-import type { Comment, RootComment, Replies } from "../contracts/github.js";
-import type { MutationResult } from "../contracts/results.js";
+import type { Comment, RootComment, Replies, Discussion, Person, Reactions, ActionResult as MutationResult } from "./model.js";
+import * as model from "./model.js";
+import type * as GitHub from "../contracts/github.js";
+import type { MutationResult as WireMutation } from "../contracts/results.js";
 import type { ThreadView } from "../contracts/results.js";
 
 export interface Transport {
@@ -17,8 +17,8 @@ export interface Transport {
   ): Promise<T>;
 }
 export type Reaction = ReactionRequest["reaction"];
-/** Reaction ranking is opt-in and requires all root pages; replies remain chronological. */
-export type CommentOrder = "oldest" | "newest" | { reaction: Reaction };
+/** Select an operator-defined profile; the browser never crawls a whole discussion. */
+export type CommentOrder = "oldest" | "newest" | { profile:string };
 export type OperationState = {
   status: "pending" | "failed" | "uncertain";
   message?: string;
@@ -34,7 +34,14 @@ export interface Editor {
   initial: string;
 }
 export interface ConversationState {
-  view: ThreadView | null;
+  profiles:readonly string[];
+  ranking:import("../ranking/types.js").OrderResult|null;
+  ready: boolean;
+  thread: Discussion | null;
+  viewer: Person | null;
+  archived: boolean;
+  unavailable: boolean;
+  canCompose: boolean;
   comments: RootComment[];
   order: CommentOrder;
   nextCursor: string | null;
@@ -46,12 +53,6 @@ export interface ConversationState {
   visibleReplies: ReadonlyMap<string, number>;
   loadingReplies: ReadonlySet<string>;
 }
-const emptyPage = () => ({
-  hasNextPage: false,
-  hasPreviousPage: false,
-  startCursor: null,
-  endCursor: null,
-});
 const unique = <T extends { id: string }>(items: T[]) => [
   ...new Map(items.map((item) => [item.id, item])).values(),
 ];
@@ -59,6 +60,9 @@ const unique = <T extends { id: string }>(items: T[]) => [
 /** Owns conversation continuity independently of DOM, embedding and credentials. */
 export class ConversationController {
   #state: ConversationState;
+  #ranked?:{profile:string;ids:string[];offset:number;view:ThreadView};
+  #ownRoots=new Set<string>();
+  #projected?: Readonly<ConversationState>;
   #listeners = new Set<() => void>();
   #generation = 0;
   #identity = 0;
@@ -92,7 +96,7 @@ export class ConversationController {
     order: CommentOrder = "oldest",
   ) {
     this.#state = {
-      view: null,
+      profiles:[],ranking:null,ready: false, thread: null, viewer: null, archived: false, unavailable: false, canCompose: false,
       comments: [],
       order,
       nextCursor: null,
@@ -107,63 +111,31 @@ export class ConversationController {
   }
   /** Consumers must treat the snapshot as immutable. Mutations go through actions. */
   get state(): Readonly<ConversationState> {
+    if (this.#projected) return this.#projected;
     if (!this.#reactionIntents.size) return this.#state;
-    const apply = <
-      T extends { id: string; reactionGroups: Comment["reactionGroups"] },
-    >(
-      subject: T,
-    ): T => {
-      const intent =
-        this.#reactionIntents.get(subject.id) ||
-        (subject.id === this.#state.view?.discussion?.id
-          ? this.#reactionIntents.get("discussion")
-          : undefined);
-      if (!intent) return subject;
-      const groups = new Map(
-        subject.reactionGroups.map((group) => [group.content, group]),
-      );
-      for (const [content, selected] of intent.desired) {
-        const group = groups.get(content) || {
-          content,
-          viewerHasReacted: false,
-          users: { totalCount: 0 },
-        };
-        groups.set(content, {
-          ...group,
-          viewerHasReacted: selected,
-          users: {
-            ...group.users,
-            totalCount: Math.max(
-              0,
-              group.users.totalCount +
-                Number(selected) -
-                Number(group.viewerHasReacted),
-            ),
-          },
-        });
+    const apply = <T extends {id:string;reactions:Reactions}>(subject:T):T => {
+      const intent=this.#reactionIntents.get(subject.id) ||
+        (subject.id===this.#state.thread?.id?this.#reactionIntents.get('discussion'):undefined);
+      if(!intent)return subject;
+      const reactions={...subject.reactions};
+      for(const [key,selected] of intent.desired){
+        const value=reactions[key]??{count:0,selected:false};
+        reactions[key]={selected,count:Math.max(0,value.count+Number(selected)-Number(value.selected))};
       }
-      return { ...subject, reactionGroups: [...groups.values()] };
+      return {...subject,reactions};
     };
-    return {
-      ...this.#state,
-      comments: this.#state.comments.map((c) => ({
-        ...apply(c),
-        replies: { ...c.replies, nodes: c.replies.nodes.map(apply) },
-      })),
-      view: this.#state.view?.discussion
-        ? {
-            ...this.#state.view,
-            discussion: apply(this.#state.view.discussion),
-          }
-        : this.#state.view,
-    };
+    const comments=this.#state.comments.map(root=>{
+      const changed=apply(root),items=root.replies.items.map(apply);
+      return items.every((item,i)=>item===root.replies.items[i])?changed:{...changed,replies:{...root.replies,items}};
+    });
+    return this.#projected={...this.#state,comments,thread:this.#state.thread?apply(this.#state.thread):null};
   }
   get editors(): ReadonlyMap<string, Editor> {
     return this.#editors;
   }
   operationFor(
     kind:
-      "composer" | "reaction" | "delete" | "moderate" | "discussion" | "block",
+      "composer" | "reaction" | "delete" | "moderate",
     id: string,
   ): OperationState | undefined {
     return this.#state.operations.get(kind + ":" + id);
@@ -176,6 +148,7 @@ export class ConversationController {
     return () => this.#listeners.delete(listener);
   }
   #emit(): void {
+    this.#projected = undefined;
     if (!this.#disposed) for (const listener of this.#listeners) listener();
   }
   #patch(patch: Partial<ConversationState>): void {
@@ -257,7 +230,7 @@ export class ConversationController {
             continue;
           if (
             field === "keys"
-              ? !/^[A-Za-z0-9_-]{16,100}$/.test(entry[1])
+              ? !/^[A-Za-z0-9_.-]{1,100}$/.test(entry[1])
               : entry[1].length > 60000
           )
             continue;
@@ -289,25 +262,33 @@ export class ConversationController {
   /** Invalidate personalized snapshots when authentication changes. */
   changeIdentity(): void {
     this.#identity++;
+    this.#ranked=undefined;this.#ownRoots.clear();
     this.#generation++;
     this.#abort?.abort();
     this.#refreshing = undefined;
     this.#reactionIntents.clear();
     this.#pending.clear();
     this.#patch({
-      view: null,
+      profiles:[],ranking:null,ready: false, thread: null, viewer: null, archived: false, unavailable: false, canCompose: false,
       comments: [],
       loading: false,
       nextCursor: null,
       operations: new Map(),
     });
   }
+  bootstrap(view:ThreadView):void{
+    if(this.#state.ready||this.#state.loading)return;
+    const comments=(view.discussion?.comments.nodes||[]).map(model.rootComment);
+    if(view.order==='newest')comments.reverse();
+    this.#patch({profiles:view.profiles??[],ready:true,thread:view.discussion?model.discussion(view.discussion):null,viewer:null,archived:view.archived,unavailable:Boolean(view.unavailable),canCompose:!view.archived&&!view.unavailable&&!view.discussion?.locked,comments,nextCursor:view.nextCursor,lastRefresh:Date.now()});
+  }
   async setOrder(order: CommentOrder): Promise<void> {
     if (JSON.stringify(order) === JSON.stringify(this.#state.order)) return;
     this.#generation++;
     this.#abort?.abort();
     this.#refreshing = undefined;
-    this.#state = { ...this.#state, order, comments: [], nextCursor: null };
+    this.#ranked=undefined;
+    this.#patch({order,ranking:null,...(typeof order==='string'?{comments:[],nextCursor:null}:{})});
     await this.refresh();
   }
   async refresh(more = false): Promise<void> {
@@ -324,7 +305,7 @@ export class ConversationController {
     }
     const flight = {
       work: Promise.resolve(false),
-      reportErrors: !background || !this.#state.view,
+      reportErrors: !background || !this.#state.ready,
     };
     flight.work = this.#refresh(more, background, () => flight.reportErrors);
     this.#refreshing = flight;
@@ -353,14 +334,15 @@ export class ConversationController {
             order: typeof previous.order === "object" ? "oldest" : previous.order,
             cursor,
             replyPrefetch: this.replyPrefetch,
+            includeComments:typeof previous.order!=="object",
           },
           signal,
         );
-      const view = await fetchPage(more ? previous.nextCursor! : "");
+      const view=more&&typeof previous.order==='object'&&this.#ranked?this.#ranked.view:await fetchPage(more&&typeof previous.order==='string'?previous.nextCursor!:"");
       const ordered = (page: ThreadView) =>
         previous.order === "newest"
-          ? [...(page.discussion?.comments.nodes || [])].reverse()
-          : page.discussion?.comments.nodes || [];
+          ? (page.discussion?.comments.nodes || []).map(model.rootComment).reverse()
+          : (page.discussion?.comments.nodes || []).map(model.rootComment);
       let comments = more
         ? unique([...previous.comments, ...ordered(view)])
         : ordered(view);
@@ -370,7 +352,7 @@ export class ConversationController {
       while (
         !more &&
         nextCursor &&
-        (typeof previous.order === "object" || comments.length < previous.comments.length) &&
+        (typeof previous.order!=="object"&&comments.length < previous.comments.length) &&
         !seen.has(nextCursor)
       ) {
         seen.add(nextCursor);
@@ -378,45 +360,74 @@ export class ConversationController {
         comments = unique([...comments, ...ordered(page)]);
         nextCursor = page.nextCursor;
       }
-      if (typeof previous.order === "object") {
-        if (nextCursor) throw new Error("Unable to load the complete discussion for reaction ranking. Please retry.");
-        const reaction = previous.order.reaction;
-        const count = (c: RootComment) => c.reactionGroups.find(g => g.content === reaction)?.users.totalCount || 0;
-        comments.sort((a,b) => count(b)-count(a) || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+      if(typeof previous.order==='object'){
+        const profile=previous.order.profile;
+        let traversal=this.#ranked;
+        if(!traversal||traversal.profile!==profile||(!more&&!background)){
+          const deadline=Date.now()+120000;
+          for(;;){
+            const order=await this.transport.request<import('../ranking/types.js').OrderResult>('ranking',{config:this.config,profile},signal);
+            if(generation!==this.#generation||signal.aborted)return false;
+            this.#patch({ranking:order});
+            if(order.status==='ready'){traversal={profile,ids:order.ids,offset:0,view};break;}
+            if(order.status==='paused')throw new Error('This order is unavailable right now. You can keep reading chronologically.');
+            if(Date.now()>=deadline||order.retryAt>deadline)throw new Error('This order is still being prepared. Try again later.');
+            await new Promise<void>((resolve,reject)=>{
+              const done=()=>{signal.removeEventListener('abort',abort);resolve();};
+              const timer=setTimeout(done,Math.max(1000,order.retryAt-Date.now()));
+              const abort=()=>{clearTimeout(timer);reject(new Error('Cancelled'));};
+              signal.addEventListener('abort',abort,{once:true});
+            });
+          }
+        }
+        const start=more?traversal.offset:0;
+        const end=more?Math.min(start+20,traversal.ids.length):Math.min(Math.max(20,background?traversal.offset:0),traversal.ids.length);
+        let loaded:RootComment[]=[];
+        for(let offset=start;offset<end;offset+=20){
+          const ids=traversal.ids.slice(offset,Math.min(offset+20,end));
+          const page=await this.transport.request<{comments:GitHub.RootComment[];consumed:number}>('hydrate',{config:this.config,ids,replyPrefetch:this.replyPrefetch},signal);
+          if(page.consumed!==ids.length)throw new Error('The comments service returned invalid pagination.');
+          loaded.push(...page.comments.map(model.rootComment));
+        }
+        comments=unique([...(more?previous.comments:previous.comments.filter(c=>this.#ownRoots.has(c.id))),...loaded]);
+        if(generation!==this.#generation||signal.aborted)return false;
+        this.#ranked={...traversal,offset:end,view};
+        nextCursor=end<traversal.ids.length?String(end):null;
       }
       // Revalidate expanded replies to their previous depth, preserving folding.
+      const previousById = new Map(previous.comments.map(comment => [comment.id, comment]));
       for (let i = 0; i < comments.length; i++) {
         const item = comments[i]!,
-          old = previous.comments.find((c) => c.id === item.id);
+          old = previousById.get(item.id);
         if (
           !old ||
           !previous.expanded.has(item.id) ||
-          old.replies.nodes.length <= item.replies.nodes.length
+          old.replies.items.length <= item.replies.items.length
         )
           continue;
         let replies = item.replies;
         const cursors = new Set<string>();
         while (
-          replies.pageInfo.hasPreviousPage &&
-          replies.nodes.length < old.replies.nodes.length
+          replies.cursor &&
+          replies.items.length < old.replies.items.length
         ) {
-          const cursor = replies.pageInfo.startCursor || "";
+          const cursor = replies.cursor || "";
           if (cursors.has(cursor)) break;
           cursors.add(cursor);
-          const page = await this.transport.request<Replies>(
+          const page = model.replies(await this.transport.request<GitHub.Replies>(
             "replies",
             { config: this.config, parentId: item.id, cursor },
             signal,
-          );
+          ));
           replies = {
             ...page,
-            nodes: unique([...page.nodes, ...replies.nodes]),
+            items: unique([...page.items, ...replies.items]),
           };
         }
         comments[i] = { ...item, replies };
       }
       if (generation !== this.#generation || this.#disposed) return false;
-      this.#patch({ view, comments, nextCursor, lastRefresh: Date.now(), error: "" });
+      this.#patch({ profiles:view.profiles??[],ready:true, thread:view.discussion?model.discussion(view.discussion):null, viewer:view.viewer, archived:view.archived, unavailable:Boolean(view.unavailable), canCompose:!view.archived&&!view.unavailable&&!view.discussion?.locked, comments, nextCursor, lastRefresh: Date.now(), error: "" });
       return true;
     } catch (error) {
       if (generation === this.#generation && !signal.aborted && reportErrors())
@@ -437,14 +448,14 @@ export class ConversationController {
     const root = this.#state.comments.find((c) => c.id === parentId);
     if (!root) return;
     this.#patch({ expanded: new Set([...this.#state.expanded, parentId]) });
-    if (!root.replies.pageInfo.hasPreviousPage) return;
+    if (!root.replies.cursor) return;
     const generation = this.#generation;
     const load = (async () => {
-      const page = await this.transport.request<Replies>("replies", {
+      const page = model.replies(await this.transport.request<GitHub.Replies>("replies", {
         config: this.config,
         parentId,
-        cursor: root.replies.pageInfo.startCursor || "",
-      });
+        cursor: root.replies.cursor || "",
+      }));
       if (this.#disposed || generation !== this.#generation) return;
       this.#patch({
         comments: this.#state.comments.map((c) =>
@@ -453,7 +464,7 @@ export class ConversationController {
                 ...c,
                 replies: {
                   ...page,
-                  nodes: unique([...page.nodes, ...c.replies.nodes]),
+                  items: unique([...page.items, ...c.replies.items]),
                 },
               }
             : c,
@@ -474,8 +485,8 @@ export class ConversationController {
     if (!root || this.#replyLoads.has(parentId)) return;
     const visible = this.#state.visibleReplies.get(parentId) || 5;
     if (
-      root.replies.nodes.length <= visible &&
-      root.replies.pageInfo.hasPreviousPage
+      root.replies.items.length <= visible &&
+      root.replies.cursor
     )
       await this.loadReplies(parentId);
     const counts = new Map(this.#state.visibleReplies);
@@ -502,7 +513,14 @@ export class ConversationController {
       editor = this.#editors.get(name);
     if (!body.trim())
       return Promise.reject(new Error("Write a comment before submitting."));
-    const key = this.#keys.get(name) || crypto.randomUUID();
+    const key = this.#keys.get(name) || Date.now() + '.' + crypto.randomUUID();
+    // A recovered pre-release submission can have reached GitHub. Keep its
+    // identity and text, but never silently give it a new idempotency key.
+    if (!/^\d{13}\.[A-Za-z0-9_-]{16,86}$/.test(key)) {
+      const error = new Error("This saved submission may already be on GitHub. Check the discussion before editing and submitting it again.");
+      this.#operation("composer:" + name, {status:"uncertain", message:error.message});
+      return Promise.reject(error);
+    }
     this.#keys.set(name, key);
     this.#draftChanged();
     const operation = editor?.kind === "edit" ? "edit" : "comment";
@@ -533,28 +551,13 @@ export class ConversationController {
   ): Promise<MutationResult> {
     return this.#mutate("moderate", { id, minimized, reason });
   }
-  changeDiscussion(
-    id: string,
-    action: DiscussionActionRequest["action"],
-    fields: Pick<DiscussionActionRequest, "title" | "body"> = {},
-  ): Promise<MutationResult> {
-    return this.#mutate("discussion", { id, action, ...fields });
-  }
-  blockAuthor(
-    id: string,
-    scope: BlockRequest["scope"],
-    add: boolean,
-  ): Promise<MutationResult> {
-    return this.#mutate("block", { id, scope, add });
-  }
-  #groups(id: string): Comment["reactionGroups"] {
-    if (id === "discussion" || id === this.#state.view?.discussion?.id)
-      return this.#state.view?.discussion?.reactionGroups || [];
-    return (
-      this.#state.comments
-        .flatMap((c) => [c, ...c.replies.nodes])
-        .find((c) => c.id === id)?.reactionGroups || []
-    );
+  #groups(id: string): Reactions {
+    if(id==='discussion'||id===this.#state.thread?.id)return this.#state.thread?.reactions??{};
+    for(const root of this.#state.comments){
+      if(root.id===id)return root.reactions;
+      const reply=root.replies.items.find(item=>item.id===id);if(reply)return reply.reactions;
+    }
+    return {};
   }
   setReaction(
     id: string,
@@ -584,15 +587,14 @@ export class ConversationController {
             const next = [...intent.desired].find(
               ([reaction, selected]) =>
                 Boolean(
-                  this.#groups(id).find((g) => g.content === reaction)
-                    ?.viewerHasReacted,
+                  this.#groups(id)[reaction]?.selected,
                 ) !== selected,
             );
             if (!next) break;
             intent.flight = {
               reaction: next[0],
               add: next[1],
-              key: crypto.randomUUID(),
+              key: Date.now() + '.' + crypto.randomUUID(),
             };
           }
           await this.#mutate(
@@ -629,18 +631,18 @@ export class ConversationController {
     if (old) return old;
     const identity = this.#identity;
     const run = (async () => {
-      const result = await this.transport.request<MutationResult>(operation, {
+      const result = model.actionResult(await this.transport.request<WireMutation>(operation, {
         ...input,
-        key: input.key || crypto.randomUUID(),
+        key: input.key || Date.now() + '.' + crypto.randomUUID(),
         config: this.config,
-      });
+      }));
       if (this.#disposed || identity !== this.#identity) return result;
       // A read begun before this successful write cannot overwrite the result.
       this.#generation++;
       this.#abort?.abort();
       this.#state = { ...this.#state, loading: false };
       this.#reconcile(result, operation);
-      if (!this.#state.view?.discussion && result.discussion === undefined)
+      if (!this.#state.thread)
         await this.refresh();
       return result;
     })();
@@ -662,7 +664,7 @@ export class ConversationController {
       if (identity === this.#identity)
         this.#operation(scope, {
           status:
-            code === "WRITE_UNCERTAIN" || !status || status >= 500
+            (code === "WRITE_UNCERTAIN" || code === "OPERATION_EXPIRED") || !status || status >= 500
               ? "uncertain"
               : "failed",
           message:
@@ -677,125 +679,44 @@ export class ConversationController {
     }
   }
   #reconcile(result: MutationResult, operation: string): void {
-    let comments = this.#state.comments,
-      view = this.#state.view;
-    if (result.discussion !== undefined && view) {
-      view = {
-        ...view,
-        discussion: result.discussion,
-        unavailable: result.discussion === null,
-      };
-      if (!result.discussion) comments = [];
-      else
-        comments = comments.map((c) => ({
-          ...c,
-          isAnswer: c.id === result.discussion?.answer?.id,
-        }));
+    let comments=this.#state.comments,thread=this.#state.thread;
+    const byId=new Map(comments.map(comment=>[comment.id,comment]));
+    const deletedLeaf=operation==='delete'&&result.comment?.deletedAt&&!byId.get(result.id)?.replies.count;
+    if(result.removed||deletedLeaf){
+      const rootsBefore=comments.length;
+      comments=comments.filter(c=>c.id!==result.id).map(c=>{
+        const items=c.replies.items.filter(reply=>reply.id!==result.id);
+        return items.length===c.replies.items.length?c:{...c,replies:{...c.replies,items,count:Math.max(0,c.replies.count-(c.replies.items.length-items.length))}};
+      }).filter(c=>!c.deletedAt||c.replies.count>0);
+      if(thread)thread={...thread,commentCount:Math.max(0,thread.commentCount-(rootsBefore-comments.length))};
     }
-    // A delete can return the deleted record. Only a parent with surviving
-    // replies needs that placeholder; retaining deleted leaves creates ghosts.
-    const deletedLeaf = operation === "delete" && result.comment?.deletedAt &&
-      !comments.find(c => c.id === result.id)?.replies.totalCount;
-    if (result.removed || deletedLeaf) {
-      const rootsBefore = comments.length;
-      comments = comments
-        .filter((c) => c.id !== result.id)
-        .map((c) => ({
-          ...c,
-          replies: {
-            ...c.replies,
-            totalCount:
-              c.replies.totalCount -
-              Number(c.replies.nodes.some((r) => r.id === result.id)),
-            nodes: c.replies.nodes.filter((r) => r.id !== result.id),
-          },
-        }))
-        .filter(c => !c.deletedAt || c.replies.totalCount > 0);
-      const rootsRemoved = rootsBefore - comments.length;
-      if (rootsRemoved && view?.discussion)
-        view = {
-          ...view,
-          discussion: {
-            ...view.discussion,
-            comments: {
-              ...view.discussion.comments,
-              totalCount: Math.max(0, view.discussion.comments.totalCount - rootsRemoved),
-            },
-          },
-        };
-    }
-    const comment = result.removed || deletedLeaf ? undefined : result.comment;
-    if (comment) {
-      if (comment.replyTo) {
-        const parent = comment.replyTo.id;
-        comments = comments.map((c) =>
-          c.id !== parent
-            ? c
-            : {
-                ...c,
-                replies: {
-                  ...c.replies,
-                  totalCount:
-                    c.replies.totalCount +
-                    Number(
-                      operation === "comment" &&
-                        !c.replies.nodes.some((r) => r.id === comment.id),
-                    ),
-                  nodes: unique([...c.replies.nodes, comment]),
-                },
-              },
-        );
-        this.#state = {
-          ...this.#state,
-          expanded: new Set([...this.#state.expanded, parent]),
-        };
-      } else {
-        const old = comments.find((c) => c.id === comment.id);
-        const root = {
-          ...comment,
-          replies: old?.replies || {
-            totalCount: 0,
-            nodes: [],
-            pageInfo: emptyPage(),
-          },
-        };
-        comments = old
-          ? comments.map((c) => (c.id === root.id ? root : c))
-          : this.#state.order === "newest"
-            ? [root, ...comments]
-            : [...comments, root];
-        if (!old && operation === "comment" && view?.discussion)
-          view = {
-            ...view,
-            discussion: {
-              ...view.discussion,
-              comments: {
-                ...view.discussion.comments,
-                totalCount: view.discussion.comments.totalCount + 1,
-              },
-            },
-          };
+    const comment=result.removed||deletedLeaf?undefined:result.comment;
+    if(comment){
+      if(comment.replyToId){
+        const parent=comment.replyToId;
+        comments=comments.map(c=>c.id!==parent?c:{...c,replies:{...c.replies,
+          count:c.replies.count+Number(operation==='comment'&&!c.replies.items.some(r=>r.id===comment.id)),
+          items:unique([...c.replies.items,comment])}});
+        this.#state={...this.#state,expanded:new Set([...this.#state.expanded,parent])};
+      }else{
+        const old=byId.get(comment.id),root={...comment,replies:old?.replies??{count:0,items:[],cursor:null}};
+        comments=old?comments.map(c=>c.id===root.id?root:c):this.#state.order==='newest'?[root,...comments]:[...comments,root];
+        if(!old&&operation==='comment'&&thread)thread={...thread,commentCount:thread.commentCount+1};
       }
     }
-    const reaction = result.reactions;
-    if (reaction) {
-      const update = <T extends Comment>(c: T): T =>
-        c.id === reaction.id
-          ? { ...c, reactionGroups: reaction.reactionGroups }
-          : c;
-      comments = comments.map((c) => ({
-        ...update(c),
-        replies: { ...c.replies, nodes: c.replies.nodes.map(update) },
-      }));
-      if (view?.discussion?.id === reaction.id)
-        view = {
-          ...view,
-          discussion: {
-            ...view.discussion,
-            reactionGroups: reaction.reactionGroups,
-          },
-        };
+    if(result.comment&&!result.comment.replyToId&&!this.#state.comments.some(c=>c.id===result.comment!.id))this.#ownRoots.add(result.comment.id);
+    if(result.removed)this.#ownRoots.delete(result.id);
+    if(result.reactions){
+      const change=result.reactions;
+      comments=comments.map(root=>{
+        if(root.id===change.id)return {...root,reactions:change.reactions};
+        const index=root.replies.items.findIndex(reply=>reply.id===change.id);
+        if(index<0)return root;
+        const items=[...root.replies.items];items[index]={...items[index]!,reactions:change.reactions};
+        return {...root,replies:{...root.replies,items}};
+      });
+      if(thread?.id===change.id)thread={...thread,reactions:change.reactions};
     }
-    this.#patch({ comments, view, error: "" });
+    this.#patch({comments,thread,error:''});
   }
 }

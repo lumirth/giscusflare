@@ -19,10 +19,19 @@ export function equal(a: string, b: string): boolean {
   for (let i = 0; i < Math.max(aa.length, bb.length); i++) delta |= (aa[i] || 0) ^ (bb[i] || 0);
   return delta === 0;
 }
+const aesKeys=new Map<string,Promise<CryptoKey>>();
+const rsaKeys=new Map<string,Promise<CryptoKey>>();
+function keyOnce(cache:Map<string,Promise<CryptoKey>>,identity:string,create:()=>Promise<CryptoKey>):Promise<CryptoKey>{
+  const existing=cache.get(identity);if(existing)return existing;
+  if(cache.size>=4)cache.delete(cache.keys().next().value!);
+  const pending=create();cache.set(identity,pending);
+  void pending.catch(()=>{if(cache.get(identity)===pending)cache.delete(identity);});
+  return pending;
+}
 async function aesKey(secret: string): Promise<CryptoKey> {
   const bytes = unb64(secret);
   requireCondition(bytes.length === 32 && b64(bytes) === secret, 503, 'CONFIGURATION', 'SESSION_SECRET must encode 32 random bytes.');
-  return crypto.subtle.importKey('raw', bytes, 'AES-GCM', false, ['encrypt', 'decrypt']);
+  return keyOnce(aesKeys,secret,()=>crypto.subtle.importKey('raw',bytes,'AES-GCM',false,['encrypt','decrypt']));
 }
 export async function encrypt(value: unknown, secret: string, purpose: string): Promise<string> {
   const iv = crypto.getRandomValues(new Uint8Array(12));
@@ -57,6 +66,6 @@ export function pkcs8(pem: string): Uint8Array<ArrayBuffer> {
 export async function appJWT(appId: string, pem: string, now: number): Promise<string> {
   const seconds = Math.floor(now / 1000);
   const text = `${b64(encoder.encode('{"alg":"RS256","typ":"JWT"}'))}.${b64(encoder.encode(JSON.stringify({ iss: appId, iat: seconds - 60, exp: seconds + 540 })))}`;
-  const key = await crypto.subtle.importKey('pkcs8', pkcs8(pem), { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
+  const key=await keyOnce(rsaKeys,pem,()=>crypto.subtle.importKey('pkcs8',pkcs8(pem),{name:'RSASSA-PKCS1-v1_5',hash:'SHA-256'},false,['sign']));
   return `${text}.${b64(new Uint8Array(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, encoder.encode(text))))}`;
 }

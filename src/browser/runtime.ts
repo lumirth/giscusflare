@@ -7,25 +7,54 @@ import {
 } from "../conversation/fetch-policy.js";
 import { browserDraftStore, type DraftRecovery } from "./draft-store.js";
 import { ConversationController, type CommentOrder } from "../conversation/controller.js";
-import type { Widget } from "../contracts/requests.js";
+import { conversationSettings,type Page,type Appearance } from "./options.js";
 import { BrowserSession, type SessionHost, type Login } from "./session.js";
 import { renderContent } from "./content.js";
 
 export interface ConversationOptions {
   service: string;
-  config: Widget;
+  page:Page;
+  appearance?:Partial<Appearance>;
   fetching?: Partial<FetchPolicy> | false;
   draftRecovery?: DraftRecovery | false;
   order?: CommentOrder;
+  /** Server-rendered first page; no second anonymous fetch is needed. */
+  bootstrap?:{view:import('../contracts/results.js').ThreadView;expires:number};
   /** Supplied by iframe hosts. Native embedding uses first-party browser storage. */
   host?: SessionHost;
   renderContent?: typeof renderContent;
 }
-export interface ConversationRuntime {
-  config: Widget;
+export interface Conversation {
+  readonly page:Readonly<Page>;
+  appearance:Appearance;
   interactions: InteractionRegistry;
-  controller: ConversationController;
-  session: BrowserSession;
+  readonly state: Readonly<import('../conversation/controller.js').ConversationState>;
+  readonly editors: ConversationController['editors'];
+  readonly signedIn: boolean;
+  readonly signingIn: boolean;
+  readonly authenticationError: string;
+  subscribe(listener: (state: Readonly<import("../conversation/controller.js").ConversationState>) => void): () => void;
+  subscribeDrafts: ConversationController['subscribeDrafts'];
+  load(): Promise<void>;
+  refresh(): Promise<void>;
+  loadMore(): Promise<void>;
+  setOrder: ConversationController['setOrder'];
+  loadReplies: ConversationController['loadReplies'];
+  revealReplies: ConversationController['revealReplies'];
+  draft: ConversationController['draft'];
+  setDraft: ConversationController['setDraft'];
+  beginReply: ConversationController['beginReply'];
+  beginEdit: ConversationController['beginEdit'];
+  closeEditor: ConversationController['closeEditor'];
+  operationFor: ConversationController['operationFor'];
+  submit: ConversationController['submit'];
+  preview: ConversationController['preview'];
+  removeComment: ConversationController['removeComment'];
+  moderateComment: ConversationController['moderateComment'];
+  setReaction: ConversationController['setReaction'];
+  retryReaction: ConversationController['retryReaction'];
+  signIn: BrowserSession['signIn'];
+  signOut: BrowserSession['signOut'];
   renderContent: typeof renderContent;
   initialize(data: Record<string, unknown>): void;
   saveDrafts(): void;
@@ -34,8 +63,10 @@ export interface ConversationRuntime {
 }
 export function createConversation(
   options: ConversationOptions,
-): ConversationRuntime {
-  const { config, service } = options;
+): Conversation {
+  const {service}=options;
+  const settings=conversationSettings(options.page,options.appearance);
+  const config={...settings.page,...settings.appearance};
   const prefix = storageNamespace(service, config.repo);
   const draftKey = draftIdentity(config);
   const interactions = new InteractionRegistry();
@@ -102,6 +133,7 @@ export function createConversation(
   const session = new BrowserSession(service, config, host);
   const controller = new ConversationController(config, session, options.order);
   controller.replyPrefetch = policy.replyPrefetch;
+  if(options.bootstrap&&options.bootstrap.expires>Date.now())controller.bootstrap(options.bootstrap.view);
   let initialized = false;
   let revision = session.revision;
   const unsubscribe = session.subscribe(() => {
@@ -151,26 +183,48 @@ export function createConversation(
   window.addEventListener("focus", onFocus);
   window.addEventListener("online", onReconnect);
   document.addEventListener("visibilitychange", onFocus);
-  let timer: ReturnType<typeof setInterval> | undefined;
   const setFetching = (value: Partial<FetchPolicy> | false) => {
     Object.assign(policy, fetchPolicy(value));
     controller.replyPrefetch = policy.replyPrefetch;
-    clearInterval(timer);
-    timer =
-      policy.pollIntervalMs === false
-        ? undefined
-        : setInterval(
-            () => void scheduler.trigger("poll"),
-            policy.pollIntervalMs,
-          );
+
   };
   setFetching(options.fetching ?? {});
   window.addEventListener("pagehide", saveDrafts);
-  const runtime: ConversationRuntime = {
-    config,
+  const runtime: Conversation = {
+    page:settings.page,
+    appearance:settings.appearance,
     interactions,
-    controller,
-    session,
+    get state() { return controller.state; },
+    get editors() { return controller.editors; },
+    get signedIn() { return session.signedIn; },
+    get signingIn() { return session.pending; },
+    get authenticationError() { return session.error; },
+    subscribe(listener) {
+      const notify = () => listener(controller.state);
+      const state = controller.subscribe(notify), identity = session.subscribe(notify);
+      return () => { state(); identity(); };
+    },
+    subscribeDrafts: controller.subscribeDrafts.bind(controller),
+    load: () => controller.refresh(),
+    refresh: () => controller.refresh(),
+    loadMore: () => controller.refresh(true),
+    setOrder: controller.setOrder.bind(controller),
+    loadReplies: controller.loadReplies.bind(controller),
+    revealReplies: controller.revealReplies.bind(controller),
+    draft: controller.draft.bind(controller),
+    setDraft: controller.setDraft.bind(controller),
+    beginReply: controller.beginReply.bind(controller),
+    beginEdit: controller.beginEdit.bind(controller),
+    closeEditor: controller.closeEditor.bind(controller),
+    operationFor: controller.operationFor.bind(controller),
+    submit: controller.submit.bind(controller),
+    preview: controller.preview.bind(controller),
+    removeComment: controller.removeComment.bind(controller),
+    moderateComment: controller.moderateComment.bind(controller),
+    setReaction: controller.setReaction.bind(controller),
+    retryReaction: controller.retryReaction.bind(controller),
+    signIn: session.signIn.bind(session),
+    signOut: session.signOut.bind(session),
     renderContent: options.renderContent || renderContent,
     saveDrafts,
     setFetching,
@@ -206,11 +260,10 @@ export function createConversation(
           return;
         }
       }
-      if (!controller.state.loading) void controller.refresh();
+      if (!controller.state.loading&&!controller.state.ready) void controller.refresh();
     },
     dispose() {
       saveDrafts();
-      clearInterval(timer);
       window.removeEventListener("pagehide", saveDrafts);
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("online", onReconnect);
@@ -253,7 +306,7 @@ export function createConversation(
     if (returnPosition) {
       const position = returnPosition;
       const stop = controller.subscribe(() => {
-        if (controller.state.loading || !controller.state.view) return;
+        if (controller.state.loading || !controller.state.ready) return;
         stop();
         requestAnimationFrame(() => {
           window.scrollTo({ top: position.scroll || 0 });

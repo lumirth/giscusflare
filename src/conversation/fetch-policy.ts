@@ -3,14 +3,12 @@ export interface FetchPolicy {
   onFocus: boolean;
   onReconnect: boolean;
   staleAfterMs: number;
-  pollIntervalMs: number | false;
   replyPrefetch: number;
 }
 export const defaultFetchPolicy: Readonly<FetchPolicy> = Object.freeze({
   onFocus: true,
   onReconnect: true,
   staleAfterMs: 60_000,
-  pollIntervalMs: false,
   replyPrefetch: 5,
 });
 export function fetchPolicy(
@@ -26,10 +24,8 @@ export function fetchPolicy(
   for (const [key, min, max] of [
     ["staleAfterMs", 0, 86_400_000],
     ["replyPrefetch", 0, 100],
-    ["pollIntervalMs", 30_000, 86_400_000],
   ] as const) {
     const n = policy[key];
-    if (key === "pollIntervalMs" && n === false) continue;
     if (typeof n !== "number" || !Number.isInteger(n) || n < min || n > max)
       throw new RangeError(
         `${key} must be an integer between ${min} and ${max}.`,
@@ -50,11 +46,10 @@ export class FetchScheduler {
     readonly available: () => boolean,
     readonly now = Date.now,
   ) {}
-  async trigger(reason: "focus" | "reconnect" | "poll"): Promise<void> {
+  async trigger(reason: "focus" | "reconnect"): Promise<void> {
     if (
       (reason === "focus" && !this.policy.onFocus) ||
-      (reason === "reconnect" && !this.policy.onReconnect) ||
-      (reason === "poll" && this.policy.pollIntervalMs === false)
+      (reason === "reconnect" && !this.policy.onReconnect)
     )
       return;
     const time = this.now();

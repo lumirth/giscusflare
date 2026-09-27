@@ -4,12 +4,13 @@ import type { Widget } from '../contracts/requests.js';
 import type { DiscussionSummary, Repository } from '../contracts/github.js';
 import { requireCondition } from './errors.js';
 export function policy(config: PublicConfig, repo: string): RepositoryPolicy {
+  if(!Object.hasOwn(config.repositories,repo)&&config.openHosting)return config.openHosting;
   requireCondition(Object.hasOwn(config.repositories, repo), 403, 'PERMISSION', 'This repository is not enabled on this service.');
   return config.repositories[repo]!;
 }
 export function parentOrigin(p: RepositoryPolicy, page: string): string {
   const origin = new URL(page).origin;
-  requireCondition(p.origins.includes(origin), 403, 'ORIGIN', 'This website is not allowed to embed these comments.');
+  requireCondition((p.origins==='*'||p.origins.includes(origin)), 403, 'ORIGIN', 'This website is not allowed to embed these comments.');
   return origin;
 }
 export function authorizeWidget(publicConfig: PublicConfig, widget: Widget): RepositoryPolicy {
@@ -19,7 +20,7 @@ export function authorizeWidget(publicConfig: PublicConfig, widget: Widget): Rep
   requireCondition(!widget.categoryId || !p.categoryId || widget.categoryId === p.categoryId, 403, 'CATEGORY', 'The category ID does not match the configured category.');
   if (!isNamedTheme(widget.theme)) {
     const origin = new URL(widget.theme).origin;
-    requireCondition(origin === publicConfig.origin || p.origins.includes(origin) || p.customThemeOrigins.includes(origin), 403, 'ORIGIN', 'This stylesheet URL is not allowed by the repository policy.');
+    requireCondition(origin === publicConfig.origin || (p.origins==='*'||p.origins.includes(origin)) || p.customThemeOrigins.includes(origin), 403, 'ORIGIN', 'This stylesheet URL is not allowed by the repository policy.');
   }
   return p;
 }

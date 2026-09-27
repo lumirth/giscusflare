@@ -1,15 +1,23 @@
 # Third-party notices
 
-This project rebuilds [giscus](https://github.com/giscus/giscus)'s GitHub Discussions comment model for Cloudflare Workers. It is independent of giscus, GitHub, and Cloudflare.
+giscusflare implements a GitHub Discussions comment service for Cloudflare Workers. It uses [giscus](https://github.com/giscus/giscus) as its presentation and compatibility reference. The project is independent of giscus, GitHub, and Cloudflare.
 
-Runtime dependencies include Hono, Valibot, Standard Schema, DOMPurify, Lit and MathJax. TypeScript, esbuild, Tailwind and Wrangler support the build. Each dependency retains its package license.
+The project license is [MIT](LICENSE). [Source provenance](docs/PROVENANCE.md) identifies the original source archive.
 
-The project's license is in [LICENSE](LICENSE). The previous source archive is identified in [docs/PROVENANCE.md](docs/PROVENANCE.md).
+## giscus source and assets
 
-## Giscus themes
+The themes in `vendor/giscus/themes` and files in `vendor/giscus/reference` come from giscus commit `3d6430237108ca4ee3eb6a1a20595201c09c72d5`. Its MIT license is retained in `vendor/giscus/LICENSE`. Individual files retain their Primer, Gruvbox, and other author notices.
 
-`vendor/giscus/themes` comes from Giscus at `3d6430237108ca4ee3eb6a1a20595201c09c72d5`. Its MIT license is retained in `vendor/giscus/LICENSE`; individual theme files retain Primer, Gruvbox and other author notices. The build adapts root selectors. Giscus's Mona loading animation and pagination decorations load from their original GitHub asset URLs. No separately licensed GitHub math renderer was copied.
+The build compiles the base and global styles, including their Primer notice, and adapts root selectors for native embedding. The React components are design references and build inputs for stylesheet utility discovery. Their React implementation is not bundled. Local standard-widget additions are in `src/browser/standard/styles.css`.
 
-GitHub Octicons (GitHub, Inc.), MIT. The standard interface uses unchanged SVG assets from `@primer/octicons` 19.27.0. See https://github.com/primer/octicons/blob/main/LICENSE.
+The standard widget loads giscus's Mona animation and pagination decorations from their original GitHub asset URLs. It does not copy GitHub's separately licensed math renderer.
 
-The pinned files in `vendor/giscus/reference` retain Giscus MIT attribution. Its base/global CSS (including the Primer notice) is compiled for the standard presentation. React component source is a design reference, not bundled code. `src/browser/standard/styles.css` records the small local additions. Lit HTML is BSD-3-Clause; Tailwind CSS and its RTL build plugin are MIT-licensed dependencies.
+## Icons
+
+The standard widget uses unchanged SVG assets from `@primer/octicons` 19.27.0. GitHub, Inc. licenses Octicons under [MIT](https://github.com/primer/octicons/blob/main/LICENSE).
+
+## Dependencies
+
+Runtime dependencies include Hono, Valibot, Standard Schema, DOMPurify, Lit HTML, and MathJax. TypeScript, esbuild, Tailwind CSS, its RTL plugin, and Wrangler support the build. Each dependency retains its package license.
+
+Lit HTML uses the BSD-3-Clause license. Tailwind CSS and its RTL plugin use MIT licenses. Review the installed packages' license files when redistributing a build.

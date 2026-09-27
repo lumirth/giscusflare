@@ -1,35 +1,57 @@
-# Architecture and design boundaries
+# Architecture
 
-giscusflare is a GitHub Discussions client and Cloudflare service. The standard presentation is a replaceable interface matching Giscus. Kukas design, Toast semantics and site-specific icons do not belong in the core.
+Giscusflare connects a website to GitHub Discussions. A Cloudflare Worker checks requests and public response caches; a SQLite Durable Object coordinates each repository's GitHub access, sessions and writes. Static Assets serves browser code, styles and setup.
 
-## Ownership
+```mermaid
+flowchart LR
+  Page[Website] --> Worker[Cloudflare Worker]
+  Page --> Assets[Static Assets]
+  Worker --> Cache[Public response cache]
+  Worker --> Repo[Repository Durable Object]
+  Repo --> GitHub[GitHub Discussions]
+  Repo --> Store[SQLite state]
+```
 
-- **Repository engine:** authoritative permission/scope checks, encrypted App-user sessions, GitHub transport and durable mutation receipts.
-- **Conversation controller:** canonical conversation data, drafts, editing, pagination, typed commands, optimistic reaction intents, operation status and reconciliation. No DOM or browser storage.
-- **Browser runtime:** session and host adapters, configurable fetch scheduling, optional draft recovery and interaction registration. No selectors from a particular presentation.
-- **Reusable interactions:** bind consumer-owned form/textarea elements to composing, preview, keyboard submission, cancellation and focus. Own their listeners, not their markup or CSS.
-- **Content renderer:** sanitized GitHub Markdown HTML, code controls and lazy math. Preview and published content use the same replaceable contract.
-- **Presentation:** owns DOM, styling and rendering subscriptions. Standard and custom presentations use the same public runtime and bindings. Presentation disposal never disposes a runtime owned by its host.
-- **Embedding:** native lifecycle or origin-checked iframe bridge. GitHub tokens stay on the server; the browser holds an opaque service capability.
+GitHub stores comment content. SQLite keeps durable state such as page mappings, encrypted sessions, creation records and mutation receipts. Optional ranking adds derived metadata in the same repository object.
 
-## Continuity
+## Browser contract
 
-Canonical data and optimistic intent are separate. Reactions immediately project the latest desired state; writes are serialized per subject, and authoritative responses update the base. A definite rejection rolls back. An uncertain outcome keeps its receipt identity for explicit recovery. No automatic retry creates a new write identity.
+The public conversation object owns sign-in, drafts, read state, pagination and write intent. Presentations subscribe to normalized state and call its commands. The default interface and the independent forum example use that same contract.
 
-Publishing keeps writing in the composer, then inserts the returned canonical comment. Cancel closes a reply without discarding writing. Preview hides the existing editor rather than replacing it; native undo across page navigation is not promised. Ordinary refresh preserves local drafts without a separate conflict-checking service.
+A presentation owns its DOM and listeners. Appearance changes keep the conversation and editors. Replacing the page saves the old draft and starts a conversation for the next identity. Stable comment and editor IDs let a renderer preserve textarea nodes during refresh.
 
-Recovery is an optional storage adapter: five-minute local-browser expiry by default, configurable or disabled. Expiry concerns recovery after leaving; an active in-memory draft does not expire. Failed storage never prevents writing. Sign-out removes persisted recovery for the conversation.
+Reactions display the reader's latest intent while writes for that target serialize. Confirmed results reconcile into the comment collection. A submission keeps its draft and retry identity until it has a definite result.
 
-## Fetching and resource controls
+## Reads and writes
 
-The shared runtime defaults to focus/reconnect refresh when at least 60 seconds stale, no polling, and five replies prefetched per root. Hosts can change those preferences. Background work pauses while hidden, offline, authenticating or interacting with a registered editor. Requests coalesce; failed background reads back off without replacing retained content with an error. Initial and explicit refresh failures remain visible. Manual refresh and mutation reconciliation remain available.
+Anonymous GET responses can be reused at the Worker and inside the object. Their expiry starts with the original read and does not restart when a response enters another cache. Viewer-specific responses bypass public caching. Policy is checked before cache lookup.
 
-Confirmed deletions remove leaves immediately, including when the mutation returns a deleted record. Deleted parents remain as placeholders only while they have replies; removing the final reply removes the empty placeholder and updates counts.
+Read RPC returns a completed payload: status, headers and a serialized body. The object owns JSON serialization and cache expiry; the Worker reconstructs HTTP without parsing the body. Keeping live response streams within their originating runtime avoids the Response-over-RPC failure described in [workerd issue 7277](https://github.com/cloudflare/workerd/issues/7277).
 
-Server policy independently clamps reply prefetch (20 by default, configurable through 100); a browser cannot relax it. Root pages remain bounded at 20, explicit reply pages at 50. Authentication polling has its own bounded security lifecycle and is not governed by feed freshness preferences. There is one engine for all Cloudflare tiers. These limits are conservative defaults, not a measured Free-tier capacity guarantee.
+Iframe HTML carries the first anonymous comment page. The browser can render it without a second initial thread request. Native presentations request that page directly.
 
-## Standard presentation
+Mutations return confirmed values to the writer and invalidate object reuse. A revision check prevents a read started before a write from refilling the cache with its older result. Other edge locations may retain public responses until their original expiry.
 
-Standard-view parts use the public conversation and interaction APIs. Its CSS is compiled from the pinned Giscus base/global styles and exact named themes; original Octicons provide the icons. Lit supplies keyed template updates in this optional presentation only. The independent example demonstrates an alternative presentation using those APIs.
+Timestamped operation IDs bound the retry window. Existing receipts are checked before age validation. Completed receipts can replay their result; pending records retain uncertainty. An expired identity without a receipt cannot become a new write.
 
-Intentional differences must be recorded with their reason and verification in the presentation evidence. Current capability and deployment evidence belong in [STATUS](STATUS.md).
+## Optional ranking
+
+Chronological reads need only the requested page. A whole-discussion ranking also needs each root's selected score inputs. Named operator profiles define those inputs and weights.
+
+Ranking stores compact candidate groups with an ID locator. It writes changed groups, coalesces demand and advances work in bounded steps. Request and row allowances are reserved before work. Profile scores share metadata and the browser retains an ordered ID traversal while hydrating visible pages.
+
+A complete order requires complete membership and valid observations. The oldest required observation determines freshness. Missing data, upstream throttling and exhausted budgets produce explicit preparation or pause states. Ordinary comment reading and writing remain available.
+
+## Code map
+
+| Directory | Responsibility |
+| --- | --- |
+| `src/contracts` | Request, configuration and upstream schemas |
+| `src/worker` | HTTP policy, Cache API, rate limits and Durable Object RPC |
+| `src/domain` | GitHub access, scope checks, sessions, mappings and receipts |
+| `src/ranking` | Metadata collection, storage, budgets and ordering |
+| `src/conversation` | Browser state, commands, drafts and reaction intent |
+| `src/browser` | Browser lifecycle, content rendering and interaction bindings |
+| `src/browser/standard` | Default presentation |
+
+Hono and Valibot stay in the service build. The headless browser entry excludes the default presentation. [Packaging](PACKAGING.md) describes the published artifacts and selected static assets.

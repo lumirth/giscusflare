@@ -1,5 +1,5 @@
-import type { ConversationRuntime } from "../headless.js";
-import type { Comment, Discussion } from "../../contracts/github.js";
+import type { Conversation } from "../headless.js";
+import type { Comment, Discussion } from "../../conversation/model.js";
 
 export interface Part<T> {
   element: HTMLElement;
@@ -7,7 +7,7 @@ export interface Part<T> {
   dispose(): void;
 }
 export interface StandardContext {
-  runtime: ConversationRuntime;
+  runtime: Conversation;
   report(error: unknown): void;
 }
 export type ComposerFactory = (

@@ -1,0 +1,7 @@
+# Development secrets only. Copy to .dev.vars and replace each value.
+# Public configuration belongs in wrangler.jsonc.
+GITHUB_CLIENT_SECRET="REPLACE_WITH_GITHUB_APP_CLIENT_SECRET"
+# Use escaped newlines for the downloaded PEM key.
+GITHUB_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\nREPLACE_WITH_KEY_BODY\n-----END RSA PRIVATE KEY-----"
+# Generate with npm run secret. Keep the same value across deployments.
+SESSION_SECRET="REPLACE_WITH_43_CHARACTER_BASE64URL_SECRET"

@@ -1,4 +1,4 @@
-import type { ConversationRuntime } from "./runtime.js";
+import type { Conversation } from "./runtime.js";
 
 export interface FocusHandle {
   focus(): void;
@@ -29,6 +29,7 @@ export interface ComposerState {
   previewHTML: string;
   previewBody: string;
   pending: boolean;
+  submission: "idle" | "pending" | "succeeded" | "failed" | "uncertain";
   fixedWidth: boolean;
   error: string;
 }
@@ -44,18 +45,19 @@ export interface ComposerBinding {
 }
 /** Behavior for consumer-owned DOM. Keep the supplied textarea mounted when previewing. */
 export function bindComposer(
-  runtime: ConversationRuntime,
+  runtime: Conversation,
   name: string,
   elements: { form: HTMLFormElement; textarea: HTMLTextAreaElement },
 ): ComposerBinding {
   const { form, textarea } = elements,
-    controller = runtime.controller;
+    controller = runtime;
   let state: ComposerState = {
     mode: "write",
     previewPending: false,
     previewHTML: "",
     previewBody: "",
     pending: false,
+    submission: "idle",
     fixedWidth: false,
     error: "",
   };
@@ -70,7 +72,7 @@ export function bindComposer(
     // previews, reactions and refreshes leave the native editing history alone.
     const value = controller.draft(name);
     if (textarea.value !== value) textarea.value = value;
-    textarea.disabled = !runtime.session.signedIn;
+    textarea.disabled = !runtime.signedIn || !runtime.state.canCompose;
     state = {
       ...state,
       pending: controller.operationFor("composer", name)?.status === "pending",
@@ -79,15 +81,16 @@ export function bindComposer(
     emit();
   };
   const input = () => {
+    state = {...state, submission:"idle"};
     controller.setDraft(name, textarea.value);
     runtime.saveDrafts();
     emit();
   };
   const submit = async () => {
     if (state.pending) return;
-    if (!runtime.session.signedIn) {
+    if (!runtime.signedIn) {
       try {
-        await runtime.session.signIn();
+        await runtime.signIn();
       } catch (error) {
         state = {
           ...state,
@@ -98,14 +101,15 @@ export function bindComposer(
       return;
     }
     controller.setDraft(name, textarea.value);
-    state = { ...state, error: "" };
+    state = { ...state, error: "", submission: "pending" };
     try {
       await controller.submit(name);
-      state = { ...state, mode: "write", previewHTML: "", previewBody: "" };
+      state = { ...state, mode: "write", previewHTML: "", previewBody: "", submission: "succeeded" };
     } catch (error) {
       state = {
         ...state,
         error: error instanceof Error ? error.message : "Unable to submit.",
+        submission: controller.operationFor("composer", name)?.status === "uncertain" ? "uncertain" : "failed",
       };
     } finally {
       sync();
@@ -130,8 +134,7 @@ export function bindComposer(
     active: () => form.contains(document.activeElement),
   });
   const drafts = controller.subscribeDrafts(sync);
-  const unsubscribe = controller.subscribe(sync),
-    auth = runtime.session.subscribe(sync);
+  const unsubscribe = controller.subscribe(sync);
   sync();
   return {
     get state() {
@@ -192,7 +195,6 @@ export function bindComposer(
       unregister();
       drafts();
       unsubscribe();
-      auth();
       listeners.clear();
       textarea.removeEventListener("input", input);
       textarea.removeEventListener("keydown", keydown);

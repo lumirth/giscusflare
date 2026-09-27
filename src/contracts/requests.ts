@@ -34,7 +34,7 @@ export function queryObject(url: URL): Record<string, string> {
   }
   return result;
 }
-export const ThreadRequest = v.strictObject({ replyPrefetch:v.optional(v.pipe(v.number(),v.integer(),v.minValue(0),v.maxValue(100)),5), config: Widget, order: v.optional(Order, 'oldest'), cursor: v.optional(Cursor, '') });
+export const ThreadRequest = v.strictObject({ includeComments:v.optional(v.boolean(),true),replyPrefetch:v.optional(v.pipe(v.number(),v.integer(),v.minValue(0),v.maxValue(100)),5), config: Widget, order: v.optional(Order, 'oldest'), cursor: v.optional(Cursor, '') });
 export const RepliesRequest = v.strictObject({ config: Widget, parentId: NodeID, cursor: v.optional(Cursor, '') });
 export const CommentRequest = v.strictObject({ config: Widget, body: Markdown, replyToId: v.optional(EmptyNodeID, ''), key: IdempotencyKey });
 export const EditRequest = v.strictObject({ config: Widget, id: NodeID, body: Markdown, key: IdempotencyKey });
@@ -67,14 +67,14 @@ export type AuthProof = v.InferOutput<typeof AuthProof>;
 
 export type AuthConsume = v.InferOutput<typeof AuthConsume>;
 
-export const DiscussionActionRequest=v.strictObject({config:Widget,key:IdempotencyKey,id:NodeID,action:v.picklist(['lock','unlock','close','reopen','answer','unanswer','edit','delete']),body:v.optional(Markdown),title:v.optional(v.pipe(v.string(),v.minLength(1),v.maxLength(256)))});
-export const BlockRequest=v.strictObject({config:Widget,key:IdempotencyKey,id:NodeID,scope:v.picklist(['account','organization']),add:v.boolean()});
-export type DiscussionActionRequest=v.InferOutput<typeof DiscussionActionRequest>;
-export type BlockRequest=v.InferOutput<typeof BlockRequest>;
-
 /** Public root-comment counts for lists; no session or conversation bodies. */
 export const CountsRequest = v.strictObject({
   repo: RepositoryName, origin: PageURL, strict: v.optional(v.boolean(), true),
   terms: v.pipe(v.array(v.pipe(Term, v.check(s => Boolean(s.trim())))), v.minLength(1), v.maxLength(20)),
 });
 export type CountsRequest = v.InferOutput<typeof CountsRequest>;
+
+export const RankingRequest=v.strictObject({config:Widget,profile:v.pipe(v.string(),v.regex(/^[a-z][a-z0-9_-]{0,31}$/))});
+export const HydrateRequest=v.strictObject({config:Widget,ids:v.pipe(v.array(NodeID),v.minLength(1),v.maxLength(50),v.check(ids=>new Set(ids).size===ids.length)),replyPrefetch:v.optional(v.pipe(v.number(),v.integer(),v.minValue(0),v.maxValue(100)),5)});
+export type RankingRequest=v.InferOutput<typeof RankingRequest>;
+export type HydrateRequest=v.InferOutput<typeof HydrateRequest>;

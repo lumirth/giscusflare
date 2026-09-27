@@ -1,25 +1,45 @@
-# Verification
+# Testing
 
-`npm test` runs strict browser/Worker type checks, builds the package, and runs the Node tests. Domain tests use an explicit GitHub simulator and real Node SQLite. Browser interaction tests use JSDOM; they can establish DOM identity and event handling, but cannot prove native undo, layout or OAuth navigation.
+Use Node 22.16 or newer and install the locked dependencies with `npm ci`.
 
-`npm run test:runtime` runs real local workerd, SQLite Durable Object RPC, cookie/proof authentication, encrypted session restart persistence and native rate limits. GitHub is simulated. It does not establish deployed CPU capacity or real App permissions.
+## Automated checks
 
-`npm run check:release` runs both suites and artifact validation. Browser acceptance is separate and must be recorded in `docs/STATUS.md`; passing the command is not a visual acceptance or production-release certificate.
+| Command | What it checks |
+| --- | --- |
+| `npm test` | TypeScript, package builds, Node tests, domain behavior, and browser events in JSDOM. |
+| `npm run test:runtime` | The service in local workerd with SQLite Durable Objects and simulated GitHub. |
+| `npm run check:release` | Both suites and required package files. |
+| `npm run deploy:check` | Release checks, public configuration validation, and a Wrangler dry run. |
+
+The workerd suite covers repository RPC, SQLite persistence, encrypted sessions across restart, authentication handoff, and native rate limits. Use the browser acceptance checks for real App permissions and the [usage guide](FREE-TIER.md#measure-your-deployment) for deployed resource measurements.
+
+JSDOM can check DOM identity, event handling, and state updates. It cannot establish layout, native undo behavior, or OAuth navigation in a real browser.
+
+## Local demo
+
+Run `npm run demo`. Open the printed iframe and native page URLs. The default iframe page is `http://127.0.0.1:8788/article`; the native page is `/native`. Comments and GitHub sign-in are simulated.
 
 ## Browser acceptance
 
-Use the actual browser against the staging fixture and compare with giscus.app. Verify:
+Use a disposable discussion and a deployed App for these checks. Record the source version, browser, embedding mode, and observed result.
 
-- Signed-out bottom composer, one main sign-in action, contextual reaction sign-in, all eight original emoji reactions.
-- Desktop and narrow layouts; light, dark, dimmed, borderless and colored themes; focused textarea/Markdown surface, unclipped Octicons.
-- Type with real keyboard input, switch Preview/Write, undo/redo, react and refresh; keep textarea identity, selection and writing intact.
-- Rapid reaction toggles, local pending feedback, canonical result and error recovery.
-- Replies beyond the initial buffer, cancelled/reopened reply draft, root/reply edits, sort changes.
-- Native and iframe authentication, same-window return and optional popup, return location, origin enforcement.
-- Independent public-API example without loading the standard presentation/style.
+- Load an existing conversation while signed out. Check comments, replies, themes, and narrow layouts.
+- Sign in through full-page navigation and a popup. Check cancellation, blocked popups, sign-out, and return to the original page.
+- Type a sentence, use Preview, return to Write, and undo and redo. Check selection and focus after refreshes and reactions.
+- Post a comment and reply. Check their author and contents on GitHub. Exercise edits, deletion, pagination, and uncertain-write recovery.
+- Toggle all eight emoji reactions. Check rapid toggles and permission failures against the final GitHub state.
+- Try an unrelated reader and a moderator. Confirm that controls and server responses match their permissions.
+- Embed from an unlisted origin. Check iframe rejection and native request rejection.
+- Test representative Markdown, code, math, images, long identifiers, and rendering failures in preview and posted comments.
 
-## Native undo regression
+Include Safari, Firefox, and physical iOS.
 
-Compare typing a full phrase and pressing Undo in a plain textarea and the standard composer. Both should undo the typing run. Repeat after Preview/Write, then Redo. Use keyboard input rather than assigning `.value` or pasting the whole phrase.
+## Undo regression
 
-The presentation test rejects child-node replacements during ordinary typing. This catches a WebKit regression where rebuilding adjacent SVG icons split undo into individual characters despite retaining the textarea. Actual browser testing remains necessary for native editing behavior.
+Type a phrase with real keyboard input in a plain textarea and the comment composer. Undo should remove the typing group in both. Repeat after Preview and then redo.
+
+Keep the textarea and nearby decoration nodes mounted while typing. Replacing neighboring SVG nodes previously split WebKit's undo groups into individual characters. The DOM regression test catches that mutation pattern; only a browser check establishes the editing behavior.
+
+## Release evidence
+
+Keep completed results in [release status](docs/STATUS.md), with detailed evidence in [presentation](docs/PRESENTATION.md) or [resource measurements](docs/CONFIDENCE.md). List failures and untested cases.

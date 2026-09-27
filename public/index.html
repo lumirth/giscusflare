@@ -5,12 +5,53 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>Set up comments | giscusflare</title>
-  <link rel="stylesheet" href="/widget.css">
+  <link rel="icon" type="image/png" sizes="64x64" href="/brand/favicon.png">
   <link rel="stylesheet" href="/setup.css">
 </head>
 <body>
   <main class="setup">
+    <div class="setup-brand"><img src="/brand/giscusflare-logo.png" width="40" height="40" alt=""><span>giscusflare</span></div>
     <h1>Set up comments</h1>
+    <p id="deployment-status" role="status">Checking deployment...</p>
+    <section aria-labelledby="connect-heading">
+      <h2 id="connect-heading">1. Connect GitHub</h2>
+      <p>Choose a public repository with Discussions enabled. This is where comments will live. It can be separate from your copy of the giscusflare source.</p>
+      <form id="app-form">
+        <label>Your website<input name="website" type="url" placeholder="https://your-blog.example" required></label>
+        <button type="submit">Prepare GitHub App</button>
+      </form>
+      <p id="app-error" role="status"></p>
+      <p id="app-link-row" hidden>Register a public App so visitors can sign in. On GitHub, clear <strong>Allow wildcard matching</strong> for the callback address. <a id="app-link" class="button" target="_blank" rel="noopener noreferrer">Register on GitHub</a></p>
+      <p>After registering, generate a client secret and a private key. Choose <strong>Install App</strong> and select your comments repository.</p>
+    </section>
+    <section aria-labelledby="configure-heading">
+      <h2 id="configure-heading">2. Configure Cloudflare</h2>
+      <p>Open your Worker's <a href="https://dash.cloudflare.com/?to=/:account/workers-and-pages" target="_blank" rel="noopener noreferrer">Settings</a>, then Variables and Secrets.</p>
+      <form id="configuration-form">
+        <label>GitHub App ID<input name="appId" inputmode="numeric" required></label>
+        <label>Client ID<input name="clientId" required></label>
+        <label>Comments repository<input name="repo" placeholder="owner/repository" required></label>
+        <label>Website URL<input name="website" type="url" placeholder="https://your-blog.example" required></label>
+        <label>Discussion category<input name="category" value="Announcements" required></label>
+        <button type="submit">Prepare settings</button>
+      </form>
+      <p id="configuration-error" role="status"></p>
+      <div id="configuration-result" hidden>
+        <p>Add each value below as a text variable. Use JSON for <code>REPOSITORIES</code>.</p>
+        <dl id="configuration-values"></dl>
+      </div>
+      <p>Add these encrypted secrets:</p>
+      <ul>
+        <li><code>GITHUB_CLIENT_SECRET</code>, the client secret from GitHub.</li>
+        <li><code>GITHUB_PRIVATE_KEY</code>, the full contents of the downloaded PEM file.</li>
+        <li><code>SESSION_SECRET</code>, a random key generated below.</li>
+      </ul>
+      <button id="generate-secret" type="button">Generate session secret</button>
+      <div id="secret-result" hidden><pre><code id="session-secret"></code></pre><button id="copy-secret" type="button">Copy secret</button></div>
+      <p>Save and deploy the settings, then check your repository below. Keep the same session secret when updating giscusflare so readers stay signed in.</p>
+    </section>
+    <section aria-labelledby="embed-heading">
+    <h2 id="embed-heading">3. Add comments to your website</h2>
     <form id="setup-form">
       <label>Public GitHub repository
         <input name="repo" placeholder="owner/repository" required>
@@ -59,7 +100,8 @@
       <button id="setup-copy" type="button" aria-live="polite">Copy code</button>
       <p id="copy-status" role="status"></p>
     </section>
-    <footer>giscusflare. Independent rebuild of <a href="https://giscus.app" target="_blank" rel="noopener noreferrer">giscus</a>.</footer>
+    </section>
+    <footer><a href="https://github.com/lumirth/giscusflare/blob/main/DEPLOY.md">Setup guide</a> · <a href="https://github.com/lumirth/giscusflare">giscusflare on GitHub</a></footer>
   </main>
   <script type="module" src="/setup.js"></script>
 </body>

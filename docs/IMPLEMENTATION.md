@@ -1,31 +1,29 @@
-# Broader Giscusflare release qualification
+# Release procedure
 
-The shared model, reusable interactions, iframe/native embedding and standard presentation are implemented. [Status](STATUS.md) records verification; [Design](DESIGN.md) defines ownership and behavior.
+Run these checks against the release build and record the results in [release verification](STATUS.md).
 
-## Scope
+## Deployment and setup
 
-The user-approved Kukas integration is deployed. Its design and activation gates are complete. This document is the single remaining qualification checklist for broader Giscusflare release claims; it is not an instruction to reopen Kukas design or begin this work automatically. See [bounded evidence](CONFIDENCE.md) for what was actually checked.
+Use the Deploy to Cloudflare button to create a service. Follow its setup page through GitHub App registration, configuration, repository verification and embed generation. Confirm that an empty deployment serves setup and refuses comment traffic, then test sign-in and a comment from an allowed website. Check that a different origin is rejected.
 
-## Standard presentation
+Confirm that the GitHub callback address has wildcard matching disabled. Test the generated Cloudflare values, including the repository policy and multiline private key. The adoption path starts in Cloudflare's browser flow.
 
-Compare directly with Giscus on the same discussion, across supported themes/locales and narrow/wide layouts. Check loading, colors, borders, spacing, author rows, reactions, folding, sorting and the composer. Record intentional differences in [Presentation](PRESENTATION.md). Visual parity does not require copying Giscus's UI implementation.
+## Browser behavior
 
-## Real GitHub permissions
+Exercise the standard and forum presentations in native and iframe modes. Check Preview, browser undo, selection, focus, refresh while composing, design changes, reply pagination and uncertain-write recovery. Cover narrow and wide layouts, themes, keyboard use, code and math.
 
-Verify each supported author/moderator action with App-issued user tokens, including permission denial and revoked access. Cover edited, deleted, minimized, locked, closed and answered states. Check canonical results after mutations and mapping behavior after discussion deletion. See [GitHub API](GITHUB-API.md).
+Include same-window and popup sign-in. Record the browsers used, including Safari, Firefox and physical iOS when tested. [Testing](../TESTING.md) describes the local harness; [presentation](PRESENTATION.md) records interface comparisons.
 
-Native upvotes remain unverified for App-issued user tokens. Keep them separate from emoji reactions. Use contextual GitHub links for unsupported actions, including abuse reporting.
+## GitHub access
 
-## Browser coverage
+Verify comment, reply, edit, delete, reaction and moderation behavior with reader and moderator accounts. Include denied permissions, revoked access, locked discussions, archived repositories, deleted discussions and changed repository identity. Compare successful changes with GitHub. See [GitHub API behavior](GITHUB-API.md).
 
-Exercise Preview/Write, grouped undo/redo, selection, focus, refresh during composition, sort changes, long reply chains and uncertain-write recovery. Test both embedding modes, same-window authentication and optional popup return. Include Safari, Firefox and physical iOS.
+## Resource measurements
 
-Run a rich-content corpus through Preview and published comments: Markdown structures, code, math, media, long identifiers, lazy-loading failures and reduced rendering profiles.
+Measure cold and warm reads, sign-in, preview, writes, counts and ranked views. Record Worker CPU and requests, object duration, SQLite operations and GitHub requests alongside the workload, configuration and deployed version. Report the measured result against the [resource budget](../FREE-TIER.md).
 
-## Deployment qualification
+## Artifacts and website
 
-Measure Worker CPU, GitHub requests, storage operations and browser resources under representative traffic. Local tests and a paid staging account do not establish Free-plan capacity. Keep deployment instructions and the capability matrix current.
+Set the package version and GitHub release tag together. Build and run package validation, then attach `giscusflare-<version>.tgz` to that release. Verify the documented archive installation command in an independent website build.
 
-## Public API and packaging
-
-Before a stable public release, qualify the package/deployment instructions and versioning contract against both the standard presentation and the shipped Kukas consumer. Keep custom presentations on supported core APIs. Anonymous Post/Note Toasts remain in their separate service; they are outside this comments qualification work.
+Build the public page against its dedicated discussion and service. Check that both designs use that conversation, retain drafts when switching, and explain how visitors deploy their own service. Publish the page and release only after their verification records are complete.

@@ -1,9 +1,10 @@
 /** Iframe adapter only. All presentation and behavior are public API consumers. */
-import { mountComments, type Widget } from "./native.js";
+import { mountComments, conversationSettings } from "./native.js";
+import type { Widget } from "../contracts/requests.js";
 import { isNamedTheme } from "../themes.js";
-const { defaultCommentOrder, ...raw } = JSON.parse(
+const { defaultCommentOrder, bootstrap, ...raw } = JSON.parse(
   document.getElementById("gw-config")!.textContent!,
-) as Widget & { defaultCommentOrder?: "oldest" | "newest" };
+) as Widget & { defaultCommentOrder?: "oldest" | "newest";bootstrap?:import("./runtime.js").ConversationOptions["bootstrap"] };
 const target = document.getElementById("giscusflare")!;
 target.replaceChildren();
 const embedded = window.parent !== window,
@@ -13,7 +14,8 @@ const emit = (value: Record<string, unknown>) => {
 };
 const mounted = mountComments(target, {
   service: location.origin,
-  config: raw,
+  ...conversationSettings(raw,raw),
+  bootstrap,
   order: defaultCommentOrder,
   ...(embedded
     ? {
@@ -29,11 +31,11 @@ const mounted = mountComments(target, {
 const theme = () => {
   const sheet = document.querySelector<HTMLLinkElement>("[data-theme-sheet]");
   if (sheet)
-    sheet.href = isNamedTheme(mounted.config.theme)
-      ? "/themes/" + mounted.config.theme + ".css"
-      : mounted.config.theme;
-  document.documentElement.lang = mounted.config.lang;
-  document.documentElement.dir = /^(ar|he|fa|ur)(-|$)/.test(mounted.config.lang)
+    sheet.href = isNamedTheme(mounted.appearance.theme)
+      ? "/themes/" + mounted.appearance.theme + ".css"
+      : mounted.appearance.theme;
+  document.documentElement.lang = mounted.appearance.lang;
+  document.documentElement.dir = /^(ar|he|fa|ur)(-|$)/.test(mounted.appearance.lang)
     ? "rtl"
     : "ltr";
 };
@@ -48,7 +50,7 @@ const receive = (event: MessageEvent) => {
   if (data.init && typeof data.init === "object")
     mounted.initialize(data.init as Record<string, unknown>);
   if (typeof data.sessionChanged === "string")
-    mounted.session.setSession(data.sessionChanged);
+    mounted.initialize({ session: data.sessionChanged });
   if (data.setConfig && typeof data.setConfig === "object") {
     const update: Partial<Widget> = {};
     const value = data.setConfig as Record<string, unknown>;
@@ -82,10 +84,13 @@ const receive = (event: MessageEvent) => {
       }
     }
     stop();
-    mounted.update(update);
+    const settings=conversationSettings({...mounted.page,...update},{...mounted.appearance,...update});
+    const pageChanged=Object.keys(update).some(key=>!["theme","lang","inputPosition","reactionsEnabled","emitMetadata"].includes(key));
+    if(pageChanged)mounted.replacePage(settings.page);
+    mounted.updateAppearance(settings.appearance);
     stop = observe();
     theme();
-    emit({ ready: true, context: mounted.config });
+    emit({ ready: true, context: {...mounted.page,...mounted.appearance} });
   }
 };
 window.addEventListener("message", receive);
@@ -99,12 +104,12 @@ const resize = new ResizeObserver(() => {
 });
 resize.observe(target);
 const observe = () =>
-  mounted.controller.subscribe(() => {
-    const state = mounted.controller.state;
-    if (state.view && !state.loading) {
+  mounted.subscribe(() => {
+    const state = mounted.state;
+    if (state.ready && !state.loading) {
       emit({ rendered: true });
-      if (mounted.config.emitMetadata)
-        emit({ discussion: state.view.discussion, viewer: state.view.viewer });
+      if (mounted.appearance.emitMetadata)
+        emit({ discussion: state.thread, viewer: state.viewer });
     }
   });
 let stop = observe();

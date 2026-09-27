@@ -1,93 +1,64 @@
-# Public APIs
+# Customize the interface
 
-The API is experimental. Custom presentations are ordinary build-time imports.
+Use the default presentation as a starting point, or render the conversation with your own components. Both use the same JavaScript API for sign-in, drafts, submissions, reactions and pagination.
 
-## Own the presentation
+| What you want to change | Start here |
+| --- | --- |
+| Theme, language or composer position | `appearance` options on `mountComments` |
+| A header, composer, reaction control or action menu | Component factories passed to `mountComments` |
+| The whole interface | `mountPresentation` with your own `Presentation` |
+| Rendering in a framework you already use | `createConversation` and a subscription |
 
-```ts
-import {mountPresentation, bindComposer, type Presentation} from 'giscusflare/headless';
+Install the [release package](INTEGRATION.md#native-rendering) in your website before importing these modules.
 
-const presentation: Presentation = {
-  mount(target, runtime) {
-    const form = document.createElement('form');
-    const textarea = document.createElement('textarea');
-    form.append(textarea);
-    target.append(form);
-    const composer = bindComposer(runtime, 'main', {form, textarea});
-    // Add consumer-owned Write/Preview/Submit controls using composer methods.
-    // Keep textarea mounted; hide it during Preview.
-    const stop = composer.subscribe(() => { /* render composer.state */ });
-    return {
-      update(config) { /* appearance changed; runtime/editor identity is stable */ },
-      dispose() { stop(); composer.dispose(); form.remove(); }
-    };
-  }
-};
-const mounted = mountPresentation(target, {service, config}, presentation);
+## Replace a component
+
+Pass component factories as the third argument to `mountComments`. A factory receives the shared conversation and returns an element, an update function and a disposal function. The host calls update as its data changes.
+
+The public `StandardParts` type describes each factory's inputs. Use it to replace only the parts that need your own markup. Import `giscusflare/styles.css` when retaining the default presentation's styles.
+
+## Build a presentation
+
+[The forum example](../examples/forum.ts) has its own markup and styles. It imports only `giscusflare/headless` and uses normalized comment data, keyed reactions and shared composer bindings.
+
+A presentation implements `mount(target, conversation)`, returning `update(appearance)` and `dispose()`. It owns its DOM, subscriptions and listeners. The host owns the conversation object.
+
+```js
+import { mountPresentation } from 'giscusflare/headless';
+import { forumPresentation } from './forum.js';
+
+const comments = mountPresentation(document.querySelector('#comments'), {
+  service: 'https://your-comments.workers.dev',
+  page: { repo: 'you/comments', origin: location.href, term: 'post:hello-world' },
+}, forumPresentation);
 ```
 
-[The independent example](../examples/custom.ts) implements a live conversation, reactions, pagination, editing and composing with only public imports. Its own stylesheet is intentionally unrelated to Giscus. `headless` does not import or register the default UI, and a build assertion enforces that boundary.
+Render from `conversation.state`. Use comment IDs as component keys so a reaction update does not replace a textarea or another active control. Apply state updates to existing elements and keep editor forms mounted while their surrounding comments change.
 
-## Model commands
+## Share composer behavior
 
-Read `runtime.controller.state` and subscribe to updates. Treat snapshots as immutable. Use `beginReply`, `beginEdit`, `closeEditor`, `setDraft`, `submit`, `setReaction`, `retryReaction`, `removeComment`, `moderateComment`, `changeDiscussion`, `blockAuthor`, `setOrder`, `refresh` and `revealReplies`.
+Create your form and textarea, then bind them:
 
-`operationFor(kind, id)` exposes `pending`, `failed` or `uncertain` state. For composer operations, the ID is the draft name returned by `beginReply`/`beginEdit`, or `main`. Uncertain submission retries retain the original durable receipt key. Reaction intent remains separate from canonical server data.
+```js
+import { bindComposer } from 'giscusflare/interactions';
 
-`bindComposer` owns input synchronization, Preview races, keyboard submission, pending/read-only state, cancel behavior and listener cleanup. Its state includes mode, preview body/HTML, fixed-width preference, pending and error. It never invents a DOM structure or changes CSS. `bindDismissableMenu` is optional. `runtime.interactions.register` lets other controls supply focus/active behavior without coupling the runtime to their selectors.
-
-## Fetching
-
-```ts
-{ fetching: {
-    onFocus: true, onReconnect: true,
-    staleAfterMs: 60_000, pollIntervalMs: false, replyPrefetch: 5
-} }
+const composer = bindComposer(conversation, 'main', { form, textarea });
+const stop = composer.subscribe(() => {
+  submitButton.disabled = composer.state.pending;
+  errorLabel.textContent = composer.state.error;
+});
 ```
 
-`fetching:false` disables opportunistic refresh. `runtime.setFetching(...)` validates and replaces the policy. Polling, when enabled, must be at least 30 seconds; hidden/offline suspension and backoff always apply. Server query/rate limits still win. The iframe loader accepts the same JSON through `data-fetching`.
+The binding handles input, submission, keyboard shortcuts, sign-in and draft changes. Its `write()` and `preview()` methods control the editing mode. Render `state.previewHTML` and `state.previewBody` through `conversation.renderContent()` for the same content handling as comments.
 
-## Recovery and authentication
+Use `conversation.beginReply(rootId)` or `conversation.beginEdit(comment)` to open another editor. Each returns the name to pass to `bindComposer`. The main composer uses `main`.
 
-`draftRecovery:false` disables persistence. Otherwise `{retentionMs, store}` configures recovery; `DraftStore` has synchronous `load/save/remove`. The default is five-minute localStorage recovery with graceful storage failure. Iframe host equivalents are `data-draft-recovery="off"` and `data-draft-retention-ms`.
+Keep the textarea mounted while switching between write and preview. In `dispose()`, call `stop()` and `composer.dispose()`. Dispose the conversation only if your component created and owns it.
 
-`session.signIn()` uses same-window navigation. `signIn('popup')` is an explicit alternative; blocked popups fall back to the configured host navigation. `SessionHost` owns host communication/navigation, not GitHub credentials. Native mode shares the host's JavaScript/storage trust boundary.
+## Render content
 
-## Rendering and lifecycle
+`conversation.renderContent(html, markdown)` returns a DOM fragment. The default renderer sanitizes comment HTML and adds the supplied code and math behavior. Use `createContentRenderer` from `giscusflare/content` to choose its content profile or supply your own code and math renderers.
 
-`createContentRenderer` sanitizes HTML and supports replaceable math/code behavior. Heavy math loads only when needed. `math:'source'` and `codeCopy:false` are explicit reduced profiles. Supply `code: async (source, language) => fragment` to replace a code block with your own renderer (for example, Expressive Code). The input is plain text plus a sanitized language identifier. Return safe DOM; `null` or a rejected promise retains the readable source and copy control. The renderer owns escaping, its styles and any copy interaction in its replacement. Heavy engines can be lazy-loaded and reused across blocks. Kukas uses this hook without importing the standard presentation.
+Custom renderer code runs in your page. Keep HTML sanitization when replacing the renderer. Iframe themes can use the service's approved CSS origins; native styles follow the host page's policy.
 
-A fully replaced `renderContent` is trusted application code and must return safe DOM.
-
-Keep the textarea and its surrounding decoration nodes stable during typing. WebKit can split native undo groups when nearby nodes are replaced, even if the textarea itself stays mounted.
-
-Appearance updates preserve runtime/draft identity. Discussion identity changes save and dispose the previous runtime. Disposal is idempotent. All subscriptions/bindings created by a presentation must be disposed with it. Frameworks managing their own lifecycle can use `createConversation` directly.
-
-## Replace a standard presentation part
-
-`mountComments(target, options, parts)` and `createStandardPresentation(parts)` accept optional `composer`, `reactions`, and `header` factories. Each factory receives the same public runtime and an error reporter. It returns `{element, update(value), dispose()}`. The standard view owns placement and lifetime; the replacement owns its markup, listeners and styling. `Part`, factory and context types are exported from `giscusflare`.
-
-Use this level for a changed editor, reaction affordance or author header. For a different conversation layout, import `mountPresentation` from `giscusflare/headless`; do not rearrange nodes produced by the standard view. The standard templates use Lit, but the headless graph contains no Lit or standard UI module. The build checks both the headless bundle and the independent example for that boundary.
-
-### Reaction-ranked conversations
-
-The shared controller accepts `setOrder({ reaction: 'THUMBS_UP' })` (or another GitHub reaction). This is opt-in: the standard presentation still offers Oldest/Newest. The controller fetches every root page before ranking, sorts by the selected reaction count descending, and resolves ties by creation date and ID. Replies retain their conversational order. Reaction clicks update counts in place; ordering changes on a fresh ranked read rather than moving the clicked comment away.
-
-GitHub exposes no comment reaction-order query. A ranked read therefore costs one request per root page and may be slow for large discussions. There is no extra background poll; the host's fetching policy still applies. Switching order cancels the previous read. A repeated/incomplete cursor fails instead of presenting a partial ranking as complete.
-
-The OAuth handoff has a small, independent `/auth.css` stylesheet. It does not
-load widget presentation styles. Its status and fallback link remain available
-when navigation fails; popup and full-window authentication share this shell.
-
-## Counts outside the conversation
-
-`POST /api/counts` accepts `{repo, origin, strict: true, terms: [...]}` and returns
-`{counts: {"page-term": 3}}`. Send up to 20 page terms per request. Counts include
-top-level comments, matching the conversation heading; replies are excluded. An
-absent discussion returns zero without creating one. This public read uses the
-same repository, category, origin checks and permanent page mappings as threads.
-
-The repository policy `countCacheMs` defaults to 60000 and accepts 0–300000.
-Zero disables caching. Confirmed zeroes are cached too; writes invalidate the
-page's count. A cache miss batches GitHub summary queries without fetching comment
-or reply bodies. Clients should keep their links usable if counts fail to load.
+The [API reference](API.md) lists options, state and commands. [Package assets](PACKAGING.md) explains how to build an independently deployed custom presentation without copying source files.

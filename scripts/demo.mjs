@@ -79,8 +79,12 @@ async function bridge(req, res, run) {
     res.end('Demo failed. See the terminal for details.');
   }
 }
+const requestCounts = new Map();
 const server = createServer((req, res) => bridge(req, res, async request => {
   const url = new URL(request.url);
+  fixture.advance?.(Math.max(0, Date.now() - fixture.clock()));
+  if (url.pathname === '/__demo/requests') return Response.json(Object.fromEntries(requestCounts));
+  requestCounts.set(url.pathname, (requestCounts.get(url.pathname) || 0) + 1);
   if (url.pathname === '/__demo/authorize') {
     const state = url.searchParams.get('state'); const challenge = url.searchParams.get('code_challenge');
     if (!state || !challenge || !/^[A-Za-z0-9_-]{43}$/.test(challenge)) return new Response('Invalid demo sign-in request', { status: 400 });
@@ -88,9 +92,17 @@ const server = createServer((req, res) => bridge(req, res, async request => {
   }
   return app.fetch(request, env, localContext);
 }));
-const parent = createServer((req, res) => bridge(req, res, async request => new Response(parentHTML(new URL(request.url)), {
-  headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }
-})));
+const parent = createServer((req, res) => bridge(req, res, async request => {
+  const url = new URL(request.url);
+  if (process.env.PUBLIC_DEMO_DIRECTORY && url.pathname.startsWith('/public-demo/')) {
+    const directory = resolve(process.env.PUBLIC_DEMO_DIRECTORY);
+    const filename = resolve(directory, '.' + (url.pathname.slice('/public-demo'.length) || '/index.html').replace(/^\/$/, '/index.html'));
+    if (!filename.startsWith(directory + sep)) return new Response('Not found', { status: 404 });
+    try { return new Response(await readFile(filename), { headers: { 'Content-Type': mime[extname(filename)] || 'application/octet-stream', 'Cache-Control': 'no-store' } }); }
+    catch { return new Response('Not found', { status: 404 }); }
+  }
+  return new Response(parentHTML(url), { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
+}));
 function listen(server, p) { return new Promise((resolve, reject) => { server.once('error', reject); server.listen(p, '127.0.0.1', resolve); }); }
 await Promise.all([listen(server, port), listen(parent, blogPort)]);
 console.log(`Local demo\nBlog: ${blog}/article\nSetup: ${origin}/`);
@@ -101,5 +113,6 @@ process.once('SIGTERM', () => { close(); process.exit(0); });
 
 function nativeHTML(url){
  const config={repo:'example/comments',repoId:'',category:'Announcements',categoryId:'',origin:blog+'/native',backLink:blog+'/native',term:'article',number:0,strict:false,theme:url.searchParams.get('theme')==='dark'?'dark':'light',lang:'en',reactionsEnabled:true,emitMetadata:true,inputPosition:'bottom',description:''};
- return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>giscusflare native demo</title><link rel="stylesheet" href="${origin}/native.css"><style>body{font:16px/1.6 system-ui;max-width:760px;margin:3rem auto;padding:0 1rem}#comments{padding:1rem}</style></head><body><h1>giscusflare · native page</h1><p>Local fixture: GitHub and sign-in are simulated. Nothing is posted online.</p><div id="comments"></div><script type="module">import {mountComments} from '${origin}/native.js';mountComments(document.getElementById('comments'),{service:'${origin}',config:${JSON.stringify(config)}});</script></body></html>`;
+ const {theme,lang,inputPosition,reactionsEnabled,emitMetadata,...page}=config;
+ return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>giscusflare native demo</title><link rel="stylesheet" href="${origin}/native.css"><style>body{font:16px/1.6 system-ui;max-width:760px;margin:3rem auto;padding:0 1rem}#comments{padding:1rem}</style></head><body><h1>giscusflare · native page</h1><p>Local fixture: GitHub and sign-in are simulated. Nothing is posted online.</p><button id="refresh">Refresh</button><button id="theme">Toggle theme</button><div id="comments"></div><script type="module">import {mountComments} from '${origin}/native.js';window.demoComments=mountComments(document.getElementById('comments'),{service:'${origin}',page:${JSON.stringify(page)},appearance:${JSON.stringify({theme,lang,inputPosition,reactionsEnabled,emitMetadata})}});document.getElementById('refresh').onmousedown=event=>event.preventDefault();document.getElementById('refresh').onclick=()=>window.demoComments.refresh();document.getElementById('theme').onclick=()=>window.demoComments.updateAppearance({theme:window.demoComments.appearance.theme==='dark'?'light':'dark'});</script></body></html>`;
 }

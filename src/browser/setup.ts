@@ -1,3 +1,4 @@
+import { githubAppRegistration, configurationValues, sessionSecret } from './setup-values.js';
 import { themes } from '../themes.js';
 const form = document.getElementById('setup-form') as HTMLFormElement;
 const statusNode = document.getElementById('setup-status')!;
@@ -46,10 +47,7 @@ form.addEventListener('submit', event => {
       const term = String(values.get('term') || '').trim();
       if (mapping === 'specific' && !term) throw new Error('Enter a search term.');
       if (mapping === 'number' && !/^[1-9]\d*$/.test(term)) throw new Error('Enter a positive discussion number.');
-      const response = await fetch('/api/config', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repo, origin }), cache: 'no-store',
-      });
+      const response = await fetch('/api/v1/config?' + new URLSearchParams({ input: JSON.stringify({ repo, origin }) }), { cache: 'no-store' });
       const data = await response.json() as { repo: string; repoId: string; category: string; categoryId: string; error?: { message: string } };
       if (!response.ok) throw new Error(data.error?.message || 'Could not check the repository.');
       const attributes: Record<string, string> = {
@@ -83,4 +81,55 @@ copyButton.addEventListener('click', () => {
     }
   })();
 });
-export {};
+const appForm = document.getElementById('app-form') as HTMLFormElement;
+const configurationForm = document.getElementById('configuration-form') as HTMLFormElement;
+const input = (target: HTMLFormElement, name: string) => target.elements.namedItem(name) as HTMLInputElement;
+appForm.addEventListener('submit', event => {
+  event.preventDefault();
+  try {
+    const website = input(appForm, 'website').value;
+    const link = document.getElementById('app-link') as HTMLAnchorElement;
+    link.href = githubAppRegistration(location.origin, website);
+    document.getElementById('app-link-row')!.hidden = false;
+    document.getElementById('app-error')!.textContent = '';
+    input(configurationForm, 'website').value = website;
+    input(form, 'origin').value = website;
+  } catch {
+    document.getElementById('app-error')!.textContent = 'Enter your website address.';
+  }
+});
+configurationForm.addEventListener('submit', event => {
+  event.preventDefault();
+  document.getElementById('configuration-result')!.hidden = true;
+  try {
+    const values = configurationValues(location.origin, input(configurationForm, 'repo').value.trim(), input(configurationForm, 'website').value, input(configurationForm, 'category').value.trim(), input(configurationForm, 'appId').value.trim(), input(configurationForm, 'clientId').value);
+    const list = document.getElementById('configuration-values')!;
+    list.replaceChildren();
+    for (const [name, value] of Object.entries(values)) {
+      const label = document.createElement('dt'); label.textContent = name;
+      const entry = document.createElement('dd');
+      const pre = document.createElement('pre'); pre.textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+      entry.append(pre); list.append(label, entry);
+    }
+    document.getElementById('configuration-result')!.hidden = false;
+    document.getElementById('configuration-error')!.textContent = '';
+    input(form, 'repo').value = input(configurationForm, 'repo').value;
+    input(form, 'origin').value = input(configurationForm, 'website').value;
+  } catch (error) {
+    document.getElementById('configuration-error')!.textContent = error instanceof Error ? error.message : 'Check the settings.';
+  }
+});
+document.getElementById('generate-secret')!.addEventListener('click', () => {
+  document.getElementById('session-secret')!.textContent = sessionSecret();
+  document.getElementById('copy-secret')!.textContent = 'Copy secret';
+  document.getElementById('secret-result')!.hidden = false;
+});
+document.getElementById('copy-secret')!.addEventListener('click', async event => {
+  const button = event.currentTarget as HTMLButtonElement;
+  try { await navigator.clipboard.writeText(document.getElementById('session-secret')!.textContent!); button.textContent = 'Copied'; }
+  catch { button.textContent = 'Select the secret to copy'; }
+});
+void fetch('/api/v1/setup', { cache: 'no-store' }).then(async response => {
+  const state = await response.json() as { configured: boolean };
+  document.getElementById('deployment-status')!.textContent = state.configured ? 'Your service is configured. Check a repository below to generate its embed code.' : 'Your service is deployed. Connect GitHub and choose the websites where comments will appear.';
+}).catch(() => { document.getElementById('deployment-status')!.textContent = 'Connect GitHub and configure your service below.'; });

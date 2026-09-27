@@ -2,7 +2,7 @@
 export {
   createConversation,
   type ConversationOptions,
-  type ConversationRuntime,
+  type Conversation,
 } from "./runtime.js";
 export {
   mountPresentation,
@@ -10,20 +10,20 @@ export {
   type MountedConversation,
 } from "./presentation.js";
 export {
-  ConversationController,
   type ConversationState,
   type CommentOrder,
   type Transport,
 } from "../conversation/controller.js";
-export { BrowserSession, ApiError } from "./session.js";
+export { ApiError } from "./session.js";
 export {
   createContentRenderer,
   type ContentProfile,
   type MathRenderer,
   type CodeRenderer,
 } from "./content.js";
-export type { Widget } from "../contracts/requests.js";
-export type { Comment, RootComment, Discussion } from "../contracts/github.js";
+export {conversationSettings} from "./options.js";
+export type {Page,Appearance} from "./options.js";
+export type { Comment, RootComment, Discussion } from "../conversation/model.js";
 
 export {
   bindComposer,
