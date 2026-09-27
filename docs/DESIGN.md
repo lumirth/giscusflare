@@ -22,7 +22,9 @@ Recovery is an optional storage adapter: five-minute local-browser expiry by def
 
 ## Fetching and resource controls
 
-The shared runtime defaults to focus/reconnect refresh when at least 60 seconds stale, no polling, and five replies prefetched per root. Hosts can change those preferences. Background work pauses while hidden, offline, authenticating or interacting with a registered editor. Requests coalesce; failed background reads back off. Manual refresh and mutation reconciliation remain available.
+The shared runtime defaults to focus/reconnect refresh when at least 60 seconds stale, no polling, and five replies prefetched per root. Hosts can change those preferences. Background work pauses while hidden, offline, authenticating or interacting with a registered editor. Requests coalesce; failed background reads back off without replacing retained content with an error. Initial and explicit refresh failures remain visible. Manual refresh and mutation reconciliation remain available.
+
+Confirmed deletions remove leaves immediately, including when the mutation returns a deleted record. Deleted parents remain as placeholders only while they have replies; removing the final reply removes the empty placeholder and updates counts.
 
 Server policy independently clamps reply prefetch (20 by default, configurable through 100); a browser cannot relax it. Root pages remain bounded at 20, explicit reply pages at 50. Authentication polling has its own bounded security lifecycle and is not governed by feed freshness preferences. There is one engine for all Cloudflare tiers. These limits are conservative defaults, not a measured Free-tier capacity guarantee.
 

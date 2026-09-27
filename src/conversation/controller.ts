@@ -692,8 +692,12 @@ export class ConversationController {
           isAnswer: c.id === result.discussion?.answer?.id,
         }));
     }
-    if (result.removed) {
-      const rootRemoved = comments.some((c) => c.id === result.id);
+    // A delete can return the deleted record. Only a parent with surviving
+    // replies needs that placeholder; retaining deleted leaves creates ghosts.
+    const deletedLeaf = operation === "delete" && result.comment?.deletedAt &&
+      !comments.find(c => c.id === result.id)?.replies.totalCount;
+    if (result.removed || deletedLeaf) {
+      const rootsBefore = comments.length;
       comments = comments
         .filter((c) => c.id !== result.id)
         .map((c) => ({
@@ -705,20 +709,22 @@ export class ConversationController {
               Number(c.replies.nodes.some((r) => r.id === result.id)),
             nodes: c.replies.nodes.filter((r) => r.id !== result.id),
           },
-        }));
-      if (rootRemoved && view?.discussion)
+        }))
+        .filter(c => !c.deletedAt || c.replies.totalCount > 0);
+      const rootsRemoved = rootsBefore - comments.length;
+      if (rootsRemoved && view?.discussion)
         view = {
           ...view,
           discussion: {
             ...view.discussion,
             comments: {
               ...view.discussion.comments,
-              totalCount: Math.max(0, view.discussion.comments.totalCount - 1),
+              totalCount: Math.max(0, view.discussion.comments.totalCount - rootsRemoved),
             },
           },
         };
     }
-    const comment = result.comment;
+    const comment = result.removed || deletedLeaf ? undefined : result.comment;
     if (comment) {
       if (comment.replyTo) {
         const parent = comment.replyTo.id;

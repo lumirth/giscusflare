@@ -230,3 +230,21 @@ test('revalidation without an initial snapshot still exposes a load failure', as
   assert.equal(c.state.error,'Network unavailable'); assert.equal(c.state.view,null); c.dispose();
  }finally{f.close();}
 });
+
+for (const kind of ['root','reply']) test(`delete response with a deleted ${kind} record removes the leaf immediately`,async()=>{
+ const f=fixture({seed:true});try{
+  const cap=await f.session('maintainer');let deleted;
+  const c=await conversation(f,cap,'oldest',async(op,body)=>{
+   if(op!=='delete')return;
+   const result=await expectJSON(await f.request('/api/delete',body,cap));
+   return {...result,removed:undefined,comment:{...deleted,body:'',bodyHTML:'',deletedAt:new Date(f.clock()).toISOString()}};
+  });
+  deleted=kind==='root'?c.state.comments.find(x=>x.replies.totalCount===0):c.state.comments[0].replies.nodes[0];
+  const roots=c.state.view.discussion.comments.totalCount,replies=c.state.comments[0].replies.totalCount;
+  await c.removeComment(deleted.id);
+  assert.ok(!c.state.comments.some(x=>x.id===deleted.id||x.replies.nodes.some(r=>r.id===deleted.id)));
+  if(kind==='root')assert.equal(c.state.view.discussion.comments.totalCount,roots-1);
+  else assert.equal(c.state.comments[0].replies.totalCount,replies-1);
+  c.dispose();
+ }finally{f.close();}
+});
