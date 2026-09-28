@@ -75,7 +75,7 @@ The run used about 1.8% of the daily object request allowance, 0.16% of object d
 
 The concurrent run concentrated visits within cache lifetimes and overlapped work in the repository object. For a site with scattered visits, the same number of readers can cause more GitHub fetches. Real GitHub timing also matters. Two separate live queries took about one second for five roots with replies and four seconds for 20 roots with 53 prefetched replies.
 
-Network waiting does not count toward Worker CPU. It does count toward active Durable Object duration. Cloudflare charges that duration at a 128 MB allocation. As a sizing example, 10,000 separate one-second object waits use about 1,250 GB-s, or 9.6% of the daily allowance. At four seconds each, they use about 38%. Concurrent waits in the same object overlap rather than adding their full durations together.
+Network waiting does not count toward Worker CPU. It does count toward active Durable Object duration. Cloudflare charges that duration at a 128 MB allocation. As a sizing example, 10,000 separate one-second object waits use about 1,280 GB-s, or 9.8% of the daily allowance. At four seconds each, they use about 39%. Concurrent waits in the same object overlap rather than adding their full durations together.
 
 ## If you enable ranking
 
