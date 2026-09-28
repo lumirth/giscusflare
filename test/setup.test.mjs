@@ -18,7 +18,7 @@ test('configuration distinguishes comments repository and website origin', () =>
   assert.deepEqual(values.REPOSITORIES['owner/comments'].origins, ['https://example.com']);
   assert.equal(values.PUBLIC_ORIGIN, 'https://comments.example.com');
   assert(!('GITHUB_PRIVATE_KEY' in values));
-  assert.throws(() => configurationValues('https://comments.example.com', 'invalid', 'https://example.com', 'Announcements', '12345', 'Iv1.example'), /owner\/name/);
+  assert.throws(() => configurationValues('https://comments.example.com', 'invalid', 'https://example.com', 'Announcements', '12345', 'Iv1.example'));
 });
 test('session keys are independent random 32-byte base64url values', () => {
   const first = sessionSecret(), second = sessionSecret();

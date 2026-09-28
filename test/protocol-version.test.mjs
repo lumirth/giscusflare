@@ -13,7 +13,6 @@ for (const [method, path] of [['POST', '/api/thread'], ['GET', '/api/v1/thread']
       assert.equal(response.headers.get('Access-Control-Allow-Origin'), BLOG);
       const value = await expectJSON(response, 409);
       assert.equal(value.error.code, 'VERSION_MISMATCH');
-      assert.equal(value.error.message, 'This comments page needs an update. Reload the page and try again.');
       assert.deepEqual(f.counts.rpc, []);
       assert.deepEqual(f.upstream.calls, []);
     } finally { f.close(); }

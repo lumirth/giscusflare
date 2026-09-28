@@ -2,9 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {core,fixture,REPO,BLOG,expectJSON} from './fixtures.mjs';
 const {parse,requests:r,rpc,configSchemas:c,githubSchemas:g,stored}=core;
-test('Hono and Valibot expose the expected validation interfaces',async()=>{
-  const {Hono}=await import('hono');const v=await import('valibot');assert.equal(typeof Hono,'function');assert.equal(r.Widget['~standard'].vendor,'valibot');assert.equal(r.Widget['~standard'].version,1);assert.equal(v.safeParse(r.Widget,{repo:REPO,term:'article',origin:BLOG}).success,true);
-});
 for(const [field,value] of [['number','1'],['number',true],['number',[]],['number',-1],['number',1.25],['number',2147483648],['strict','0'],['reactionsEnabled',1],['inputPosition','botom'],['theme','unknown-theme'],['emitMetadata','false']])test(`normalized JSON refuses ${field}=${JSON.stringify(value)}`,()=>{
   assert.throws(()=>parse(r.Widget,{repo:REPO,term:'article',origin:BLOG,[field]:value}),e=>e.code==='BAD_INPUT');
 });

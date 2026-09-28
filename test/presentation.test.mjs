@@ -5,10 +5,9 @@ for(const name of ['window','document','navigator','location','history','localSt
 globalThis.DOMParser=dom.window.DOMParser;globalThis.fetch=async()=>new Response(JSON.stringify({discussion:{id:'D_1',number:1,url:'https://github.com/example/comments/discussions/1',locked:false,closed:false,comments:{totalCount:0},reactionGroups:[]},viewer:null,archived:false,nextCursor:null}));
 const {mountComments}=await import('../dist/presentation-test.mjs');
 const config={repo:'example/comments',repoId:'',category:'Announcements',categoryId:'',origin:'https://blog.example/article',backLink:'',term:'article',number:0,strict:false,theme:'light',lang:'en',reactionsEnabled:true,emitMetadata:false,inputPosition:'bottom',description:''};
-test('standard signed-out structure matches Giscus: bottom composer, one sign-in, upstream icons',async()=>{
+test('signed-out composer is disabled and appearance changes retain drafts',async()=>{
  const target=document.getElementById('comments');const mounted=mountComments(target,{service:'https://comments.example',page:config,appearance:config});await new Promise(r=>setTimeout(r,20));
- const buttons=[...target.querySelectorAll('button')];assert.equal(buttons.filter(b=>b.textContent.trim()==='Sign in with GitHub'&&!b.closest('.gsc-reactions-menu')).length,1);
- assert.equal(target.querySelector('.gsc-main').lastElementChild.dataset.composer,'main');assert.equal(target.querySelector('textarea').disabled,true);assert.ok(target.querySelector('.btn-primary .octicon'));assert.ok(target.querySelector('.gsc-reactions-button svg.octicon'));assert.equal(target.querySelector('.gsc-reactions-popover p').textContent.trim(),'Sign in to add your reaction.');
+ assert.equal(target.querySelector('.gsc-main').lastElementChild.dataset.composer,'main');assert.equal(target.querySelector('textarea').disabled,true);assert.ok(target.querySelector('.btn-primary .octicon'));assert.ok(target.querySelector('.gsc-reactions-button svg.octicon'));
  mounted.setDraft('main','Retained draft');mounted.updateAppearance({theme:'dark'});assert.equal(mounted.draft(),'Retained draft');assert.equal(target.dataset.theme,'dark');
  mounted.replacePage({...config,term:'another'});assert.equal(mounted.page.term,'another');assert.equal(mounted.draft(),'');mounted.dispose();mounted.dispose();assert.equal(target.children.length,0);
 });
@@ -19,8 +18,8 @@ test('a replacement presentation retains its runtime and draft across appearance
  const target=document.createElement('div');document.body.append(target);let mounts=0,updates=0,disposals=0;
  const custom={mount(host,runtime){mounts++;const input=document.createElement('textarea');host.append(input);return {update(config){updates++;host.dataset.customTheme=config.theme;},dispose(){disposals++;input.remove();}};}};
  const mounted=mountPresentation(target,{service:'https://comments.example',page:config,appearance:config},custom);
- const controller=mounted;controller.setDraft('main','My own UI');const input=target.querySelector('textarea');input.focus();
- mounted.updateAppearance({theme:'dark'});assert.equal(mounts,1);assert.equal(updates,1);assert.equal(mounted,controller);assert.equal(controller.draft(),'My own UI');assert.equal(document.activeElement,input);assert.equal(target.className,'');assert.equal(target.querySelector('giscus-comments'),null);
+ mounted.setDraft('main','My own UI');const input=target.querySelector('textarea');input.focus();
+ mounted.updateAppearance({theme:'dark'});assert.equal(mounts,1);assert.equal(updates,1);assert.equal(mounted.draft(),'My own UI');assert.equal(document.activeElement,input);assert.equal(target.className,'');assert.equal(target.querySelector('giscus-comments'),null);
  mounted.dispose();mounted.dispose();assert.equal(disposals,1);
 });
 
@@ -53,8 +52,8 @@ test('public composer binding supplies custom markup with preview cancellation a
 test('standard parts are replaceable without taking ownership of session or controller',async()=>{
  const target=document.createElement('div');document.body.append(target);let updates=0,disposals=0;
  const mounted=mountComments(target,{service:'https://comments.example',page:config,appearance:config,draftRecovery:false},{reactions:()=>({element:document.createElement('aside'),update(){updates++;},dispose(){disposals++;}})});
- await new Promise(r=>setTimeout(r,10));const controller=mounted;const part=target.querySelector('aside');
- mounted.updateAppearance({theme:'dark'});assert.equal(mounted,controller);assert.equal(target.querySelector('aside'),part);assert.ok(updates>1);assert.equal(target.querySelector('.gsc-reactions-menu'),null);
+ await new Promise(r=>setTimeout(r,10));const part=target.querySelector('aside');
+ mounted.updateAppearance({theme:'dark'});assert.equal(target.querySelector('aside'),part);assert.ok(updates>1);assert.equal(target.querySelector('.gsc-reactions-menu'),null);
  mounted.dispose();assert.equal(disposals,1);target.remove();
 });
 

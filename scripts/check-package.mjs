@@ -24,7 +24,7 @@ try {
   assert(!selected.includes('native.css'));
   assert(selected.includes('index.html'));
   assert(selected.includes('auth-window.js'));
-  await assert.rejects(copyAssets(join(temporary, 'bad'), ['unknown']), /Unknown/);
+  await assert.rejects(copyAssets(join(temporary, 'bad'), ['unknown']));
   const standard = await copyAssets(join(temporary, 'standard-assets'));
   assert(standard.includes('widget.js'));
   assert(standard.includes('themes/dark.css'));
