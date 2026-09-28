@@ -18,7 +18,7 @@ SQLite stores page-to-discussion mappings, encrypted sessions, discussion-creati
 
 The Worker checks your repository and website policy before looking for a cached response. For anonymous readers, it can serve a public response from Cloudflare's local cache. On a miss, it calls the repository object. The object has another shared cache and combines identical reads in progress into one GitHub fetch.
 
-Caches distinguish the requested discussion, page and options. A response keeps its original expiry as it passes between caches. Signed-in reads use the reader's GitHub token and bypass public caching so permissions and selected reactions belong to that reader.
+Data caches distinguish the discussion, cursor, order and reply selection. Themes, layout and the embedding page URL do not split those entries. Each request still passes the current website and repository policy. A response keeps its original expiry as it passes between caches. Signed-in reads use the reader's GitHub token and bypass public caching so permissions and selected reactions belong to that reader.
 
 An iframe response includes the first anonymous comment page. A native presentation requests that page through the API. Further comments and replies load as the reader asks for them.
 
@@ -33,10 +33,10 @@ This arrangement shares installation tokens and repository checks across pages. 
 The current implementation has several consequences for a busy site:
 
 - Repeated anonymous reads of the same page can share cached content. Readers visiting different discussions need different responses.
-- The repository's in-memory response cache has an 8 MiB limit. Older entries are evicted when new responses need room.
-- A comment, edit, deletion, moderation action or reaction clears that object's whole read cache. Unrelated discussions can need another fetch afterward. Existing edge responses retain their original expiry.
+- The repository's in-memory response cache has an 8 MiB limit. Least recently used entries are evicted when new responses need room. Keys and entry overhead count toward the bound.
+- A comment, edit, deletion, moderation action or reaction invalidates reads for its discussion. Unrelated discussions retain their entries. Existing edge responses retain their original expiry.
 - All signed-in reads, writes and cache misses for the repository reach the same object. Their CPU and GitHub work accumulate there.
-- Count requests batch up to 20 page identifiers. Repeated identical batches can reuse cached results, including zero counts.
+- Count requests batch up to 20 page identifiers. Individual counts and missing-discussion results are shared across batches and website pages. Only misses reach GitHub, in one query that also verifies repository access.
 
 These choices make the repository the unit of coordination. [Cloudflare usage](../FREE-TIER.md) explains the costs for repeated and scattered traffic.
 
@@ -46,7 +46,7 @@ A write returns GitHub's confirmed result to the reader. The conversation update
 
 Before sending a mutation, the service records its operation ID and content fingerprint. If a response is lost, that record lets a retry recover the original operation instead of blindly submitting again. Completed receipts return the saved result. Pending receipts preserve the uncertain outcome. An expired operation ID without a receipt cannot start a new write.
 
-A cache revision prevents a read that started before a write from caching its older result after the write completes.
+Invalidation removes both retained entries and pending-work registrations for the discussion. A read that started before the write may finish for its original caller, but cannot refill the cache afterward.
 
 ## Optional ranking
 
@@ -56,7 +56,9 @@ Ranking starts when a reader requests a profile. Readers of the same discussion 
 
 The stored candidates contain ranking metadata rather than full comment bodies. Once an order is ready, the browser retains its ID list and fetches content for the visible pages. Reaction changes do not move comments across pages during that reading session.
 
-Ranking state persists separately for each discussion, but the current in-memory candidate cache holds one discussion and the computed-order cache holds one discussion/profile pair. Alternating ranked views can reload candidates and recompute the order. Discussions in the same repository also share its ranking budget.
+Ranking state persists separately for each discussion. Byte-bounded caches retain candidates for multiple discussions and orders for multiple profiles. Candidates have a 32 MiB retained-memory estimate, including ID lookup overhead; orders share a 4 MiB limit. Discussions in the same repository share its ranking budget.
+
+Ready rankings reuse public access verification for the display-cache lifetime. Preliminary GitHub calls and installation-token renewal are included in the ranking request allowance. Local website policy is checked on every request.
 
 If collection is incomplete or reaches its budget, the API reports `preparing` or `paused`. A presentation can keep chronological reading available while the ranked view catches up. [Configuration](CONFIGURATION.md#enable-ranked-views) describes the controls.
 

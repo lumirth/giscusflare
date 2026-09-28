@@ -37,7 +37,7 @@ An empty deployment serves setup and health checks. It accepts no comments or re
 | `categoryId` | Empty | Optional category ID, checked with the name |
 | `defaultCommentOrder` | `oldest` | `oldest` or `newest` |
 | `displayCacheMs` | `60000` | Anonymous discussion and reply cache lifetime, from 0 to 3600000 milliseconds |
-| `countCacheMs` | `300000` | Page-list count cache lifetime, from 0 to 3600000 milliseconds |
+| `countCacheMs` | `300000` | Individual page-count cache lifetime, from 0 to 3600000 milliseconds |
 | `maxReplyPrefetch` | `20` | Maximum initial replies per root, from 0 to 100; the browser requests 5 by default |
 | `customThemeOrigins` | `[]` | Up to 20 extra origins allowed to serve theme CSS and fonts |
 
@@ -99,7 +99,7 @@ The optional `RANKING_BUDGET` JSON variable sets these deployment-wide defaults:
 
 The service reserves row allowances before starting work, so the charged budget can exceed actual SQLite usage. The 512 KiB ID-array ceiling bounds response size; operators can raise it for larger threads after measuring their Worker CPU costs.
 
-The service divides call and row allowances equally among explicitly ranking-enabled repositories. Discussions within each repository share that allocation. The order-size limit applies to each result. Leave room for sessions, ordinary reads and writes, and other services in your Cloudflare account. Increasing the allocation does not increase the provider's limits.
+The service divides call and row allowances equally among explicitly ranking-enabled repositories. Discussions within each repository share that allocation. The request allowance includes ranking access checks and installation-token renewal. The order-size limit applies to each result. Leave room for sessions, ordinary reads and writes, and other services in your Cloudflare account. Increasing the allocation does not increase the provider's limits.
 
 Omit `ranking` to disable metadata collection and storage for that repository.
 

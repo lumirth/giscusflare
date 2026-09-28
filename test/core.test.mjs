@@ -20,13 +20,13 @@ test('expiry alarms target the nearest expiry and remove themselves when idle',a
 });
 test('widget bootstraps its first page through one repository read',async()=>{
  const f=fixture({seed:true}),q=new URLSearchParams({repo:REPO,origin:BLOG,term:'article'});const shell=await f.request('/widget?'+q);assert.equal(shell.status,200);assert.equal(f.counts.rpc.length,1);assert.equal(f.counts.read,1);assert.match(await shell.text(),/bootstrap/);
- await expectJSON(await f.request('/api/v1/thread',{config:f.config}));assert.deepEqual(f.counts.rpc,['thread','thread']);assert.equal(f.counts.read,2);f.close();
+ await expectJSON(await f.request('/api/v2/thread',{config:f.config}));assert.deepEqual(f.counts.rpc,['thread','thread']);assert.equal(f.counts.read,2);f.close();
 });
 test('native limiter rejects without creating a counter Durable Object',async()=>{
- const f=fixture();f.counts.denied=true;await expectJSON(await f.request('/api/v1/thread',{config:f.config}),429);assert.equal(f.counts.rpc.length,0);f.close();
+ const f=fixture();f.counts.denied=true;await expectJSON(await f.request('/api/v2/thread',{config:f.config}),429);assert.equal(f.counts.rpc.length,0);f.close();
 });
 test('same-origin checks and repository allowlist are independent of schema validation',async()=>{
- const f=fixture();await expectJSON(await f.request('/api/v1/thread',{config:f.config},'',{Origin:'https://evil.example'}),403);await expectJSON(await f.request('/api/v1/thread',{config:f.config},'',{'Sec-Fetch-Site':'cross-site'}),403);await expectJSON(await f.request('/api/v1/thread',{config:{...f.config,repo:'evil/repo'}}),403);assert.equal(f.counts.rpc.length,0);f.close();
+ const f=fixture();await expectJSON(await f.request('/api/v2/thread',{config:f.config},'',{Origin:'https://evil.example'}),403);await expectJSON(await f.request('/api/v2/thread',{config:f.config},'',{'Sec-Fetch-Site':'cross-site'}),403);await expectJSON(await f.request('/api/v2/thread',{config:{...f.config,repo:'evil/repo'}}),403);assert.equal(f.counts.rpc.length,0);f.close();
 });
 test('custom CSS host and iframe origins are exact allowlists',async()=>{
  const f=fixture(),url=theme=>'/widget?'+new URLSearchParams({repo:REPO,origin:BLOG,term:'article',theme});const denied=await f.request(url('https://evil.example/theme.css'));assert.equal(denied.status,403);

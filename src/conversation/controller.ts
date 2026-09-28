@@ -1,3 +1,4 @@
+import {selection} from '../contracts/selection.js';
 import type {
   ReactionRequest,
   ModerationReason,
@@ -334,7 +335,7 @@ export class ConversationController {
         this.transport.request<ThreadView>(
           "thread",
           {
-            config: this.config,
+            config: selection(this.config),
             order: typeof previous.order === "object" ? "oldest" : previous.order,
             cursor,
             replyPrefetch: this.replyPrefetch,
@@ -370,7 +371,7 @@ export class ConversationController {
         if(!traversal||traversal.profile!==profile||(!more&&!background)){
           const deadline=Date.now()+120000;
           for(;;){
-            const order=await this.transport.request<import('../ranking/types.js').OrderResult>('ranking',{config:this.config,profile},signal);
+            const order=await this.transport.request<import('../ranking/types.js').OrderResult>('ranking',{config:selection(this.config),profile},signal);
             if(generation!==this.#generation||signal.aborted)return false;
             this.#patch({ranking:order});
             if(order.status==='ready'){traversal={profile,ids:order.ids,offset:0,view};break;}
@@ -389,7 +390,7 @@ export class ConversationController {
         let loaded:RootComment[]=[];
         for(let offset=start;offset<end;offset+=20){
           const ids=traversal.ids.slice(offset,Math.min(offset+20,end));
-          const page=await this.transport.request<{comments:GitHub.RootComment[];consumed:number}>('hydrate',{config:this.config,ids,replyPrefetch:this.replyPrefetch},signal);
+          const page=await this.transport.request<{comments:GitHub.RootComment[];consumed:number}>('hydrate',{config:selection(this.config),ids,replyPrefetch:this.replyPrefetch},signal);
           if(page.consumed!==ids.length)throw new Error('The comments service returned invalid pagination.');
           loaded.push(...page.comments.map(model.rootComment));
         }
@@ -420,7 +421,7 @@ export class ConversationController {
           cursors.add(cursor);
           const page = model.replies(await this.transport.request<GitHub.Replies>(
             "replies",
-            { config: this.config, parentId: item.id, cursor },
+            { config: selection(this.config), parentId: item.id, cursor },
             signal,
           ));
           replies = {
@@ -456,7 +457,7 @@ export class ConversationController {
     const generation = this.#generation;
     const load = (async () => {
       const page = model.replies(await this.transport.request<GitHub.Replies>("replies", {
-        config: this.config,
+        config: selection(this.config),
         parentId,
         cursor: root.replies.cursor || "",
       }));
@@ -503,7 +504,7 @@ export class ConversationController {
   async preview(body: string): Promise<string> {
     return (
       await this.transport.request<{ html: string }>("preview", {
-        config: this.config,
+        config: selection(this.config),
         body,
       })
     ).html;
@@ -638,7 +639,8 @@ export class ConversationController {
       const result = model.actionResult(await this.transport.request<WireMutation>(operation, {
         ...input,
         key: input.key || Date.now() + '.' + crypto.randomUUID(),
-        config: this.config,
+        ...(operation==='comment'?{creation:{backLink:this.config.backLink,description:this.config.description}}:{}),
+        config: selection(this.config),
       }));
       if (this.#disposed || identity !== this.#identity) return result;
       // A read begun before this successful write cannot overwrite the result.

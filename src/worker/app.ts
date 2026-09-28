@@ -5,7 +5,7 @@ import { Hono } from 'hono';
 import { configuration, secrets } from '../contracts/config.js';
 import { parse } from '../contracts/parse.js';
 import * as R from '../contracts/requests.js';
-import { authorizeWidget, parentOrigin, policy } from '../domain/authorization.js';
+import { authorizePresentation, authorizeWidget, parentOrigin, policy } from '../domain/authorization.js';
 import { cookieName, stateParts } from '../domain/auth.js';
 import { random } from '../domain/crypto.js';
 import { AppError, failure, requireCondition, unwrap } from '../domain/errors.js';
@@ -33,7 +33,7 @@ app.onError((error, c) => {
   if (!(error instanceof AppError)) console.error(JSON.stringify({ event: 'internal_error', id }));
   return security(json({ error: safe, requestId: id }, safe.status, safe.retryAfter ? { 'Retry-After': String(safe.retryAfter) } : {}));
 });
-app.get('/api/v1/setup',c=>{
+app.get('/api/v2/setup',c=>{
   let configured=false;
   try{configuration(c.env);secrets(c.env);configured=true;}catch{/* First deployment opens setup. */}
   return security(json({configured,origin:new URL(c.req.url).origin}));
@@ -52,7 +52,8 @@ const widget = async (c:import('hono').Context<AppEnv>, pathLang?: string) => {
   const url = new URL(rawURL), query = R.queryObject(url);
   if (pathLang) { requireCondition(!query.lang || query.lang === pathLang, 400, 'BAD_INPUT', 'The path and query specify different languages.'); query.lang = pathLang; }
   const input = parse(R.WidgetQuery, query), p = authorizeWidget(configuration(env), input);
-  const response=await publicRead(c,{config:input},async()=>(await repository(env,input.repo)).widget({request:parse(R.ThreadRequest,{config:input,order:p.defaultCommentOrder}),session:''}));
+  authorizePresentation(configuration(env),input);
+  const response=await publicRead(c,{config:input},async()=>(await repository(env,input.repo)).widget({presentation:input,request:parse(R.ThreadRequest,{config:R.selection(input),order:p.defaultCommentOrder}),session:''}));
   const html=new Response(response.body,response);
   html.headers.set('Cache-Control','no-store');return html;
 };
@@ -78,7 +79,7 @@ app.use('/api/*', async (c, next) => {
   const native = Boolean(origin && origin !== config.origin);
   if (native) requireCondition([...Object.values(config.repositories),...(config.openHosting?[config.openHosting]:[])].some(p=>p.origins==='*'||p.origins.includes(origin!)), 403, 'ORIGIN', 'This website is not allowed.');
   if (c.req.method === 'OPTIONS') {
-    requireCondition(origin && ['GET','POST'].includes(c.req.header('Access-Control-Request-Method')||'') && c.req.path !== '/api/v1/auth/prepare', 403, 'ORIGIN', 'This operation does not support native requests.');
+    requireCondition(origin && ['GET','POST'].includes(c.req.header('Access-Control-Request-Method')||'') && c.req.path !== '/api/v2/auth/prepare', 403, 'ORIGIN', 'This operation does not support native requests.');
     c.res = new Response(null, { status: 204 });
   } else await next();
   // Apply after the security wrapper creates its response, including errors.
@@ -90,66 +91,66 @@ app.use('/api/*', async (c, next) => {
     c.res.headers.set('Access-Control-Max-Age', '600');
   }
 });
-app.use('/api/v1/*', async (c, next) => {
-  const auth = c.req.path === '/api/v1/auth/prepare';
-  const read = ['/api/v1/ranking','/api/v1/hydrate','/api/v1/counts', '/api/v1/config', '/api/v1/thread', '/api/v1/replies', '/api/v1/auth/poll'].includes(c.req.path);
+app.use('/api/v2/*', async (c, next) => {
+  const auth = c.req.path === '/api/v2/auth/prepare';
+  const read = ['/api/v2/ranking','/api/v2/hydrate','/api/v2/counts', '/api/v2/config', '/api/v2/thread', '/api/v2/replies', '/api/v2/auth/poll'].includes(c.req.path);
   await rateLimit(auth ? 'auth' : read ? 'read' : 'write')(c, next);
 });
-app.use('/api/v1/*', boundedJSON);
-app.use('/api/v1/*', async (c, next) => { await next(); c.res = security(c.res); });
-app.get('/api/v1/config', contract(R.InfoRequest), async c => {
+app.use('/api/v2/*', boundedJSON);
+app.use('/api/v2/*', async (c, next) => { await next(); c.res = security(c.res); });
+app.get('/api/v2/config', contract(R.InfoRequest), async c => {
   const input = c.req.valid('json'); return publicRead(c,input,async()=>(await repository(c.env,input.repo)).info(input));
 });
-app.get('/api/v1/counts', contract(R.CountsRequest), async c => {
+app.get('/api/v2/counts', contract(R.CountsRequest), async c => {
   const input = c.req.valid('json'); return publicRead(c,input,async()=>(await repository(c.env,input.repo)).counts(input));
 });
-app.get('/api/v1/thread', contract(R.ThreadRequest), async c => {
+app.get('/api/v2/thread', contract(R.ThreadRequest), async c => {
   const request = c.req.valid('json'); return publicRead(c,request,async()=>(await repository(c.env,request.config.repo)).thread({request,session:c.get('session')}));
 });
-app.get('/api/v1/replies', contract(R.RepliesRequest), async c => {
+app.get('/api/v2/replies', contract(R.RepliesRequest), async c => {
   const request = c.req.valid('json'); return publicRead(c,request,async()=>(await repository(c.env,request.config.repo)).replies({request,session:c.get('session')}));
 });
-app.get('/api/v1/ranking',contract(R.RankingRequest),async c=>{
+app.get('/api/v2/ranking',contract(R.RankingRequest),async c=>{
   const request=c.req.valid('json');authorizeWidget(c.get('config'),request.config);
   return readResponse(await (await repository(c.env,request.config.repo)).ranking({request,session:c.get('session')}));
 });
-app.get('/api/v1/hydrate',contract(R.HydrateRequest),async c=>{
+app.get('/api/v2/hydrate',contract(R.HydrateRequest),async c=>{
   const request=c.req.valid('json');return publicRead(c,request,async()=>(await repository(c.env,request.config.repo)).hydrate({request,session:c.get('session')}));
 });
 const requireSession = (value: string): string => { requireCondition(value, 401, 'AUTH_REQUIRED', 'Sign in with GitHub to continue.'); return value; };
-app.post('/api/v1/comment', contract(R.CommentRequest), async c => {
+app.post('/api/v2/comment', contract(R.CommentRequest), async c => {
   const request = c.req.valid('json'); return json(unwrap(await (await repository(c.env, request.config.repo)).comment({ request, session: requireSession(c.get('session')) })));
 });
-app.post('/api/v1/edit', contract(R.EditRequest), async c => {
+app.post('/api/v2/edit', contract(R.EditRequest), async c => {
   const request = c.req.valid('json'); return json(unwrap(await (await repository(c.env, request.config.repo)).edit({ request, session: requireSession(c.get('session')) })));
 });
-app.post('/api/v1/delete', contract(R.DeleteRequest), async c => {
+app.post('/api/v2/delete', contract(R.DeleteRequest), async c => {
   const request = c.req.valid('json'); return json(unwrap(await (await repository(c.env, request.config.repo)).remove({ request, session: requireSession(c.get('session')) })));
 });
-app.post('/api/v1/reaction', contract(R.ReactionRequest), async c => {
+app.post('/api/v2/reaction', contract(R.ReactionRequest), async c => {
   const request = c.req.valid('json'); return json(unwrap(await (await repository(c.env, request.config.repo)).reaction({ request, session: requireSession(c.get('session')) })));
 });
-app.post('/api/v1/moderate', contract(R.ModerateRequest), async c => {
+app.post('/api/v2/moderate', contract(R.ModerateRequest), async c => {
   const request = c.req.valid('json'); return json(unwrap(await (await repository(c.env, request.config.repo)).moderate({ request, session: requireSession(c.get('session')) })));
 });
-app.post('/api/v1/preview', contract(R.PreviewRequest), async c => {
+app.post('/api/v2/preview', contract(R.PreviewRequest), async c => {
   const request = c.req.valid('json'); return json(unwrap(await (await repository(c.env, request.config.repo)).preview({ request, session: requireSession(c.get('session')) })));
 });
-app.post('/api/v1/auth/prepare', contract(R.AuthPrepare), async c => {
+app.post('/api/v2/auth/prepare', contract(R.AuthPrepare), async c => {
   const request = c.req.valid('json'), browserCookie = random();
   const result = unwrap(await (await repository(c.env, request.repo)).authPrepare({ request, browserCookie }));
   return json(result, 200, { 'Set-Cookie': cookieHeader(c.get('config').origin, result.attempt, browserCookie) });
 });
-app.post('/api/v1/auth/poll', contract(R.AuthProof), async c => {
+app.post('/api/v2/auth/poll', contract(R.AuthProof), async c => {
   const input = c.req.valid('json'); return json(unwrap(await (await repository(c.env, input.repo)).authPoll(input)));
 });
-app.post('/api/v1/auth/consume', contract(R.AuthConsume), async c => {
+app.post('/api/v2/auth/consume', contract(R.AuthConsume), async c => {
   const input = c.req.valid('json'); return json(unwrap(await (await repository(c.env, input.repo)).authConsume(input)));
 });
-app.post('/api/v1/logout', contract(R.LogoutRequest), async c => {
+app.post('/api/v2/logout', contract(R.LogoutRequest), async c => {
   const request = c.req.valid('json'); return json(unwrap(await (await repository(c.env, request.repo)).logout({ request, session: requireSession(c.get('session')) })));
 });
-app.all('/api/v1/*', () => { throw new AppError(404, 'NOT_FOUND', 'API route not found.'); });
+app.all('/api/v2/*', () => { throw new AppError(404, 'NOT_FOUND', 'API route not found.'); });
 app.all('/api/*', () => { throw new AppError(409, 'VERSION_MISMATCH', 'This comments page needs an update. Reload the page and try again.'); });
 app.all('/auth/*', () => { throw new AppError(404, 'NOT_FOUND', 'Sign-in route not found.'); });
 app.all('*', c => {

@@ -37,3 +37,9 @@ Ranking tests exercised object restarts, interrupted jobs, partial GitHub failur
 The Deploy to Cloudflare button reached the source-import screen with the expected build and deploy commands. The deployed setup page generated GitHub App settings and checked repository policy before producing an embed. The demo service used Wrangler for deployment; a complete fresh account setup through the button remains on the [release checklist](IMPLEMENTATION.md#deployment-and-setup).
 
 A concurrent deployed test completed 12,100 HTTP requests across 100 discussions, with 6.85 ms p99 Worker CPU, 20.57 GB-s of object duration and 3,071 SQLite writes. [Cloudflare usage](../FREE-TIER.md#measurements-from-a-deployed-service) records its traffic mix, simulated upstream timing, CPU tail and comparison with separate real GitHub queries.
+
+## Shared reads in 2.0
+
+The repository tests exercise overlapping count batches from different website pages, cached missing discussions, a write that preserves unrelated discussion reads, and access expiry after a repository becomes private. Alternating ready rankings for two discussions makes no further GitHub calls or candidate-table reads while access verification remains fresh. Count misses combine verification and summaries in one GraphQL request.
+
+The native workerd suite checks the v2 protocol, response transfer, SQLite and encrypted-session survival across process restarts. Package checks build isolated browser and Worker consumers from the release archive. These checks complement the earlier deployed traffic measurements above.

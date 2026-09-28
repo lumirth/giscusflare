@@ -53,7 +53,7 @@ test('setup prepares Cloudflare values locally and verifies before emitting embe
   submit('setup-form');
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(calls.length, 2);
-  assert.equal(new URL(calls[1], 'https://comments.example.com').pathname, '/api/v1/config');
+  assert.equal(new URL(calls[1], 'https://comments.example.com').pathname, '/api/v2/config');
   assert(!calls.some(url => url.includes(secret)));
   assert.equal(window.document.getElementById('setup-result').hidden, false);
   assert.match(window.document.getElementById('setup-code').textContent, /src="https:\/\/comments.example.com\/client.js"/);

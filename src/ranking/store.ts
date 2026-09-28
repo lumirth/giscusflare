@@ -1,3 +1,4 @@
+import {LRU} from '../domain/lru.js';
 import type { Candidate, RankingOptions, Storage } from './types.js';
 export const GROUP_SIZE = 128;
 const DAY = 86_400_000, HOUR = 3_600_000;
@@ -7,7 +8,7 @@ export interface Group { number: number; generation: number; records: Candidate[
 export interface Dataset { groups: Map<number, Group>; locations: Map<string, number>; bytes: number }
 /** No ranking tables are created until an enabled engine is instantiated. */
 export class RankingStore {
-  #cache: { thread: string; data: Dataset } | undefined;
+  #cache=new LRU<Dataset>(32*1024*1024);
   #budget: Budget | undefined;
   #depth = 0;
   constructor(readonly storage: Storage, readonly options: RankingOptions, readonly now: () => number) {
@@ -23,7 +24,7 @@ export class RankingStore {
   transaction<T>(action: () => T): T {
     if (this.#depth) return action();
     try { return this.storage.transactionSync(() => { this.#depth++; try { return action(); } finally { this.#depth--; } }); }
-    catch (error) { this.#cache = undefined; this.#budget = undefined; throw error; }
+    catch (error) { this.#cache.clear(); this.#budget = undefined; throw error; }
   }
   get<T>(thread: string): T | undefined {
     const row = [...this.storage.sql.exec('SELECT value FROM ranking_states WHERE thread=?', thread)][0];
@@ -76,7 +77,7 @@ export class RankingStore {
     this.#saveBudget();
   }
   load(thread: string): Dataset {
-    if (this.#cache?.thread === thread) return this.#cache.data;
+    const cached=this.cached(thread);if(cached)return cached;
     const data: Dataset = { groups: new Map(), locations: new Map(), bytes: 0 };
     for (const row of this.storage.sql.exec('SELECT number,generation,value FROM ranking_groups WHERE thread=? ORDER BY number', thread)) {
       const value = String(row.value); data.bytes += value.length * 2;
@@ -85,10 +86,11 @@ export class RankingStore {
       data.groups.set(group.number, group);
       for (const record of group.records) data.locations.set(record.id, group.number);
     }
-    this.#cache = { thread, data };
+    if(data.bytes+data.locations.size*160+256>32*1024*1024)throw new Error('RANKING_SIZE');
+    this.#cache.set(thread,data,data.bytes+data.locations.size*160+256);
     return data;
   }
-  cached(thread: string): Dataset | undefined { return this.#cache?.thread === thread ? this.#cache.data : undefined; }
+  cached(thread: string): Dataset | undefined { return this.#cache.get(thread); }
   #writeGroup(thread: string, group: Group, previous?: Group): void {
     const value = JSON.stringify(group.records);
     this.storage.sql.exec('INSERT INTO ranking_groups(thread,number,generation,value) VALUES(?,?,?,?) ON CONFLICT(thread,number) DO UPDATE SET generation=excluded.generation,value=excluded.value', thread, group.number, group.generation, value);
@@ -156,6 +158,7 @@ export class RankingStore {
       }
       for (const group of changes.values()) this.#writeGroup(thread, group, data.groups.get(group.number));
     });
+    this.#cache.set(thread,data,data.bytes+data.locations.size*160+256);
     return { changed: changes.size > 0, conflicts };
   }
   /** Targeted own-write update does not restore a large dataset on a cold object. */

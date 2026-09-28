@@ -5,16 +5,23 @@ import { AppError } from '../domain/errors.js';
 
 const Term = v.pipe(v.string(), v.maxLength(256), v.check(s => !/[\u0000-\u001f\u007f]/u.test(s)));
 const Description = v.pipe(v.string(), v.maxLength(2000), v.check(s => !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(s)));
-export const Widget = v.pipe(v.strictObject({
+/** Discussion identity and authorization context, independent of presentation. */
+export const Selection = v.pipe(v.strictObject({
   repo: RepositoryName, repoId: v.optional(EmptyNodeID, ''), category: v.optional(v.union([v.literal(''), CategoryName]), ''),
   categoryId: v.optional(EmptyNodeID, ''), term: v.optional(Term, ''), number: v.optional(DiscussionNumber, 0),
-  strict: v.optional(v.boolean(), false), origin: PageURL, backLink: v.optional(v.union([v.literal(''), PageURL]), ''),
-  description: v.optional(Description, ''), theme: v.optional(Theme, 'preferred_color_scheme'),
-  lang: v.optional(Language, 'en'), reactionsEnabled: v.optional(v.boolean(), true), emitMetadata: v.optional(v.boolean(), false),
+  strict: v.optional(v.boolean(), false), origin: PageURL,
+}), v.check(c => c.number > 0 || c.term.trim().length > 0));
+export type Selection = v.InferOutput<typeof Selection>;
+const Creation = v.strictObject({backLink:v.optional(v.union([v.literal(''),PageURL]),''),description:v.optional(Description,'')});
+export const Widget = v.pipe(v.strictObject({
+  ...Selection.pipe[0].entries,...Creation.entries,
+  theme: v.optional(Theme, 'preferred_color_scheme'), lang: v.optional(Language, 'en'),
+  reactionsEnabled: v.optional(v.boolean(), true), emitMetadata: v.optional(v.boolean(), false),
   inputPosition: v.optional(v.picklist(['top', 'bottom']), 'bottom'),
 }), v.check(c => c.number > 0 || c.term.trim().length > 0),
   v.check(c => !c.backLink || new URL(c.backLink).origin === new URL(c.origin).origin));
 export type Widget = v.InferOutput<typeof Widget>;
+export {selection} from './selection.js';
 // Query strings need conversion; JSON uses typed numbers and booleans.
 const QueryBoolean = v.pipe(v.picklist(['0', '1', 'false', 'true']), v.transform(x => x === '1' || x === 'true'));
 const QueryNumber = v.pipe(v.string(), v.regex(/^(?:0|[1-9]\d{0,9})$/), v.transform(Number), DiscussionNumber);
@@ -34,16 +41,19 @@ export function queryObject(url: URL): Record<string, string> {
   }
   return result;
 }
-export const ThreadRequest = v.strictObject({ includeComments:v.optional(v.boolean(),true),replyPrefetch:v.optional(v.pipe(v.number(),v.integer(),v.minValue(0),v.maxValue(100)),5), config: Widget, order: v.optional(Order, 'oldest'), cursor: v.optional(Cursor, '') });
-export const RepliesRequest = v.strictObject({ config: Widget, parentId: NodeID, cursor: v.optional(Cursor, '') });
-export const CommentRequest = v.strictObject({ config: Widget, body: Markdown, replyToId: v.optional(EmptyNodeID, ''), key: IdempotencyKey });
-export const EditRequest = v.strictObject({ config: Widget, id: NodeID, body: Markdown, key: IdempotencyKey });
-export const DeleteRequest = v.strictObject({ config: Widget, id: NodeID, key: IdempotencyKey });
-export const ReactionRequest = v.strictObject({ config: Widget, id: v.union([NodeID, v.literal('discussion')]), reaction: Reaction, add: v.boolean(), key: IdempotencyKey });
+export const ThreadRequest = v.strictObject({ includeComments:v.optional(v.boolean(),true),replyPrefetch:v.optional(v.pipe(v.number(),v.integer(),v.minValue(0),v.maxValue(100)),5), config: Selection, order: v.optional(Order, 'oldest'), cursor: v.optional(Cursor, '') });
+export const RepliesRequest = v.strictObject({ config: Selection, parentId: NodeID, cursor: v.optional(Cursor, '') });
+export const CommentRequest = v.pipe(v.strictObject({ config: Selection,
+  creation:v.optional(Creation,{}),
+  body: Markdown, replyToId: v.optional(EmptyNodeID, ''), key: IdempotencyKey }),
+  v.check(c=>!c.creation.backLink||new URL(c.creation.backLink).origin===new URL(c.config.origin).origin));
+export const EditRequest = v.strictObject({ config: Selection, id: NodeID, body: Markdown, key: IdempotencyKey });
+export const DeleteRequest = v.strictObject({ config: Selection, id: NodeID, key: IdempotencyKey });
+export const ReactionRequest = v.strictObject({ config: Selection, id: v.union([NodeID, v.literal('discussion')]), reaction: Reaction, add: v.boolean(), key: IdempotencyKey });
 export const ModerationReason = v.picklist(['ABUSE', 'DUPLICATE', 'OFF_TOPIC', 'OUTDATED', 'RESOLVED', 'SPAM']);
 export type ModerationReason = v.InferOutput<typeof ModerationReason>;
-export const ModerateRequest = v.strictObject({ config: Widget, id: NodeID, minimized: v.boolean(), reason: v.optional(ModerationReason, 'OFF_TOPIC'), key: IdempotencyKey });
-export const PreviewRequest = v.strictObject({ config: Widget, body: Markdown });
+export const ModerateRequest = v.strictObject({ config: Selection, id: NodeID, minimized: v.boolean(), reason: v.optional(ModerationReason, 'OFF_TOPIC'), key: IdempotencyKey });
+export const PreviewRequest = v.strictObject({ config: Selection, body: Markdown });
 export const InfoRequest = v.strictObject({ repo: RepositoryName, origin: PageURL });
 export const AuthPrepare = v.strictObject({ repo: RepositoryName, origin: PageURL, challenge: Capability, mode: v.picklist(['popup', 'redirect']), openerOrigin: v.optional(Origin) });
 export const AuthProof = v.strictObject({ repo: RepositoryName, origin: PageURL, attempt: Capability, verifier: Capability });
@@ -74,7 +84,7 @@ export const CountsRequest = v.strictObject({
 });
 export type CountsRequest = v.InferOutput<typeof CountsRequest>;
 
-export const RankingRequest=v.strictObject({config:Widget,profile:v.pipe(v.string(),v.regex(/^[a-z][a-z0-9_-]{0,31}$/))});
-export const HydrateRequest=v.strictObject({config:Widget,ids:v.pipe(v.array(NodeID),v.minLength(1),v.maxLength(50),v.check(ids=>new Set(ids).size===ids.length)),replyPrefetch:v.optional(v.pipe(v.number(),v.integer(),v.minValue(0),v.maxValue(100)),5)});
+export const RankingRequest=v.strictObject({config:Selection,profile:v.pipe(v.string(),v.regex(/^[a-z][a-z0-9_-]{0,31}$/))});
+export const HydrateRequest=v.strictObject({config:Selection,ids:v.pipe(v.array(NodeID),v.minLength(1),v.maxLength(50),v.check(ids=>new Set(ids).size===ids.length)),replyPrefetch:v.optional(v.pipe(v.number(),v.integer(),v.minValue(0),v.maxValue(100)),5)});
 export type RankingRequest=v.InferOutput<typeof RankingRequest>;
 export type HydrateRequest=v.InferOutput<typeof HydrateRequest>;

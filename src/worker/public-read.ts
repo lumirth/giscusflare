@@ -5,7 +5,7 @@ import type { AppEnv } from './types.js';
 import { configuration } from '../contracts/config.js';
 import { authorizeWidget, parentOrigin, policy } from '../domain/authorization.js';
 import { hash } from '../domain/crypto.js';
-import type { Widget } from '../contracts/requests.js';
+import type { Selection } from '../contracts/requests.js';
 
 const policyKeys=new WeakMap<object,Promise<string>>();
 function policyKey(config:object):Promise<string>{
@@ -14,7 +14,7 @@ function policyKey(config:object):Promise<string>{
 
 /** Authorization from current deployment settings always precedes edge reuse.
  * Remote GitHub changes become visible when the original response expires. */
-export async function publicRead(c:Context<AppEnv>, input:{repo:string;origin:string}|{config:Widget},read:()=>Promise<SerializedRead>):Promise<Response>{
+export async function publicRead(c:Context<AppEnv>, input:{repo:string;origin:string}|{config:Selection},read:()=>Promise<SerializedRead>):Promise<Response>{
   const config=configuration(c.env);
   if('config' in input)authorizeWidget(config,input.config);
   else parentOrigin(policy(config,input.repo),input.origin);
@@ -23,6 +23,13 @@ export async function publicRead(c:Context<AppEnv>, input:{repo:string;origin:st
   if(!cache)return readResponse(await read());
   const url=new URL(c.req.url);
   // Changed deployment policy cannot reuse entries admitted by an old policy.
+  if(url.pathname.startsWith('/api/')){
+    const payload=JSON.parse(url.searchParams.get('input')||'{}');
+    if(payload.config)payload.config.origin=new URL(payload.config.origin).origin;
+    else if(payload.origin)payload.origin=new URL(payload.origin).origin;
+    if(payload.terms)payload.terms=[...new Set(payload.terms)].sort();
+    url.searchParams.set('input',JSON.stringify(payload));
+  }
   url.searchParams.set('policy',await policyKey(config));
   const key=new Request(url,{method:'GET'});
   const found=await cache.match(key);

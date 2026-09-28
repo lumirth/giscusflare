@@ -44,7 +44,7 @@ export class BrowserSession implements Transport {
     if (this.#disposed) throw new Error('This session has been disposed.');
     if (!/^[a-z]+(?:\/[a-z]+)?$/.test(path)) throw new Error('Invalid API operation.');
     const read=['config','counts','thread','replies','ranking','hydrate'].includes(path);
-    const response=await fetch(this.service+'/api/v1/'+path+(read?'?'+new URLSearchParams({input:JSON.stringify(body)}):''),{
+    const response=await fetch(this.service+'/api/v2/'+path+(read?'?'+new URLSearchParams({input:JSON.stringify(body)}):''),{
       method:read?'GET':'POST',headers:{...(read?{}:{'Content-Type':'application/json'}),...(this.#token?{Authorization:'Bearer '+this.#token}:{})},
       ...(read?{}:{body:JSON.stringify(body)}),credentials:'omit',cache:'no-store',signal,
     });

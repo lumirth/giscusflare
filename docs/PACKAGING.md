@@ -3,7 +3,7 @@
 For native embedding or a custom interface, install the browser package from the GitHub release archive. To deploy a service with the standard widget, use the [Cloudflare setup guide](../DEPLOY.md).
 
 ```sh
-npm install https://github.com/lumirth/giscusflare/releases/download/v1.0.2/giscusflare-1.0.2.tgz
+npm install https://github.com/lumirth/giscusflare/releases/download/v2.0.0/giscusflare-2.0.0.tgz
 ```
 
 With npm 12, add `--allow-remote=root` to this command to allow the release URL. See [npm's URL dependency setting](https://docs.npmjs.com/cli/install/#allow-remote).

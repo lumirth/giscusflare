@@ -7,7 +7,7 @@ const key=()=>Date.now()+'.'+randomUUID();
 test('writes authorize large discussions and comments without downloading their display content',async()=>{
  const f=fixture(),body='x'.repeat(100000),d=f.upstream.addThread('article',{body,bodyHTML:body}),c=f.upstream.addComment(d,body),cap=await f.session();
  try{
-  const result=await expectJSON(await f.request('/api/v1/reaction',{config:{...f.config,number:d.number},id:c.id,reaction:'HEART',add:true,key:key()},cap));
+  const result=await expectJSON(await f.request('/api/v2/reaction',{config:{...f.config,number:d.number},id:c.id,reaction:'HEART',add:true,key:key()},cap));
   assert.equal(result.reactions.reactionGroups.find(g=>g.content==='HEART').users.totalCount,1);
   const calls=f.upstream.calls.filter(c=>c.operation);
   assert.deepEqual(calls.map(c=>c.operation),['Repository','DiscussionAccess','Target','React']);
@@ -18,7 +18,7 @@ test('writes authorize large discussions and comments without downloading their 
 test('moderation refreshes only its affected comment after minimal authorization',async()=>{
  const f=fixture(),d=f.upstream.addThread('article'),c=f.upstream.addComment(d,'Hide this'),cap=await f.session('maintainer');
  try{
-  const result=await expectJSON(await f.request('/api/v1/moderate',{config:{...f.config,number:d.number},id:c.id,minimized:true,reason:'OFF_TOPIC',key:key()},cap));
+  const result=await expectJSON(await f.request('/api/v2/moderate',{config:{...f.config,number:d.number},id:c.id,minimized:true,reason:'OFF_TOPIC',key:key()},cap));
   assert.equal(result.comment.isMinimized,true);assert.equal(result.comment.body,'Hide this');
   assert.deepEqual(f.upstream.calls.filter(c=>c.operation).map(c=>c.operation),['Repository','DiscussionAccess','Target','Minimize','CommentRefresh']);
  }finally{f.close();}
@@ -27,7 +27,7 @@ test('moderation refreshes only its affected comment after minimal authorization
 test('a discussion reaction reuses its validated identity without a second target read',async()=>{
  const f=fixture(),d=f.upstream.addThread('article'),cap=await f.session();
  try{
-  await expectJSON(await f.request('/api/v1/reaction',{config:{...f.config,number:d.number},id:'discussion',reaction:'HEART',add:true,key:key()},cap));
+  await expectJSON(await f.request('/api/v2/reaction',{config:{...f.config,number:d.number},id:'discussion',reaction:'HEART',add:true,key:key()},cap));
   assert.deepEqual(f.upstream.calls.filter(c=>c.operation).map(c=>c.operation),['Repository','DiscussionAccess','React']);
  }finally{f.close();}
 });
@@ -38,6 +38,7 @@ test('repository identity pin rejects name reuse on access and combined reads, i
   const config={...f.config,number:1};
   await f.engine.thread({request:{config},session:''});
   f.upstream.meta.id='R_replacement';
+  f.advance(60001);
   await assert.rejects(f.engine.thread({request:{config},session:''}),error=>error.code==='PERMISSION');
   const restarted=new (f.engine.constructor)(f.env,f.store,f.upstream.fetch);
   const cap=await f.session();
@@ -55,7 +56,7 @@ for (const policy of ['explicit','open']) test(`a validated rename under ${polic
   const config={...f.config,number:1};await f.engine.thread({request:{config},session:''});
   f.upstream.meta.nameWithOwner=renamed;for(const d of f.upstream.discussions)d.repository.nameWithOwner=renamed;
   let pinReads=0;const exec=f.sql.exec;f.sql.exec=(sql,...args)=>{if(sql.startsWith('SELECT')&&args[0]==='repository-id')pinReads++;return exec(sql,...args);};
-  const result=await f.engine.thread({request:{config:{...config,repo:renamed}},session:''});
+  const result=await (await f.engine.thread({request:{config:{...config,repo:renamed}},session:''})).json();
   assert.equal(result.discussion.repository.nameWithOwner,renamed);assert.equal(pinReads,0);
   assert.equal(JSON.parse([...f.sql.exec("SELECT value FROM records_v2 WHERE key='identity'")][0].value).repo,renamed);
   assert.equal(JSON.parse([...f.sql.exec("SELECT value FROM records_v2 WHERE key='repository-id'")][0].value),'R_fixture');

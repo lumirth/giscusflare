@@ -1,7 +1,8 @@
+import {ReadCache, readResponse} from './read-cache.js';
 import * as v from 'valibot';
 import {RankingEngine} from '../ranking/engine.js';
 import {discoveryQuery,observationQuery,parseDiscovery,parseObservation} from '../ranking/github.js';
-import type {Source,Storage as RankingStorage,Candidate} from '../ranking/types.js';
+import type {Source,Storage as RankingStorage} from '../ranking/types.js';
 import type { MutationResult, ThreadView } from '../contracts/results.js';
 import { configuration, secrets, type ConfigBindings, type RepositoryPolicy } from '../contracts/config.js';
 import { parse, type Schema } from '../contracts/parse.js';
@@ -17,8 +18,34 @@ import { GitHub } from './github.js';
 import { AppError, requireCondition } from './errors.js';
 import { Store } from './store.js';
 import type { FetchLike } from './platform.js';
-interface Context { widget: R.Widget; client: GitHub; auth: Auth; appToken: string; token: string; session: S.Session | null; meta: G.Repository; categoryId: string; policy: RepositoryPolicy }
+interface Context { widget: R.Selection & Partial<Pick<R.Widget, 'description'|'backLink'>>; client: GitHub; auth: Auth; appToken: string; token: string; session: S.Session | null; meta: G.Repository; categoryId: string; policy: RepositoryPolicy }
 export class RepositoryEngine {
+  #reads = new ReadCache(()=>this.store.now());
+  #aliases = new Map<string,number>();
+  #clients = new Map<string,GitHub>();
+  #group(w:R.Selection):string { return JSON.stringify([w.repo,policy(configuration(this.env),w.repo).category,w.number||[w.strict,w.term]]); }
+  #remember(w:R.Selection,number:number):void {
+    const group=this.#group(w);
+    this.#aliases.delete(group);this.#aliases.set(group,number);
+    if(this.#aliases.size>4096){const oldest=this.#aliases.keys().next().value!;this.#reads.invalidate(g=>g===oldest);this.#aliases.delete(oldest);}
+  }
+  #invalidate(w:R.Selection,number:number):void {
+    const group=this.#group(w);
+    this.#reads.invalidate(g=>g===group||this.#aliases.get(g)===number);
+  }
+  async #read(w:R.Selection,session:string,key:unknown,run:()=>Promise<unknown>):Promise<Response>{
+    const p=authorizeWidget(configuration(this.env),w);
+    if(session)return Response.json(await run());
+    const {origin,...identity}=w;
+    return this.#reads.response(JSON.stringify([identity,key]),this.#group(w),p.displayCacheMs,run);
+  }
+  thread(input:C.ThreadCall){return this.#read(input.request.config,input.session,['thread',input.request.order,input.request.cursor,input.request.includeComments,input.request.replyPrefetch],()=>this.#loadThread(input));}
+  replies(input:C.RepliesCall){return this.#read(input.request.config,input.session,['replies',input.request.parentId,input.request.cursor],()=>this.#loadReplies(input));}
+  hydrate(input:C.HydrateCall){return this.#read(input.request.config,input.session,['hydrate',input.request.ids,input.request.replyPrefetch],()=>this.#loadHydrate(input));}
+  async info(input:R.InfoRequest){
+    const p=policy(configuration(this.env),input.repo);parentOrigin(p,input.origin);
+    return this.#reads.response('info:'+input.repo,'repository',p.displayCacheMs,()=>this.#loadInfo(input));
+  }
   #ranking?:RankingEngine;
   #repositoryId: string | null | undefined;
   #identity: v.InferOutput<typeof S.ActorIdentity> | null | undefined;
@@ -38,7 +65,7 @@ export class RepositoryEngine {
     const read=async(spec:{query:string;variables:Record<string,unknown>})=>{
       const [owner,name]=repo.split('/');
       const query=spec.query.replace('query(', 'query($owner:String!,$name:String!,').replace(/}$/, ' repository(owner:$owner,name:$name){id nameWithOwner isPrivate isArchived discussionCategories(first:100){nodes{id name isAnswerable}}}}');
-      const payload=await base.client.rankingGraph(query,{...spec.variables,owner,name},await base.client.installation()) as {data?:{repository?:unknown};errors?:unknown[]};
+      const payload=await base.client.rankingGraph(query,{...spec.variables,owner,name},await base.client.installation(()=>this.#ranker(repo)!.reserveAccess(2))) as {data?:{repository?:unknown};errors?:unknown[]};
       const meta=parse(G.Repository,payload.data?.repository,'upstream');
       const categoryId=repositoryScope(meta,repo,base.policy);
       this.#pinRepository(meta);
@@ -51,13 +78,23 @@ export class RepositoryEngine {
   }
   async ranking(raw:C.RankingCall){
     const input=parse(C.RankingCall,raw),widget=input.request.config;
-    const c=await this.#context(widget,input.session),ranker=this.#ranker(widget.repo);
+    const p=authorizeWidget(configuration(this.env),widget),ranker=this.#ranker(widget.repo);
     requireCondition(ranker&&Object.hasOwn(ranker.options.profiles,input.request.profile),400,'BAD_INPUT','This ranking profile is not enabled.');
-    const discussion=await this.#access(c);
-    requireCondition(discussion,404,'NOT_FOUND','Discussion not found.');
-    return ranker.request(discussion.id,input.request.profile,this.#rankingSource(widget.repo,discussion.id));
+    try{
+      const access=await this.#reads.read('access:'+JSON.stringify([widget.repo,widget.repoId,widget.categoryId,widget.number,widget.strict,widget.term]),'access',p.displayCacheMs,async()=>{
+        const transport:FetchLike=request=>{ranker.reserveAccess();return this.transport?this.transport(request):fetch(request);};
+        const c=await this.#context(widget,'',false,transport);
+        const discussion=await this.#access(c);
+        requireCondition(discussion,404,'NOT_FOUND','Discussion not found.');return discussion;
+      });
+      const discussion=parse(G.DiscussionAccess,JSON.parse(access.text),'upstream');
+      return await ranker.request(discussion.id,input.request.profile,this.#rankingSource(widget.repo,discussion.id));
+    }catch(error){
+      if(error instanceof AppError&&error.code==='RANKING_BUDGET')return {status:'paused' as const,reason:'budget' as const,retryAt:this.store.now()+(error.retryAfter??60)*1000};
+      throw error;
+    }
   }
-  async hydrate(raw:C.HydrateCall){
+  async #loadHydrate(raw:C.HydrateCall){
     const input=parse(C.HydrateCall,raw),c=await this.#context(input.request.config,input.session),number=await this.#find(c);
     requireCondition(number,404,'NOT_FOUND','Discussion not found.');
     const nodes=await c.client.hydrate(input.request.ids,c.token,Math.min(input.request.replyPrefetch,c.policy.maxReplyPrefetch));
@@ -84,7 +121,8 @@ export class RepositoryEngine {
       const created = { version: 2 as const, repo, appId: config.appId };
       this.store.put('identity', S.ActorIdentity, created); this.#identity = created;
     }
-    const client = new GitHub(repo, config, keys, this.store, this.transport);
+    let client=this.#clients.get(repo);
+    if(!client){client=new GitHub(repo,config,keys,this.store,this.transport);this.#clients.set(repo,client);}
     return { repo, policy: p, client, auth: new Auth(config, keys, repo, p, this.store, client) };
   }
   #pinRepository(meta: G.Repository): void {
@@ -99,10 +137,13 @@ export class RepositoryEngine {
       this.store.put('identity', S.ActorIdentity, identity); this.#identity = identity;
     }
   }
-  async #context(widget: R.Widget, capability: string, write = false): Promise<Context> {
-    const base = this.#base(widget.repo); authorizeWidget(configuration(this.env), widget);
+  async #context(widget: Context['widget'], capability: string, write = false, transport?:FetchLike): Promise<Context> {
+    const base = this.#base(widget.repo);
+    if(transport)base.client=new GitHub(base.repo,configuration(this.env),secrets(this.env),this.store,transport);
+    authorizeWidget(configuration(this.env), widget);
     const session = await base.auth.session(capability, widget.origin, write);
-    const appToken = await base.client.installation(), meta = await base.client.repository(appToken);
+    const appToken=await base.client.installation();
+    const meta=write?await base.client.repository(appToken):parse(G.Repository,JSON.parse((await this.#reads.read('metadata:'+base.repo,'repository',base.policy.displayCacheMs,()=>base.client.repository(appToken))).text),'upstream');
     const categoryId = repositoryScope(meta, widget.repo, base.policy, widget);
     this.#pinRepository(meta);
     this.store.put('scope-hint', G.Repository, meta);
@@ -111,14 +152,14 @@ export class RepositoryEngine {
   }
   async #mapping(c: Context): Promise<string> { return 'mapping:' + await hash(JSON.stringify([c.meta.id, c.categoryId, c.widget.strict, c.widget.term])); }
   async #find(c: Context): Promise<number | null> {
-    if (c.widget.number) return c.widget.number;
+    if (c.widget.number) {this.#remember(c.widget,c.widget.number);return c.widget.number;}
     const key = await this.#mapping(c), cached = this.store.get(key, S.Mapping);
-    if (cached) return cached.number;
+    if (cached) {this.#remember(c.widget,cached.number);return cached.number;}
     const matches = await c.client.find(c.widget, c.policy.category, c.appToken);
     for (const match of matches) {
       discussionScope(match, c.widget.repo, c.meta.id, c.categoryId);
       this.store.put(key, S.Mapping, { version: 2, number: match.number }); this.store.delete('creating:' + key);
-      return match.number;
+      this.#remember(c.widget,match.number);return match.number;
     }
     return null;
   }
@@ -165,41 +206,50 @@ export class RepositoryEngine {
     requireCondition(parent.id === discussion.id, 403, 'PERMISSION', 'This comment does not belong to this page.');
     return target;
   }
-  async info(raw: R.InfoRequest) {
+  async #loadInfo(raw: R.InfoRequest) {
     const input = parse(R.InfoRequest, raw), base = this.#base(input.repo); parentOrigin(base.policy, input.origin);
     const token = await base.client.installation(), meta = await base.client.repository(token);
     const categoryId = repositoryScope(meta, input.repo, base.policy);
     this.#pinRepository(meta);
     return { repo: meta.nameWithOwner, repoId: meta.id, category: base.policy.category, categoryId, defaultCommentOrder: base.policy.defaultCommentOrder,profiles:Object.keys(base.policy.ranking?.profiles??{}) };
   }
-  async counts(raw: R.CountsRequest): Promise<{counts: Record<string, number>}> {
-    const input = parse(R.CountsRequest, raw), base = this.#base(input.repo);
-    parentOrigin(base.policy, input.origin);
-    // Serialize overlapping batches so simultaneous page visits share their reads.
-    return this.store.lock('counts', async () => {
-      const terms = [...new Set(input.terms)], counts: Record<string, number> = Object.create(null);
-      const token = await base.client.installation(), meta = await base.client.repository(token);
-      const categoryId = repositoryScope(meta, input.repo, base.policy);
-      this.#pinRepository(meta);
-      const pages = await Promise.all(terms.map(async term => {
-        const mapping = 'mapping:' + await hash(JSON.stringify([meta.id, categoryId, input.strict, term]));
-        return {term, mapping, number: this.store.get(mapping, S.Mapping)?.number ?? null};
-      }));
-      const summaries = await base.client.counts(pages, input.strict, base.policy.category, token);
-      for (const [i, p] of pages.entries()) {
-        const summary = summaries[i];
-        if (summary) {
-          discussionScope(summary, input.repo, meta.id, categoryId);
-          if (p.number !== summary.number) this.store.put(p.mapping, S.Mapping, {version:2,number:summary.number});
-        }
-        const count = summary?.comments.totalCount ?? 0;
-        counts[p.term] = count;
-
-      }
-      return {counts: Object.fromEntries(Object.entries(counts))};
+  async counts(raw:R.CountsRequest):Promise<Response>{
+    const input=parse(R.CountsRequest,raw),base=this.#base(input.repo);
+    parentOrigin(base.policy,input.origin);
+    const missing:Array<{term:string;resolve:(value:number)=>void;reject:(error:unknown)=>void}>=[];
+    const reads=[...new Set(input.terms)].map(term=>{
+      const w=parse(R.Selection,{repo:input.repo,origin:input.origin,strict:input.strict,term});
+      const group=this.#group(w);
+      return this.#reads.read('count:'+group,group,base.policy.countCacheMs,()=>new Promise<number>((resolve,reject)=>{missing.push({term,resolve,reject});})).then(entry=>({term,...entry}));
     });
+    // Cache misses register in the same microtask turn; only those need GitHub.
+    await Promise.resolve();
+    if(missing.length){
+      try{
+        const token=await base.client.installation(),hint=this.store.get('scope-hint',G.Repository);
+        const hintCategory=hint?.discussionCategories.nodes.find(c=>c.name===base.policy.category)?.id;
+        const pages=await Promise.all(missing.map(async({term})=>{
+          const mapping=hint&&hintCategory?'mapping:'+await hash(JSON.stringify([hint.id,hintCategory,input.strict,term])):null;
+          return {term,number:mapping?this.store.get(mapping,S.Mapping)?.number??null:null};
+        }));
+        const {meta,summaries}=await base.client.counts(pages,input.strict,base.policy.category,token);
+        const categoryId=repositoryScope(meta,input.repo,base.policy);this.#pinRepository(meta);
+        this.store.put('scope-hint',G.Repository,meta);
+        for(const [i,page] of pages.entries()){
+          const summary=summaries[i];
+          if(summary){
+            discussionScope(summary,input.repo,meta.id,categoryId);
+            if(page.number!==summary.number)this.store.put('mapping:'+await hash(JSON.stringify([meta.id,categoryId,input.strict,page.term])),S.Mapping,{version:2,number:summary.number});
+            this.#remember(parse(R.Selection,{repo:input.repo,origin:input.origin,strict:input.strict,term:page.term}),summary.number);
+          }
+        }
+        for(const [i,item] of missing.entries())item.resolve(summaries[i]?.comments.totalCount??0);
+      }catch(error){for(const item of missing)item.reject(error);}
+    }
+    const entries=await Promise.all(reads),expires=Math.min(...entries.map(e=>e.expires));
+    return readResponse({text:JSON.stringify({counts:Object.fromEntries(entries.map(e=>[e.term,JSON.parse(e.text)])),observedAt:expires-base.policy.countCacheMs,expiresAt:expires}),expires},this.store.now());
   }
-  async thread(raw: C.ThreadCall): Promise<ThreadView> {
+  async #loadThread(raw: C.ThreadCall): Promise<ThreadView> {
     const input=parse(C.ThreadCall,raw),request=input.request,widget=request.config;
     let c:Context,discussion:G.Discussion|null;
     const base=this.#base(widget.repo);authorizeWidget(configuration(this.env),widget);
@@ -223,11 +273,12 @@ export class RepositoryEngine {
       c=await this.#context(widget,input.session);
       discussion=await this.#load(c,request.order,request.cursor,request.includeComments,request.replyPrefetch);
     }
+    if(discussion)this.#remember(widget,discussion.number);
     const page=discussion?.comments.pageInfo;
     return {profiles:Object.keys(c.policy.ranking?.profiles??{}),discussion,unavailable:!discussion&&Boolean(number||this.store.get(await this.#mapping(c),S.Mapping)||this.store.get('deleted:'+await this.#mapping(c),S.Tombstone)),viewer:c.session?.user||null,archived:c.meta.isArchived,order:request.order,
       nextCursor:request.order==='oldest'?(page?.hasNextPage?page.endCursor:null):(page?.hasPreviousPage?page.startCursor:null)};
   }
-  async replies(raw: C.RepliesCall): Promise<G.Replies> {
+  async #loadReplies(raw: C.RepliesCall): Promise<G.Replies> {
     const input=parse(C.RepliesCall,raw),c=await this.#context(input.request.config,input.session),number=await this.#find(c);
     requireCondition(number,404,'NOT_FOUND','Discussion not found.');
     const node=await c.client.replies(input.request.parentId,input.request.cursor,c.token);
@@ -263,21 +314,8 @@ export class RepositoryEngine {
         // needs to wait for its own allowance or a later observation.
         let ranking:RankingEngine|undefined;
         try{ranking=this.#ranker(c.widget.repo);
-        if(ranking){
-          const action=Array.isArray(payload)?payload[0]:'';
-          const countsReplies=Object.values(ranking.options.profiles).some(p=>(p.weights.replies??0)!==0);
-          if(rankingReplyTo){if(action==='delete'&&countsReplies)ranking.invalidate(discussion.id);}
-          else if(result.removed)ranking.observeMutation(discussion.id,{id:result.id,deleted:true});
-          else if(result.reactions){
-            const values:Candidate['values']={};for(const g of result.reactions.reactionGroups)values[g.content]=g.users.totalCount;
-            if(result.id!==discussion.id)ranking.observePartial(discussion.id,result.id,values);
-          }else if(result.comment){
-            const item=result.comment;
-            if(item.replyTo){if(action==='comment'&&countsReplies)ranking.invalidate(discussion.id);}
-            else if(action==='comment')ranking.invalidate(discussion.id);
-            else if(action!=='edit')ranking.observePartial(discussion.id,item.id,{answer:item.isAnswer?1:0},!item.isMinimized);
-          }
-        }}catch{try{ranking?.invalidate(discussion.id);}catch{console.error('Ranking repair could not be recorded.');}}
+        ranking?.observeResult(discussion.id,Array.isArray(payload)?String(payload[0]):'',answer,rankingReplyTo);
+        }catch{try{ranking?.invalidate(discussion.id);}catch{console.error('Ranking repair could not be recorded.');}}
 
         this.store.put(receiptKey, S.Receipt, { version: 2, fingerprint, state: 'done', result: answer }, Math.max(created, this.store.now()) + 86400000);
         return answer;
@@ -288,11 +326,11 @@ export class RepositoryEngine {
           throw error;
         }
         throw new AppError(502, 'WRITE_UNCERTAIN', 'GitHub may have saved this change. Check the discussion before submitting it again.');
-      }
+      } finally { this.#invalidate(c.widget,discussion.number); }
     });
   }
   async comment(raw: C.CommentCall) {
-    const input = parse(C.CommentCall, raw), request = input.request, c = await this.#context(request.config, input.session, true);
+    const input = parse(C.CommentCall, raw), request = input.request, c = await this.#context({...request.config,...request.creation}, input.session, true);
     return this.#write(c, request.key, ['comment', request], !request.replyToId, async discussion => {
       requireCondition(!discussion.locked, 403, 'LOCKED', 'This discussion is locked.');
       let replyId = request.replyToId;

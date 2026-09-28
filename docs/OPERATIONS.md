@@ -22,7 +22,7 @@ Record the current Worker version before deploying. Afterward, load comments on 
 | Comments fail during busy periods | Check Worker CPU errors, daily requests, object duration and SQLite allowances |
 | Ranking reports `paused` | Check its reason and retry time, then review the ranking age, inputs and budget |
 
-`/healthz` checks that the service responds. `/api/v1/setup` reports whether its settings are configured. The setup page's repository check also contacts GitHub to verify access and the category.
+`/healthz` checks that the service responds. `/api/v2/setup` reports whether its settings are configured. The setup page's repository check also contacts GitHub to verify access and the category.
 
 ## Freshness and usage
 

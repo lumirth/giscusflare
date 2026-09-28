@@ -1,3 +1,6 @@
+import type {MutationResult} from '../contracts/results.js';
+import {LRU} from '../domain/lru.js';
+import {AppError} from '../domain/errors.js';
 import { order } from './order.js';
 import { RankingStore, type Cost } from './store.js';
 import { requiredInputs, validCandidate, validateOptions, type Candidate, type Input, type OrderResult, type RankingOptions, type Source, type SourceFailure, type Storage } from './types.js';
@@ -44,12 +47,33 @@ export class RankingEngine {
   readonly store: RankingStore;
   #states = new Map<string, Thread>();
   #running = new Map<string, Promise<void>>();
-  #memo: { thread: string; revision: number; profile: string; ids: string[] } | undefined;
+  #orders=new LRU<{revision:number;ids:string[]}>(4*1024*1024);
   #input: Input[];
   constructor(storage: Storage, options: RankingOptions, readonly now: () => number = Date.now) {
     this.options = validateOptions(options);
     this.store = new RankingStore(storage, this.options, now);
     this.#input = requiredInputs(this.options.profiles);
+  }
+  /** Preliminary HTTP work is charged before sending, including token renewal. */
+  reserveAccess(requests=1):void{
+    const admission=this.store.reserve({reads:0,writes:0,requests});
+    if(!admission.accepted)throw new AppError(429,'RANKING_BUDGET','Ranking allowance exhausted.',Math.max(1,Math.ceil((admission.retryAt-this.now())/1000)));
+  }
+  observeResult(thread:string,operation:string,result:MutationResult,replyTo?:string|null):void{
+    const countsReplies=Object.values(this.options.profiles).some(p=>(p.weights.replies??0)!==0);
+    if(replyTo){if(operation==='delete'&&countsReplies)this.invalidate(thread);return;}
+    if(result.removed){this.observeMutation(thread,{id:result.id,deleted:true});return;}
+    if(result.reactions){
+      const values:Candidate['values']={};for(const group of result.reactions.reactionGroups)values[group.content]=group.users.totalCount;
+      if(result.id!==thread)this.observePartial(thread,result.id,values);
+      return;
+    }
+    if(result.comment){
+      const item=result.comment;
+      if(item.replyTo){if(operation==='comment'&&countsReplies)this.invalidate(thread);}
+      else if(operation==='comment')this.invalidate(thread);
+      else if(operation!=='edit')this.observePartial(thread,item.id,{answer:item.isAnswer?1:0},!item.isMinimized);
+    }
   }
   #state(id: string): Thread {
     if (!id || id.length > 200) throw new Error('Invalid discussion ID.');
@@ -102,20 +126,22 @@ export class RankingEngine {
       await this.#run(state, source);
     }
     if (!ready()) return state.pause ? { status: 'paused', ...state.pause } : { status: 'preparing', retryAt: Math.max(this.now() + 1000, state.job?.wakeAt ?? 0) };
-    const key = JSON.stringify(definition);
-    if (!this.#memo || this.#memo.thread !== thread || this.#memo.revision !== state.revision || this.#memo.profile !== key) {
+    const key=JSON.stringify([thread,definition]);
+    let memo=this.#orders.get(key);
+    if(!memo||memo.revision!==state.revision){
       if (!this.#reserve(state, { reads: this.store.cached(thread) ? 0 : state.groups, writes: 0, requests: 0 })) return { status: 'paused', ...state.pause! };
       try {
         const dataset = this.store.load(thread);
         const candidates = function* () { for (const group of dataset.groups.values()) yield* group.records; };
-        this.#memo = { thread, revision: state.revision, profile: key, ids: order(candidates(), definition, this.options.maxOrderBytes) };
+        memo={revision:state.revision,ids:order(candidates(),definition,this.options.maxOrderBytes)};
+        this.#orders.set(key,memo,memo.ids.reduce((n,id)=>n+id.length*2+24,128));
       } catch (error) {
         state.pause = { reason: error instanceof Error && error.message === 'RANKING_SIZE' ? 'size' : 'inputs', retryAt: null };
         if (this.store.reserve({ reads: 0, writes: 3, requests: 0 }, true).accepted) this.#save(state);
         return { status: 'paused', ...state.pause };
       }
     }
-    return { status: 'ready', ids: this.#memo.ids, observedAt: state.observedAt, revision: state.revision };
+    return { status: 'ready', ids: memo.ids, observedAt: state.observedAt, revision: state.revision };
   }
   /** Called by the existing alarm. Completed work installs no further alarm. */
   async continueJobs(source: (thread: string) => Promise<Source> | Source): Promise<void> {
@@ -166,7 +192,7 @@ export class RankingEngine {
         const failure = error as SourceFailure;
         const cooldown = failure.retryAt ?? (failure.retryAfter ? this.now() + failure.retryAfter * 1000 : 0);
         if (failure.code && ['PERMISSION', 'PUBLIC_ONLY', 'CONFIGURATION', 'NOT_FOUND', 'CATEGORY', 'GITHUB_AUTH'].includes(failure.code)) { this.#stop(state, 'upstream', this.now() + 60_000); }
-        else if (cooldown > this.now()) { state.pause = { reason: 'upstream', retryAt: cooldown }; job.wakeAt = cooldown; }
+        else if (cooldown > this.now()) { state.pause = { reason: failure.code==='RANKING_BUDGET'?'budget':'upstream', retryAt: cooldown }; job.wakeAt = cooldown; }
         else if (failure.message === 'RANKING_SIZE') { state.pause = { reason: 'size', retryAt: null }; delete state.job; }
         else if (++job.failures >= 3) { this.#stop(state, 'upstream', this.now() + 60_000); }
         else { job.batch = Math.max(1, Math.floor(job.batch / 2)); job.wakeAt = this.now() + 1000; }

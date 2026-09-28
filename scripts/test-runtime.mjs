@@ -77,7 +77,7 @@ try {
     throw new Error('workerd startup timed out.');
   };
   const request=(path,body,session='')=>{
-    const read=['/api/v1/thread','/api/v1/counts','/api/v1/replies','/api/v1/config'].includes(path);
+    const read=['/api/v2/thread','/api/v2/counts','/api/v2/replies','/api/v2/config'].includes(path);
     return fetch(origin+path+(read?'?'+new URLSearchParams({input:JSON.stringify(body)}):''),{
       method:read||body===undefined?'GET':'POST',redirect:'manual',headers:{Origin:origin,...(!read&&body!==undefined?{'Content-Type':'application/json'}:{}),...(session?{Authorization:'Bearer '+session}:{})},
       ...(!read&&body!==undefined?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(15000)
@@ -99,11 +99,11 @@ try {
     assert.ok(response.headers.get('Content-Security-Policy').includes(blog));
     assert.match(await response.text(),/bootstrap/);
   });
-  await check('Valibot rejects malformed JSON before a repository operation', async () => { const r=await request('/api/v1/thread',{config:widget,order:'invalid'});assert.equal(r.status,400); });
-  await check('named Repository RPC reads a validated GitHub thread', async () => { const data=await decode(await request('/api/v1/thread',{config:widget}));assert.ok(data && typeof data==='object'); });
+  await check('Valibot rejects malformed JSON before a repository operation', async () => { const r=await request('/api/v2/thread',{config:widget,order:'invalid'});assert.equal(r.status,400); });
+  await check('named Repository RPC reads a validated GitHub thread', async () => { const data=await decode(await request('/api/v2/thread',{config:widget}));assert.ok(data && typeof data==='object'); });
   await check('batch counts cross the native RPC boundary', async () => {
-    const data = await decode(await request('/api/v1/counts', {repo:widget.repo, origin:widget.origin, strict:false, terms:['article','missing']}));
-    assert.deepEqual(data,{counts:{article:23,missing:0}});
+    const data = await decode(await request('/api/v2/counts', {repo:widget.repo, origin:widget.origin, strict:false, terms:['article','missing']}));
+    assert.deepEqual(data.counts,{article:23,missing:0});assert.ok(data.expiresAt>=data.observedAt);
   });
   await check('serialized RPC preserves a large Unicode body, status and expiry headers', async () => {
     const response=await request('/__test/serialized-read');
@@ -117,7 +117,7 @@ try {
   const proof=createHash('sha256').update(verifier).digest('base64url');
   let attempt; let cookie; let ticket; let session;
   await check('first-party preparation creates cookie-bound OAuth state through RPC', async () => {
-    const r=await request('/api/v1/auth/prepare',{repo:'example/comments',origin:blog+'/article',challenge:proof,mode:'popup'});
+    const r=await request('/api/v2/auth/prepare',{repo:'example/comments',origin:blog+'/article',challenge:proof,mode:'popup'});
     cookie=r.headers.get('set-cookie')?.split(';')[0];
     const data=await decode(r); attempt=data.attempt;
     const authorization = data.authorizeURL || data.authorizationURL;
@@ -132,16 +132,16 @@ try {
   });
   await check('proof-authenticated polling and one-use handoff yield only an opaque session', async () => {
     const auth={repo:'example/comments',origin:blog+'/article',attempt,verifier};
-    const data=await decode(await request('/api/v1/auth/poll',auth)); ticket=data.ticket;
+    const data=await decode(await request('/api/v2/auth/poll',auth)); ticket=data.ticket;
     assert.match(ticket,/^[A-Za-z0-9_-]{43}$/);
-    const result=await decode(await request('/api/v1/auth/consume',{...auth,ticket})); session=result.session;
+    const result=await decode(await request('/api/v2/auth/consume',{...auth,ticket})); session=result.session;
     assert.match(session,/^[A-Za-z0-9_-]{43}$/);
-    const replay=await request('/api/v1/auth/consume',{...auth,ticket});assert.ok(replay.status>=400);
+    const replay=await request('/api/v2/auth/consume',{...auth,ticket});assert.ok(replay.status>=400);
   });
   await stop(); await launch();
   await check('SQLite counter survives a workerd restart', async () => { assert.deepEqual(await decode(await request('/__test/probe')),{counter:2}); });
   await check('encrypted repository session survives that process restart', async () => {
-    const data=await decode(await request('/api/v1/thread',{config:widget},session)); assert.equal(data.viewer?.login,'reader');
+    const data=await decode(await request('/api/v2/thread',{config:widget},session)); assert.equal(data.viewer?.login,'reader');
   });
   await check('native rate limiting binding enforces its configured threshold', async () => {
     const key=randomBytes(16).toString('hex');let denied=false;

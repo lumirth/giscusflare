@@ -14,7 +14,7 @@ Your usage depends on how often people open comments, how many different discuss
 | Read while signed in | The service fetches with the reader's permissions and reaction selections |
 | Load more comments or replies | Another request for that page |
 | Comment, react or sign in | GitHub requests and durable session or operation records |
-| Show counts on an index page | One count request can cover up to 20 page identifiers |
+| Show counts on an index page | One count request covers up to 20 page identifiers; overlapping batches share individual cached counts |
 | Use a ranked view | Shared metadata collection for the discussion, followed by content reads for the selected page |
 
 The iframe includes the first anonymous comment page in its HTML. It does not make a second request for that same page. Scripts, styles and other files served directly by Static Assets do not consume dynamic Worker requests.

@@ -3,7 +3,6 @@ import { RepositoryEngine } from '../domain/repository.js';
 import { Store } from '../domain/store.js';
 import { configuration } from '../contracts/config.js';
 import { policy } from '../domain/authorization.js';
-import { ReadCache } from '../domain/read-cache.js';
 import { serializeRead } from './read-response.js';
 import { json, widgetHTML } from './html.js';
 import { result, failure, type Result } from '../domain/errors.js';
@@ -15,7 +14,6 @@ import type { Env } from './types.js';
 /** The native tests provide their GitHub transport here. */
 export function repositoryClass(transport?: FetchLike) {
   return class RepositoryObject extends DurableObject<Env> {
-    #cache=new ReadCache();
     #env:Env;
     #engine: RepositoryEngine;
     #store: Store;
@@ -34,24 +32,20 @@ export function repositoryClass(transport?: FetchLike) {
       catch { console.error('giscus: expiry alarm could not be scheduled'); }
       return output;
     }
-    async #read(key:string,repo:string,session:string,kind:'display'|'count',run:()=>Promise<unknown>):Promise<Response>{
-      try{
-        if(session)return json(await run());
-        const p=policy(configuration(this.#env),repo);
-        return await this.#cache.response(key,kind==='count'?p.countCacheMs:p.displayCacheMs,run);
-      }catch(error){const e=failure(error);return json({error:e},e.status,e.retryAfter?{'Retry-After':String(e.retryAfter)}:{});}
-      finally{await this.#store.schedule(this.#state);}
+    async #read(run:()=>Promise<Response>):Promise<Response>{
+      try{return await run();}
+      catch(error){const e=failure(error);return json({error:e},e.status,e.retryAfter?{'Retry-After':String(e.retryAfter)}:{});}
+      finally{await this.#store.schedule(this.#state);await this.#scheduleRanking();}
     }
-    async counts(input:R.CountsRequest){return serializeRead(await this.#read('counts:'+JSON.stringify(input),input.repo,'','count',()=>this.#engine.counts(input)));}
-    async info(input:R.InfoRequest){return serializeRead(await this.#read('info:'+JSON.stringify(input),input.repo,'','display',()=>this.#engine.info(input)));}
-    #threadResponse(input:C.ThreadCall){return this.#read('thread:'+JSON.stringify(input.request),input.request.config.repo,input.session,'display',()=>this.#engine.thread(input));}
-    async thread(input:C.ThreadCall){return serializeRead(await this.#threadResponse(input));}
-    async replies(input:C.RepliesCall){return serializeRead(await this.#read('replies:'+JSON.stringify(input.request),input.request.config.repo,input.session,'display',()=>this.#engine.replies(input)));}
-    async widget(input:C.ThreadCall):Promise<C.SerializedRead>{
-      const response=await this.#threadResponse({...input,session:''});
+    async counts(input:R.CountsRequest){return serializeRead(await this.#read(()=>this.#engine.counts(input)));}
+    async info(input:R.InfoRequest){return serializeRead(await this.#read(()=>this.#engine.info(input)));}
+    async thread(input:C.ThreadCall){return serializeRead(await this.#read(()=>this.#engine.thread(input)));}
+    async replies(input:C.RepliesCall){return serializeRead(await this.#read(()=>this.#engine.replies(input)));}
+    async widget(input:C.ThreadCall & {presentation:R.Widget}):Promise<C.SerializedRead>{
+      const response=await this.#read(()=>this.#engine.thread({request:input.request,session:''}));
       if(!response.ok)return serializeRead(response);
       const bootstrap={view:await response.json(),expires:Number(response.headers.get('X-Giscusflare-Expires'))};
-      const html=widgetHTML(input.request.config,policy(configuration(this.#env),input.request.config.repo),bootstrap);
+      const html=widgetHTML(input.presentation,policy(configuration(this.#env),input.request.config.repo),bootstrap);
       html.headers.set('X-Giscusflare-Expires',String(bootstrap.expires));
       html.headers.set('Cache-Control',response.headers.get('Cache-Control')||'no-store');
       return serializeRead(html);
@@ -61,11 +55,9 @@ export function repositoryClass(transport?: FetchLike) {
       catch(error){const e=failure(error);return serializeRead(json({error:e},e.status));}
       finally{await this.#store.schedule(this.#state);await this.#scheduleRanking();}
     }
-    async hydrate(input:C.HydrateCall){return serializeRead(await this.#read('hydrate:'+JSON.stringify(input.request),input.request.config.repo,input.session,'display',()=>this.#engine.hydrate(input)));}
+    async hydrate(input:C.HydrateCall){return serializeRead(await this.#read(()=>this.#engine.hydrate(input)));}
     async #write<T>(run:()=>Promise<T>):Promise<Result<T>>{
-      // Invalidate after success or an uncertain result; a read that started
-      // before the mutation may not refill the shared cache afterward.
-      try{return await this.#call(run);}finally{this.#cache.invalidate();await this.#scheduleRanking();}
+      try{return await this.#call(run);}finally{await this.#scheduleRanking();}
     }
     comment(input: C.CommentCall) { return this.#write(() => this.#engine.comment(input)); }
     edit(input: C.EditCall) { return this.#write(() => this.#engine.edit(input)); }

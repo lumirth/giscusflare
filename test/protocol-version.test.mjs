@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fixture, expectJSON, core, BLOG, SERVICE } from './fixtures.mjs';
 
-for (const [method, path] of [['POST', '/api/thread'], ['GET', '/api/v2/thread']]) {
+for (const [method, path] of [['POST', '/api/thread'], ['GET', '/api/v1/thread']]) {
   test(`${method} ${path} asks an allowed native client to reload without invoking the repository`, async () => {
     const f = fixture();
     try {
@@ -32,7 +32,7 @@ test('retired protocol preflight is readable only by an admitted origin', async 
     const denied = await request('https://foreign.example');
     assert.equal((await expectJSON(denied, 403)).error.code, 'ORIGIN');
     assert.equal(denied.headers.get('Access-Control-Allow-Origin'), null);
-    const direct = await core.app.fetch(new Request(SERVICE + '/api/v2/thread', { headers: { Origin: 'https://foreign.example' } }), f.env);
+    const direct = await core.app.fetch(new Request(SERVICE + '/api/v1/thread', { headers: { Origin: 'https://foreign.example' } }), f.env);
     assert.equal((await expectJSON(direct, 403)).error.code, 'ORIGIN');
     assert.deepEqual(f.counts.rpc, []);
   } finally { f.close(); }

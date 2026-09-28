@@ -5,7 +5,7 @@ import { fixture, expectJSON, core } from './fixtures.mjs';
 async function conversation(f, cap, order='oldest', intercept) {
   const transport = {request: async (op, body) => {
     if (intercept) { const result=await intercept(op,body); if(result!==undefined)return result; }
-    return expectJSON(await f.request('/api/v1/'+op,body,cap));
+    return expectJSON(await f.request('/api/v2/'+op,body,cap));
   }};
   const controller = new core.ConversationController(f.config,transport,order);
   await controller.refresh(); return controller;
@@ -38,7 +38,7 @@ test('lost HTTP response retains submission key across reload, replay returns ca
  const f=fixture({seed:true});try{
   const cap=await f.session();let lose=true;
   const c=await conversation(f,cap,'oldest',async(op,body)=>{
-   if(op==='comment'&&lose){lose=false;await expectJSON(await f.request('/api/v1/comment',body,cap));throw new Error('Network response lost');}
+   if(op==='comment'&&lose){lose=false;await expectJSON(await f.request('/api/v2/comment',body,cap));throw new Error('Network response lost');}
   });c.setDraft('main','Saved despite network failure');await assert.rejects(c.submit(),/lost/);
   const saved=c.serializeDrafts();c.dispose();const restored=await conversation(f,cap);
   restored.restoreDrafts(saved);const result=await restored.submit();assert.equal(result.comment.body,'Saved despite network failure');
@@ -71,7 +71,7 @@ test('stale read cannot overwrite a confirmed mutation',async()=>{
  const f=fixture({seed:true});try{
   const cap=await f.session();let release;let hold=false;
   const c=await conversation(f,cap,'oldest',async(op,body)=>{
-   if(op==='thread'&&hold){const stale=await expectJSON(await f.request('/api/v1/thread',body,cap));return new Promise(resolve=>{release=()=>resolve(stale);});}
+   if(op==='thread'&&hold){const stale=await expectJSON(await f.request('/api/v2/thread',body,cap));return new Promise(resolve=>{release=()=>resolve(stale);});}
   });hold=true;const refreshing=c.refresh();while(!release)await new Promise(r=>setTimeout(r,0));
   c.setDraft('main','Must survive');const result=await c.submit();release();await refreshing;
   assert.ok(c.state.comments.some(x=>x.id===result.id));assert.equal(c.state.loading,false);
@@ -134,7 +134,7 @@ test('reaction rejection rolls back; uncertain completion retains its receipt fo
   const cap=await f.session();let failure='definite';let receipt;
   const c=await conversation(f,cap,'oldest',async(op,body)=>{if(op!=='reaction')return;
    if(failure==='definite')throw Object.assign(new Error('Denied'),{status:403,code:'PERMISSION'});
-   if(failure==='lost'){receipt=body.key;failure='recover';await expectJSON(await f.request('/api/v1/reaction',body,cap));throw new Error('Lost response');}
+   if(failure==='lost'){receipt=body.key;failure='recover';await expectJSON(await f.request('/api/v2/reaction',body,cap));throw new Error('Lost response');}
    assert.equal(body.key,receipt);
   });const id=c.state.comments[0].id;
   await assert.rejects(c.setReaction(id,'HEART',true),/Denied/);assert.equal(c.state.comments[0].reactions.HEART.selected,false);
@@ -181,7 +181,7 @@ test('opening an edit starts from canonical text and reopening retains the unfin
 
 test('ranked browser traversal hydrates bounded ID slices and does not crawl content pages',async()=>{
  const f=fixture({seed:true});try{
-  const initial=await expectJSON(await f.request('/api/v1/thread',{config:f.config}));
+  const initial=await expectJSON(await f.request('/api/v2/thread',{config:f.config}));
   const base=initial.discussion.comments.nodes[0],ids=Array.from({length:45},(_,i)=>'DC_rank'+i),calls=[];
   const controller=new core.ConversationController(f.config,{request:async(op,body)=>{
    calls.push({op,body});
@@ -241,7 +241,7 @@ for (const kind of ['root','reply']) test(`delete response with a deleted ${kind
   const cap=await f.session('maintainer');let deleted;
   const c=await conversation(f,cap,'oldest',async(op,body)=>{
    if(op!=='delete')return;
-   const result=await expectJSON(await f.request('/api/v1/delete',body,cap));
+   const result=await expectJSON(await f.request('/api/v2/delete',body,cap));
    return {...result,removed:undefined,comment:{...deleted,reactionGroups:Object.entries(deleted.reactions).map(([content,value])=>({content,users:{totalCount:value.count},viewerHasReacted:value.selected})),replyTo:deleted.replyToId?{id:deleted.replyToId}:null,body:'',bodyHTML:'',deletedAt:new Date(f.clock()).toISOString()}};
   });
   deleted=kind==='root'?c.state.comments.find(x=>x.replies.count===0):c.state.comments[0].replies.items[0];

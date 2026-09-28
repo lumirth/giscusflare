@@ -39,20 +39,20 @@ test('stored records and RPC arguments must match their schemas',()=>{
   const f=fixture();assert.throws(()=>parse(rpc.CommentCall,{request:{config:f.config,body:'text',key:Date.now()+'.'+'k'.repeat(32)},session:'bad'}));f.close();
 });
 test('Hono rejects invalid route input before calling the repository',async()=>{
-  const f=fixture();for(const body of [{config:{...f.config,number:'1'}},{config:f.config,order:'latest'},{config:f.config,unknown:1}])await expectJSON(await f.request('/api/v1/thread',body),400);
+  const f=fixture();for(const body of [{config:{...f.config,number:'1'}},{config:f.config,order:'latest'},{config:f.config,unknown:1}])await expectJSON(await f.request('/api/v2/thread',body),400);
   assert.equal(f.counts.rpc.length,0);f.close();
 });
 test('streamed size limit and Content-Type are enforced before the Standard Schema validator',async()=>{
-  const f=fixture();await expectJSON(await f.request('/api/v1/thread','{}','',{'Content-Type':'text/plain'}),415);
-  await expectJSON(await f.request('/api/v1/thread','{'),400);
-  await expectJSON(await f.request('/api/v1/thread','{"x":"'+'x'.repeat(100000)+'"}'),413);
-  const request=new Request(f.env.PUBLIC_ORIGIN+'/api/v1/thread',{method:'POST',headers:{Origin:f.env.PUBLIC_ORIGIN,'Content-Type':'application/json'},body:new ReadableStream({start(c){c.enqueue(new TextEncoder().encode('x'.repeat(97000)));c.enqueue(new TextEncoder().encode('x'.repeat(3000)));c.close();}}),duplex:'half'});
+  const f=fixture();await expectJSON(await f.request('/api/v2/thread','{}','',{'Content-Type':'text/plain'}),415);
+  await expectJSON(await f.request('/api/v2/thread','{'),400);
+  await expectJSON(await f.request('/api/v2/thread','{"x":"'+'x'.repeat(100000)+'"}'),413);
+  const request=new Request(f.env.PUBLIC_ORIGIN+'/api/v2/thread',{method:'POST',headers:{Origin:f.env.PUBLIC_ORIGIN,'Content-Type':'application/json'},body:new ReadableStream({start(c){c.enqueue(new TextEncoder().encode('x'.repeat(97000)));c.enqueue(new TextEncoder().encode('x'.repeat(3000)));c.close();}}),duplex:'half'});
   await expectJSON(await core.app.fetch(request,f.env),413);assert.equal(f.counts.rpc.length,0);f.close();
 });
 test('invalid stored session returns 401 without exposing credentials',async()=>{
   const f=fixture(),cap=await f.session();const id=await core.cryptography.hash(cap);
   f.sql.exec('UPDATE records_v2 SET value=? WHERE key=?',JSON.stringify({version:2,ciphertext:'malformed'}),'session:'+id);
-  const output=await expectJSON(await f.request('/api/v1/thread',{config:f.config},cap),401);assert.ok(!JSON.stringify(output).includes('malformed'));f.close();
+  const output=await expectJSON(await f.request('/api/v2/thread',{config:f.config},cap),401);assert.ok(!JSON.stringify(output).includes('malformed'));f.close();
 });
 
 // Removed options fail validation instead of silently selecting a voting mode.

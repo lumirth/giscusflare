@@ -71,7 +71,7 @@ export type Target = v.InferOutput<typeof Target>;
 export type Replies = v.InferOutput<typeof Replies>;
 
 export const DiscussionCount = v.object({
-  ...Scope.entries, number: PositiveInteger, body: Body, comments: v.object({ totalCount: Count }),
+  ...Scope.entries, number: PositiveInteger, body: v.optional(Body,''), comments: v.object({ totalCount: Count }),
 });
 export type DiscussionCount = v.InferOutput<typeof DiscussionCount>;
 

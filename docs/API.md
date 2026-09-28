@@ -120,6 +120,26 @@ Enabling a profile consumes the operator's metadata-read and storage allocation.
 
 ## Versioned service protocol
 
-Browser packages and Workers use the `/api/v1/` protocol. Deploy matching versions of the service and your custom browser build. Requests to a retired or unknown protocol receive HTTP 409 with `VERSION_MISMATCH` and an instruction to reload the page.
+Browser packages and Workers use the `/api/v2/` protocol. Deploy matching versions of the service and your custom browser build. Requests to a retired or unknown protocol receive HTTP 409 with `VERSION_MISMATCH` and an instruction to reload the page.
 
 The JavaScript API sends reads as HTTP GET requests and mutations as POST requests. The service checks repository scope, browser origin and authorization regardless of which presentation sent the request.
+
+## HTTP reads
+
+A comment-data request selects a discussion separately from its presentation:
+
+```js
+const config = {
+  repo: 'you/comments',
+  origin: location.origin,
+  term: 'my-post',
+  strict: true,
+};
+const input = { config, order: 'oldest', replyPrefetch: 5 };
+const response = await fetch(service + '/api/v2/thread?' +
+  new URLSearchParams({ input: JSON.stringify(input) }));
+```
+
+`config` accepts `repo`, `origin`, `term`, `strict`, `number`, `repoId`, `category` and `categoryId`. Appearance settings belong to the browser presentation. Comment creation accepts a separate `creation` object with `description` and `backLink` for a new discussion. The JavaScript conversation API supplies these fields automatically.
+
+For index-page counts, request `/api/v2/counts` with `{ repo, origin, strict, terms }`, with up to 20 terms. The response contains `counts`, `observedAt` and `expiresAt`, with timestamps in milliseconds since the Unix epoch. They describe the oldest count in the batch and its original expiry. A browser can retain these summaries, display them immediately on reload and fetch again after expiry. Bound retained entries and their age; an unavailable count is distinct from zero.

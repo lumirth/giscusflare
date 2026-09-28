@@ -2,7 +2,7 @@ import * as v from 'valibot';
 import * as G from '../contracts/github.js';
 import { parse, parseJSON, type Schema } from '../contracts/parse.js';
 import { InstallationRecord } from '../contracts/storage.js';
-import type { Widget } from '../contracts/requests.js';
+import type { Widget, Selection } from '../contracts/requests.js';
 import type { PublicConfig, SecretConfig } from '../contracts/config.js';
 import type { User } from '../contracts/primitives.js';
 import { appJWT, sha1 } from './crypto.js';
@@ -49,6 +49,7 @@ export async function limitedText(response: Response, max = 4 * 1024 * 1024): Pr
   catch { throw new AppError(502, 'UPSTREAM_SCHEMA', 'GitHub returned invalid text.'); }
 }
 export class GitHub {
+  #installation:{token:string;expires:number}|undefined;
   #deadlines = new WeakMap<Response, ReturnType<typeof setTimeout>>();
   async #text(response:Response,max?:number):Promise<string>{
     try{return await limitedText(response,max);}
@@ -66,6 +67,7 @@ export class GitHub {
     if (response.ok) { this.#deadlines.set(response,timer); return response; }
     clearTimeout(timer);
     await response.body?.cancel().catch(() => undefined);
+    if(response.status===401&&this.#installation?.token===token){this.#installation=undefined;this.store.delete('installation');}
     if (response.status === 401) throw new AppError(401, 'GITHUB_AUTH', 'GitHub authorization is no longer valid. Sign in again.');
     if (response.status === 429 || (response.status === 403 && (response.headers.get('X-RateLimit-Remaining') === '0' || response.headers.has('Retry-After')))) {
       const seconds = Number(response.headers.get('Retry-After')) || Math.ceil(Number(response.headers.get('X-RateLimit-Reset')) - Date.now() / 1000) || 60;
@@ -100,20 +102,23 @@ export class GitHub {
     if(payload.errors?.some(error=>error.type==='RATE_LIMITED'))throw new AppError(429,'RATE_LIMIT','GitHub rate limit reached.',60);
     return payload;
   }
-  async installation(): Promise<string> {
+  async installation(beforeRenew?:()=>void): Promise<string> {
+    if(this.#installation&&this.#installation.expires>this.store.now()+300000)return this.#installation.token;
     return this.store.lock('installation', async () => {
+      if(this.#installation&&this.#installation.expires>this.store.now()+300000)return this.#installation.token;
       const recordKey = 'installation'; const context = `${this.config.appId}:${this.repo}`;
       try {
         const record = await this.store.secret(recordKey, InstallationRecord, this.keys.sessionSecret, context);
-        if (record && record.expires > this.store.now() + 300000) return record.token;
+        if (record && record.expires > this.store.now() + 300000) {this.#installation=record;return record.token;}
       } catch { this.store.delete(recordKey); }
+      beforeRenew?.();
       const jwt = await appJWT(this.config.appId, this.keys.privateKey, this.store.now());
       const installation = await this.#rest(G.Installation, `/repos/${this.repo}/installation`, jwt);
       const result = await this.#rest(G.InstallationToken, `/app/installations/${installation.id}/access_tokens`, jwt, 'POST', { repositories: [this.#scope().name], permissions: { discussions: 'write' } });
       const expires = Date.parse(result.expires_at);
       requireCondition(expires > this.store.now(), 502, 'UPSTREAM_SCHEMA', 'GitHub issued an expired installation token.');
       await this.store.putSecret(recordKey, InstallationRecord, { token: result.token, expires }, this.keys.sessionSecret, context, expires);
-      return result.token;
+      this.#installation={token:result.token,expires};return result.token;
     });
   }
   async repository(token: string): Promise<G.Repository> {
@@ -128,7 +133,7 @@ export class GitHub {
       throw error;
     }
   }
-  async find(config: Widget, category: string, token: string): Promise<G.DiscussionIdentity[]> {
+  async find(config: Selection, category: string, token: string): Promise<G.DiscussionIdentity[]> {
     const term = config.strict ? await sha1(config.term) : config.term;
     const query = `repo:${this.repo} category:${JSON.stringify(category)} ${config.strict ? 'in:body' : 'in:title'} ${JSON.stringify(term)} sort:created-asc`;
     const match = v.object({ ...G.DiscussionIdentity.entries, body: config.strict ? G.DiscussionSummary.entries.body : v.optional(G.DiscussionSummary.entries.body) });
@@ -137,38 +142,33 @@ export class GitHub {
     return result.search.nodes.filter(node => node !== null).filter(d => !config.strict || d.body!.includes(term));
   }
   /** Batch minimal summaries. Search is only used until a mapping is known. */
-  async counts(pages: { term: string; number: number | null }[], strict: boolean, category: string, token: string): Promise<(G.DiscussionCount | null)[]> {
-    const output: (G.DiscussionCount | null)[] = pages.map(() => null);
-    const known = pages.map((p, i) => ({...p, i})).filter(p => p.number !== null);
-    const unknown = pages.map((p, i) => ({...p, i})).filter(p => p.number === null);
-    const fields = `number body ${GRAPH.scope} comments { totalCount }`;
-    if (known.length) {
-      const variables: Record<string, unknown> = this.#scope();
-      for (const p of known) variables['n' + p.i] = p.number;
-      const data = await this.graph(v.object({repository: v.nullable(v.record(v.string(), v.nullable(G.DiscussionCount)))}),
-        `query CommentCounts($owner:String!,$name:String!,${known.map(p => '$n'+p.i+':Int!').join(',')}) { repository(owner:$owner,name:$name) { ${known.map(p => 'p'+p.i+':discussion(number:$n'+p.i+') { '+fields+' }').join(' ')} } }`, variables, token);
-      requireCondition(data.repository, 403, 'PUBLIC_ONLY', 'The repository is not accessible.');
-      for (const p of known) {
-        requireCondition(Object.hasOwn(data.repository, 'p'+p.i), 502, 'UPSTREAM_SCHEMA', 'GitHub omitted a count result.');
-        output[p.i] = data.repository['p'+p.i]!;
+  async counts(pages:{term:string;number:number|null}[],strict:boolean,category:string,token:string):Promise<{meta:G.Repository;summaries:(G.DiscussionCount|null)[]}>{
+    const variables:Record<string,string|number>={...this.#scope()};
+    const declarations=['$owner:String!','$name:String!'],known:string[]=[],searches:string[]=[];
+    const terms=new Map<number,string>();
+    for(const [i,page] of pages.entries()){
+      if(page.number!==null){
+        declarations.push('$n'+i+':Int!');variables['n'+i]=page.number;
+        known.push('p'+i+':discussion(number:$n'+i+'){number '+GRAPH.scope+' comments{totalCount}}');
+      }else{
+        const term=strict?await sha1(page.term):page.term;terms.set(i,term);
+        declarations.push('$q'+i+':String!');variables['q'+i]=`repo:${this.repo} category:${JSON.stringify(category)} ${strict?'in:body':'in:title'} ${JSON.stringify(term)} sort:created-asc`;
+        searches.push('p'+i+':search(type:DISCUSSION,query:$q'+i+',first:10){nodes{... on Discussion{number '+(strict?'body ':'')+GRAPH.scope+' comments{totalCount}}}}');
       }
     }
-    if (unknown.length) {
-      const variables: Record<string, string> = {};
-      const searchTerms = new Map<number,string>();
-      for (const p of unknown) {
-        const term = strict ? await sha1(p.term) : p.term;
-        searchTerms.set(p.i, term);
-        variables['q'+p.i] = `repo:${this.repo} category:${JSON.stringify(category)} ${strict ? 'in:body' : 'in:title'} ${JSON.stringify(term)} sort:created-asc`;
+    const query=`query CommentCounts(${declarations.join(',')}){repository(owner:$owner,name:$name){id nameWithOwner isPrivate isArchived discussionCategories(first:100){nodes{id name isAnswerable}} ${known.join(' ')}} ${searches.join(' ')}}`;
+    const data=await this.graph(v.record(v.string(),v.unknown()),query,variables,token);
+    const meta=parse(G.Repository,data.repository,'upstream');
+    const repository=data.repository as Record<string,unknown>;
+    const summaries=pages.map((page,i)=>{
+      if(page.number!==null){
+        requireCondition(Object.hasOwn(repository,'p'+i),502,'UPSTREAM_SCHEMA','GitHub omitted a count result.');
+        return repository['p'+i]===null?null:parse(G.DiscussionCount,repository['p'+i],'upstream');
       }
-      const data = await this.graph(v.record(v.string(), v.object({nodes: v.pipe(v.array(v.nullable(G.DiscussionCount)), v.maxLength(10))})),
-        `query FindCounts(${unknown.map(p => '$q'+p.i+':String!').join(',')}) { ${unknown.map(p => 'p'+p.i+':search(type:DISCUSSION,query:$q'+p.i+',first:10) { nodes { ... on Discussion { '+fields+' } } }').join(' ')} }`, variables, token);
-      for (const p of unknown) {
-        requireCondition(data['p'+p.i], 502, 'UPSTREAM_SCHEMA', 'GitHub omitted a count result.');
-        output[p.i] = data['p'+p.i]!.nodes.find(d => d && (!strict || d.body.includes(searchTerms.get(p.i)!))) ?? null;
-      }
-    }
-    return output;
+      const result=parse(v.object({nodes:v.pipe(v.array(v.nullable(v.object({...G.DiscussionCount.entries,body:strict?v.string():v.optional(v.string(),'')}))),v.maxLength(10))}),data['p'+i],'upstream');
+      return result.nodes.find(d=>d&&(!strict||d.body.includes(terms.get(i)!)))??null;
+    });
+    return {meta,summaries};
   }
   async access(number: number, token: string): Promise<G.DiscussionAccess | null> {
     const data = await this.graph(G.DiscussionAccessResponse, QUERIES.access, { ...this.#scope(), number }, token);
@@ -206,9 +206,9 @@ export class GitHub {
     const result = await this.graph(G.RepliesResponse, QUERIES.replies, { id: parentId, before: cursor || null }, token);
     requireCondition(result.node, 404, 'NOT_FOUND', 'Reply thread not found.'); return result.node;
   }
-  async create(widget: Widget, repositoryId: string, categoryId: string, token: string): Promise<{ id: string; number: number }> {
+  async create(widget: Selection & Partial<Pick<Widget,'description'|'backLink'>>, repositoryId: string, categoryId: string, token: string): Promise<{ id: string; number: number }> {
     const page = new URL(widget.backLink || widget.origin); page.hash = ''; page.searchParams.delete('giscus');
-    const body = `# ${widget.term}\n\n${widget.description}\n\n${page.toString()}\n\n<!-- sha1: ${await sha1(widget.term)} -->`;
+    const body = `# ${widget.term}\n\n${widget.description||''}\n\n${page.toString()}\n\n<!-- sha1: ${await sha1(widget.term)} -->`;
     const data = await this.graph(G.CreateResponse, 'mutation CreateDiscussion($input:CreateDiscussionInput!) { createDiscussion(input:$input) { discussion { id number } } }', { input: { repositoryId, categoryId, title: widget.term, body } }, token);
     return data.createDiscussion.discussion;
   }

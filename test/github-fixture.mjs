@@ -94,21 +94,17 @@ export class FakeGitHub {
         const nodes=this.hideSearch?[]:this.discussions.filter(d=>x.query.includes('in:body')?d.body.includes(term):d.title.includes(term));
         check(!/bodyHTML|reactionGroups|comments\s*\{/.test(query),'search selects identity and optional strict body only');data={search:{nodes:nodes.slice(0,10).map(d=>({...this.identity(d),...(x.strict?{body:d.body}:{})}))}};break;
       }
-      case 'FindCounts': {
-        data={};
-        for(const [key,query] of Object.entries(x)) {
-          check(query.startsWith('repo:example/comments category:"Announcements" '),'scoped count search');
-          const term=JSON.parse(query.slice(query.indexOf('in:')+ (query.includes('in:body')?8:9),query.lastIndexOf(' sort:')));
-          const nodes=this.hideSearch?[]:this.discussions.filter(d=>query.includes('in:body')?d.body.includes(term):d.title.includes(term));
-          data['p'+key.slice(1)]={nodes:nodes.slice(0,10).map(d=>({...this.discussion(d,user),comments:{totalCount:d.comments.length}}))};
-        }
-        break;
-      }
       case 'CommentCounts': {
-        data={repository:{}};
+        data={repository:clone(this.meta)};
         for(const [key,number] of Object.entries(x).filter(([key])=>/^n[0-9]+$/.test(key))){
           const d=this.discussions.find(d=>d.number===number);
           data.repository['p'+key.slice(1)]=d?{...this.discussion(d,user),comments:{totalCount:d.comments.length}}:null;
+        }
+        for(const [key,query] of Object.entries(x).filter(([key])=>/^q[0-9]+$/.test(key))){
+          check(query.startsWith('repo:example/comments category:"Announcements" '),'scoped count search');
+          const term=JSON.parse(query.slice(query.indexOf('in:')+(query.includes('in:body')?8:9),query.lastIndexOf(' sort:')));
+          const nodes=this.hideSearch?[]:this.discussions.filter(d=>query.includes('in:body')?d.body.includes(term):d.title.includes(term));
+          data['p'+key.slice(1)]={nodes:nodes.slice(0,10).map(d=>({...this.discussion(d,user),comments:{totalCount:d.comments.length}}))};
         }
         break;
       }
