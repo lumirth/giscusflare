@@ -146,12 +146,40 @@ summary.gsc-reactions-button:focus-visible {
   position: absolute;
   inset-inline-end: 8px;
   top: 8px;
-  padding: 6px;
+  padding: 8px;
   border: 1px solid var(--color-border-default, var(--color-border-primary));
   border-radius: 6px;
   background: var(--color-canvas-default, var(--color-bg-primary));
+  color: var(--color-fg-muted, var(--color-text-secondary));
+}
+@media (hover: hover) and (pointer: fine) {
+  .markdown .code-copy { opacity: 0; transition: opacity .2s; }
+  .markdown .code-block:hover > .code-copy,
+  .markdown .code-copy:focus-visible { opacity: 1; }
+}
+.markdown .blob-wrapper table { margin: 0; }
+.markdown .Box-header p { margin: 0; }
+.markdown .blob-wrapper td { border: 0; padding: 0 12px; }
+.markdown .blob-wrapper .blob-code-inner { overflow-wrap: normal; }
+.markdown .blob-wrapper .blob-num { cursor: default; }
+.markdown .math-render-error { display: block; margin: 16px 0; }
+.markdown .math-render-message {
+  display: block;
+  padding: 16px;
+  border: 1px solid var(--color-danger-muted, var(--color-border-danger));
+  border-radius: 6px;
+  background: var(--color-danger-subtle, var(--color-bg-danger));
+}
+.markdown code.math-render-source {
+  display: block;
+  margin-top: 16px;
+  padding: 16px;
+  overflow: auto;
+  white-space: pre;
+  background: var(--color-canvas-subtle, var(--color-bg-tertiary));
 }
 .markdown .giscus-math[data-display="block"] {
+  display: block;
   overflow-x: auto;
 }
 .action-dialog {

@@ -17,6 +17,7 @@ export async function buildStyles() {
     tailwind({
       content: [
         "src/browser/standard/**/*.ts",
+        "src/browser/markdown.ts",
         "vendor/giscus/reference/components/*.tsx",
       ],
       plugins: [rtl],

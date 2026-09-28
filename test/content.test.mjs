@@ -51,3 +51,52 @@ test('custom code renderer gets plain source and language while failure retains 
  await new Promise(r=>setTimeout(r,0));
  assert.match(fallback.querySelector('pre').textContent,/fn main/);assert.ok(fallback.querySelector('button'));
 });
+
+// Minimized from the GitHub bodyHTML of the giscus.app example comment.
+const embeddedCode = `<div class="Box Box--condensed my-2"><div class="Box-header f6">
+<p class="mb-0 text-bold"><a href="https://github.com/owner/repo/blob/abc/file.ts#L34">repo/file.ts</a></p>
+<p class="mb-0 color-fg-muted">Line 34 in <a class="commit-tease-sha" href="/owner/repo/commit/abc">abc</a></p></div>
+<div class="Box-body p-0 blob-wrapper blob-wrapper-embedded data"><table class="highlight tab-size mb-0 js-file-line-container" data-tab-size="8"><tbody><tr class="border-0">
+<td class="blob-num border-0 tmp-px-3 py-0 color-bg-default" data-line-number="34"></td>
+<td class="blob-code border-0 tmp-px-3 py-0 color-bg-default blob-code-inner js-file-line">  <span class="pl-k">return</span> true;</td>
+</tr></tbody></table></div></div>`;
+test('GitHub code previews retain their layout, line numbers, whitespace and commit links',()=>{
+ const node=document.createElement('div');node.append(createContentRenderer()(embeddedCode));
+ assert.ok(node.querySelector('.Box.Box--condensed > .Box-header'));
+ assert.ok(node.querySelector('.blob-wrapper-embedded .blob-code-inner'));
+ assert.equal(node.querySelector('.blob-num').dataset.lineNumber,'34');
+ assert.equal(node.querySelector('.commit-tease-sha').href,'https://github.com/owner/repo/commit/abc');
+ assert.equal(node.querySelector('.blob-code-inner').textContent,'  return true;');
+ assert.equal(node.querySelector('.pl-k').textContent,'return');
+ assert.equal(node.querySelector('button'),null);
+});
+test('malformed math shows an error and preserves the exact delimited source',async()=>{
+ const node=document.createElement('div');node.append(createContentRenderer()('<math-renderer class="js-inline-math">$\\frac{broken$</math-renderer>'));
+ for(let i=0;i<100&&node.querySelector('[aria-busy]');i++)await new Promise(r=>setTimeout(r,20));
+ assert.ok(node.querySelector('.math-render-error'));
+ assert.equal(node.querySelector('.math-render-source').textContent,'$\\frac{broken$');
+ assert.match(node.textContent,/Unable to render/);
+ assert.equal(node.querySelector('math,merror'),null);
+});
+test('code copy stays outside the horizontal code scroller',()=>{
+ const node=document.createElement('div');node.append(createContentRenderer()('<div class="highlight highlight-source-js"><pre>const longLine = 1;</pre></div>'));
+ assert.ok(node.querySelector('.code-block > pre'));
+ assert.ok(node.querySelector('.code-block > button.code-copy'));
+ assert.equal(node.querySelector('pre button'),null);
+});
+
+test('rich markup does not admit arbitrary classes, attributes, or duplicate line IDs',()=>{
+ const node=document.createElement('div');node.append(createContentRenderer()('<table class="blob-wrapper application-overlay" style="position:fixed" data-tab-size="999"><tr><td id="L1" class="blob-num" data-line-number="bad" onclick="evil()">one</td><td id="L1">two</td></tr></table><a href="#L1">line</a><a href="javascript:evil()">bad</a>'));
+ assert.equal(node.querySelector('.application-overlay,[style],[onclick],[data-line-number]'),null);
+ assert.equal(node.querySelectorAll('[id]').length,1);
+ assert.equal(node.querySelector('a').getAttribute('href'),'#'+node.querySelector('[id]').id);
+ assert.equal(node.querySelectorAll('a')[1].hasAttribute('href'),false);
+});
+
+test('copy reads the complete code without copying the button or losing line breaks',async()=>{
+ let copied;Object.defineProperty(globalThis,'navigator',{value:{clipboard:{writeText:async text=>{copied=text;}}},configurable:true});
+ const node=document.createElement('div');node.append(createContentRenderer()('<pre><code>first line\n  second line</code></pre>'));
+ node.querySelector('button').click();await new Promise(r=>setTimeout(r,0));
+ assert.equal(copied,'first line\n  second line');
+ assert.equal(node.querySelector('button').getAttribute('aria-label'),'Copied!');
+});

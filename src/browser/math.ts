@@ -15,5 +15,7 @@ export function renderMath(source: string, display: boolean): DocumentFragment {
   const doc=mathjax.document('',{InputJax:input,OutputJax:new SVG({fontCache:'none'})});
   const node=doc.convert(source,{display,end:STATE.CONVERT});
   const serialized=new SerializedMmlVisitor().visitTree(node);
+  // MathJax represents parse failures as merror nodes instead of throwing.
+  if (serialized.includes('<merror')) throw new Error('Invalid math expression.');
   return DOMPurify.sanitize(serialized,{USE_PROFILES:{mathMl:true},RETURN_DOM_FRAGMENT:true,FORBID_ATTR:['href','xlink:href','style','id','class'],FORBID_TAGS:['annotation-xml']});
 }

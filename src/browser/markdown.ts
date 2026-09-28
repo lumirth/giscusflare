@@ -1,6 +1,9 @@
 import { safeURL } from './dom.js';
 const allowed = new Set('a p br strong b em i s del blockquote pre code ul ol li table thead tbody tfoot tr th td h1 h2 h3 h4 h5 h6 hr img span div details summary sub sup kbd samp var abbr mark input'.split(' '));
 const discard = new Set('script style link meta iframe object embed form svg math textarea noscript template base head title audio video source'.split(' '));
+// GitHub's code previews use these classes for their frame, line numbers and code table.
+// Keep a finite list: comment HTML cannot opt into arbitrary application styles.
+const richClasses = new Set('Box Box--condensed Box-header Box-body my-2 f6 mb-0 text-bold color-fg-muted commit-tease-sha p-0 blob-wrapper blob-wrapper-embedded blob-num blob-code blob-code-inner border-0 tmp-px-3 py-0 color-bg-default tab-size js-file-line-container snippet-clipboard-content'.split(' '));
 let sequence = 0;
 /** Rebuild GitHub HTML using allowed elements and attributes. */
 export function markdown(html: string, fallback = ''): DocumentFragment {
@@ -8,6 +11,7 @@ export function markdown(html: string, fallback = ''): DocumentFragment {
   if (typeof html !== 'string' || html.length > 2000000) { fragment.append(document.createTextNode(fallback)); return fragment; }
   const inert = document.createElement('template'); inert.innerHTML = html;
   const prefix = `gw-md-${++sequence}-`; let visited = 0;
+  const ids = new Set<string>();
   function copy(source: Node, target: Node, depth: number): void {
     if (++visited > 20000 || depth > 100) return;
     if (source.nodeType === Node.TEXT_NODE) { target.appendChild(document.createTextNode(source.textContent || '')); return; }
@@ -17,6 +21,7 @@ export function markdown(html: string, fallback = ''): DocumentFragment {
       const math=document.createElement('span');math.className='giscus-math';
       math.dataset.display=source.classList.contains('js-inline-math')?'inline':'block';
       const raw=(source.textContent||'').trim();
+      math.dataset.source=raw.slice(0,10001);
       const delimiter=raw.startsWith('$$')&&raw.endsWith('$$')?'$$':raw.startsWith('$')&&raw.endsWith('$')?'$':'';
       math.textContent=(delimiter?raw.slice(delimiter.length,-delimiter.length).trim():raw).slice(0,10001);target.appendChild(math);return;
     }
@@ -25,9 +30,13 @@ export function markdown(html: string, fallback = ''): DocumentFragment {
     if (tag === 'input' && source.getAttribute('type') !== 'checkbox') return;
     const node = document.createElement(tag);
     const title = source.getAttribute('title'); if (title) node.title = title.slice(0, 1000);
-    if (source.id) node.id = prefix + source.id;
-    const classes = [...source.classList].filter(c => /^(?:pl-[a-z0-9-]+|language-[a-z0-9-]+|highlight|task-list-item|contains-task-list)$/.test(c));
+    if (source.id && !ids.has(source.id)) {
+      ids.add(source.id); node.id = prefix + source.id;
+    }
+    const classes = [...source.classList].filter(c => richClasses.has(c) || /^(?:pl-[a-z0-9-]+|language-[a-z0-9-]+|highlight|task-list-item|task-list-item-checkbox|contains-task-list)$/.test(c));
     if (classes.length) node.className = classes.join(' ');
+    if (source.classList.contains('blob-num') && /^\d{1,8}$/.test(source.getAttribute('data-line-number') || '')) node.setAttribute('data-line-number', source.getAttribute('data-line-number')!);
+    if (tag === 'table' && /^[1-8]$/.test(source.getAttribute('data-tab-size') || '')) node.style.tabSize = source.getAttribute('data-tab-size')!;
     if (tag === 'pre') {
       const language = [source, source.querySelector('code'), source.parentElement]
         .filter(Boolean).flatMap(e => [...e!.classList])
