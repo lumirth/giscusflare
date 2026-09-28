@@ -12,7 +12,7 @@ test('public website directs adoption to deployment and contains no hosted embed
   const deploy = new URL(doc.querySelector('a.deploy').href);
   assert.equal(deploy.hostname, 'deploy.workers.cloudflare.com');
   assert.equal(deploy.searchParams.get('url'), 'https://github.com/lumirth/giscusflare');
-  assert.match(doc.querySelector('.demo-context').textContent, /only from this page/);
+  assert.match(doc.querySelector('.demo-context').textContent, /only be embedded on this website/);
   assert(doc.querySelector('.demo-context a').href.endsWith('/DEPLOY.md'));
   dom.window.close();
 });
