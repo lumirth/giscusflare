@@ -11,7 +11,7 @@ Use Node 22.16 or newer and install the locked dependencies with `npm ci`.
 | `npm run check:release` | Both suites and required package files. |
 | `npm run deploy:check` | Release checks, public configuration validation, and a Wrangler dry run. |
 
-The workerd suite covers repository RPC, SQLite persistence, encrypted sessions across restart, authentication handoff, and native rate limits. Use the browser acceptance checks for real App permissions and the [usage guide](FREE-TIER.md#measure-your-deployment) for deployed resource measurements.
+The workerd suite covers repository RPC, SQLite persistence, encrypted sessions across restart, authentication handoff, and native rate limits. Use the browser acceptance checks for real App permissions and the [usage guide](FREE-TIER.md#check-your-usage) for deployed resource measurements.
 
 Use JSDOM for DOM identity, events and state changes. Use a browser for layout, native undo and OAuth navigation.
 
@@ -42,4 +42,4 @@ Keep the textarea and nearby decoration nodes mounted while typing. Replacing th
 
 ## Release evidence
 
-Keep completed results in [release status](docs/STATUS.md), with detailed evidence in [presentation](docs/PRESENTATION.md) or [resource measurements](docs/CONFIDENCE.md). List failures and untested cases.
+Record completed checks in [verification results](docs/CONFIDENCE.md), including the version and test conditions. Link screenshots and theme comparisons from [presentation](docs/PRESENTATION.md). Summarize the changes for users in [release history](docs/STATUS.md).

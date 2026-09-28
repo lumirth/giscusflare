@@ -1,43 +1,52 @@
-# Operate your service
-
-GitHub stores your comments. Your Worker stores the page mappings, encrypted sessions and write receipts that connect your site to those discussions. Keep that service state when updating the deployment.
+# Maintain your service
 
 ## Update
 
-Bring the desired giscusflare release into your source repository and deploy it through Cloudflare's connected build. Keep your repository policy, secrets, Worker name, Durable Object binding and migration history. For a custom browser integration, follow the release notes for any matching package update.
+1. Choose a [release](https://github.com/lumirth/giscusflare/releases) and read its update instructions.
+2. Merge the release changes into your source repository. Preserve your Wrangler configuration, including the Worker name, repository settings, Durable Object binding and migration history. Keep the existing secrets in Cloudflare.
+3. Record the current Worker version and deploy through your connected Cloudflare build.
+4. If your website imports the browser package, update it as required by the release and rebuild the site.
+5. Open comments on your website and check sign-in, posting and reactions.
 
-Record the current Worker version before deploying. Afterward, load comments on your website and check sign-in, a contribution and a reaction. If you need to roll back, restore the previous Worker version and any corresponding website bundle. A code rollback does not reverse a database migration or delete contributions already saved to GitHub. See [Cloudflare's rollback guide](https://developers.cloudflare.com/workers/configuration/versions-and-deployments/rollbacks/).
+Source deployments apply the values in Wrangler's `vars`. If you changed public settings in the Cloudflare dashboard, copy those values into your source configuration before deploying. Keep `SESSION_SECRET` to preserve existing sign-ins.
+
+To roll back, restore the previous Worker version and the corresponding website bundle. A code rollback does not reverse a database migration. Follow any storage instructions in the release notes. See [Cloudflare's rollback guide](https://developers.cloudflare.com/workers/configuration/versions-and-deployments/rollbacks/).
 
 ## Troubleshoot
 
-| Symptom | Check |
+| Symptom | What to do |
 | --- | --- |
-| Setup loads, but comments do not | Finish the GitHub credentials and repository settings |
-| Your website is rejected | Include its exact origin in the repository policy, including `www` if used |
-| The repository or category cannot be found | Enable Discussions, install the App and match the category name |
+| Setup loads, but comments do not | Complete the GitHub credentials and repository settings on the setup page |
+| Your website is rejected | Add its exact origin to the repository policy, including `www` if used |
+| The repository or category cannot be found | Enable Discussions, install the App on the repository and match the category name |
 | Sign-in fails after a domain change | Set the GitHub callback to `PUBLIC_ORIGIN` plus `/auth/callback` and update the site's service URL |
-| Native requests fail in the browser | Check CORS errors, allowed origins and your site's `connect-src` policy |
-| A request returns 429 | Wait for the supplied retry interval and check service and GitHub limits |
-| A comment submission has an uncertain result | Keep its draft and retry through the same conversation; inspect GitHub before creating a new submission |
-| Comments fail during busy periods | Check Worker CPU errors, daily requests, object duration and SQLite allowances |
-| Ranking reports `paused` | Check its reason and retry time, then review the ranking age, inputs and budget |
+| Native requests fail in the browser | Check the browser console for CORS or Content Security Policy errors; allow your service in `connect-src` |
+| Requests return `VERSION_MISMATCH` | Deploy matching Worker and browser package versions, then reload the page |
+| A request returns 429 | Wait for the supplied retry interval; check Cloudflare and GitHub usage if it recurs |
+| A submission has an uncertain result | Check GitHub before posting again. Retry in the existing composer so the service can recover the original operation |
+| Comments fail during busy periods | Check Worker execution errors and CPU, then requests, object duration and SQLite allowances |
+| A custom sort does not load | Check the returned reason and retry time in [custom sort troubleshooting](#when-a-custom-sort-cannot-load) |
 
-`/healthz` checks that the service responds. `/api/v2/setup` reports whether its settings are configured. The setup page's repository check also contacts GitHub to verify access and the category.
+The setup page's repository check contacts GitHub and verifies access and the category. `/api/v2/setup` reports whether service settings are configured. `/healthz` checks that the service responds.
 
-## Freshness and usage
+## When a custom sort cannot load
 
-Public comments are cached for one minute and page-list counts for five minutes by default. Readers see their own confirmed changes immediately. Other readers get those changes on a later read after cache expiry. Increasing the lifetime reduces repeated GitHub reads. It also extends how long a previously public response can remain available after a GitHub privacy change.
+For an order such as "Popular", check the reason returned with the API's `paused` status:
 
-Ranked order has its own observation age. The content of a comment can be fresher than the score used to place it. Presentations receive ranking status and can offer chronological order when a ranking needs more work.
+- `budget`: wait for the allowance to reset, or adjust `RANKING_BUDGET` after checking account usage.
+- `upstream`: GitHub could not complete the read. Retry after the reported time.
+- `freshness`: collection could not meet `maxAgeSeconds`. Increase that age or reduce the selected ranking inputs.
+- `size`: the collection or returned order exceeded its size limit. Check discussion size and `maxOrderBytes`.
+- `inputs`: score data is missing or invalid. Check the profile and service errors; include both when reporting a persistent failure.
 
-[Cloudflare usage](../FREE-TIER.md) explains the costs, measurements and settings for your traffic pattern.
+See [sorting configuration](CONFIGURATION.md#sort-by-reactions-or-reply-counts) for the settings and [API state](API.md#ranked-views) for custom interfaces.
 
 ## Rotate credentials
 
-Add the new GitHub App key or client secret in Cloudflare and test sign-in before retiring the old credential. Keep `SESSION_SECRET` during routine updates. Changing it makes stored sessions unreadable and requires readers to sign in again.
-
-The browser holds an opaque service session and optional draft recovery. GitHub tokens stay encrypted on the service. See [security](../SECURITY.md) for storage and access controls.
+Add the new GitHub App key or client secret in Cloudflare and test sign-in before retiring the old credential. Keep `SESSION_SECRET` during routine updates. Changing it requires readers to sign in again.
 
 ## Logs
 
-Use request counts, CPU, object duration, SQL usage and errors to monitor the service. Exclude comment bodies, authorization headers, callback query strings and session tokens from logs. The supplied deployment disables Workers observability; review account-level logging separately.
+Use request counts, timing and error codes to investigate failures. Exclude comment bodies, authorization headers, callback query strings and session tokens from logs. The supplied deployment disables Workers observability; check account-level logging separately.
+
+See [security](../SECURITY.md) for access controls and session storage.

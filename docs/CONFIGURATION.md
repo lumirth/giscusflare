@@ -1,74 +1,61 @@
-# Configuration
+# Configure your service
 
-Configure your Worker through Cloudflare's Variables and Secrets settings or its `wrangler.jsonc`. [Setup](../DEPLOY.md) generates the initial values for your repository and website.
+Edit your Worker's variables in Cloudflare under **Settings → Variables and Secrets**, or in your source repository's `wrangler.jsonc`. The [setup page](../DEPLOY.md) generates the initial configuration.
 
-## Service settings
+## Choose allowed websites
 
-| Variable | Value |
-| --- | --- |
-| `PUBLIC_ORIGIN` | The comments service's exact origin, without a trailing slash |
-| `GITHUB_APP_ID` | Numeric GitHub App ID as a string |
-| `GITHUB_CLIENT_ID` | GitHub App client ID |
-| `REPOSITORIES` | Policies keyed by lowercase `owner/repository` |
-| `OPEN_HOSTING` | Optional default policy for other public repositories with the App installed |
-| `RANKING_BUDGET` | Shared resource allocation for explicitly enabled ranking repositories |
-
-Store `GITHUB_CLIENT_SECRET`, `GITHUB_PRIVATE_KEY` and `SESSION_SECRET` as encrypted secrets. Keep `SESSION_SECRET` across updates to preserve reader sessions.
-
-An empty deployment serves setup and health checks. It accepts no comments or reader sign-in until its GitHub credentials and repository policy are configured.
-
-## Repository policy
+`REPOSITORIES` lists the GitHub repositories your service uses and the websites allowed to embed their comments:
 
 ```json
 {
   "you/comments": {
-    "origins": ["https://example.com"],
-    "category": "Announcements",
-    "displayCacheMs": 60000,
-    "countCacheMs": 300000
+    "origins": ["https://example.com", "https://www.example.com"],
+    "category": "Announcements"
   }
 }
 ```
 
-| Setting | Default | Meaning |
+Add each website's origin, including the protocol and any port. For example, local development at `http://localhost:4321` needs its own entry. Paths and wildcard subdomains are not accepted. An empty `origins` list allows no websites.
+
+To use another comments repository, add another entry with its category and websites, and install your GitHub App on that repository.
+
+## Repository settings
+
+The fields below go inside each repository's entry in `REPOSITORIES`.
+
+| Setting | Default | Value |
 | --- | --- | --- |
-| `origins` | Required | Up to 30 exact website origins; `[]` denies all websites; `"*"` allows any website |
+| `origins` | Required | Up to 30 website origins, or `"*"` for any website |
 | `category` | Required | Exact discussion category name |
-| `categoryId` | Empty | Optional category ID, checked with the name |
+| `categoryId` | Empty | Optional category ID, checked against the name |
 | `defaultCommentOrder` | `oldest` | `oldest` or `newest` |
-| `displayCacheMs` | `60000` | Anonymous discussion and reply cache lifetime, from 0 to 3600000 milliseconds |
-| `countCacheMs` | `300000` | Individual page-count cache lifetime, from 0 to 3600000 milliseconds |
-| `maxReplyPrefetch` | `20` | Maximum initial replies per root, from 0 to 100; the browser requests 5 by default |
-| `customThemeOrigins` | `[]` | Up to 20 extra origins allowed to serve theme CSS and fonts |
+| `maxReplyPrefetch` | `20` | Maximum replies fetched initially per comment, from 0 to 100; the browser requests 5 by default |
+| `customThemeOrigins` | `[]` | Up to 20 extra origins for theme CSS and fonts |
 
-Zero disables the corresponding cache. The service accepts up to 100 explicit repository policies and rejects unknown settings. The complete JSON must also fit Cloudflare's environment-variable size limit.
+Use lowercase `owner/repository` keys. The service accepts up to 100 repositories and rejects unknown settings. The JSON must fit Cloudflare's environment-variable size limit.
 
-A longer display cache reduces GitHub reads for public visitors. A successful write updates the writer immediately; other visitors see it on their next read after the cached result expires. Cache expiry also bounds how long an earlier public response can remain available after upstream permissions change. See [resource usage](../FREE-TIER.md) for tuning.
+## Cache settings
 
-## Choose allowed websites
+Set these per repository:
 
-`https://example.com`, `https://www.example.com` and `http://localhost:4321` are different origins. Include each one you intend to serve. Entries contain no paths, query strings or wildcard subdomains.
+| Setting | Default | Value |
+| --- | --- | --- |
+| `displayCacheMs` | `60000` | Public comment and reply cache lifetime in milliseconds |
+| `countCacheMs` | `300000` | Post-count cache lifetime in milliseconds |
 
-The policy applies to native API requests and iframe embedding. It does not make public GitHub discussions private. Origin headers identify a browser page; they are not credentials for a scripted HTTP client.
+Both accept 0 to 3600000 milliseconds. Zero disables that cache. For example, `"displayCacheMs": 180000` caches public comments for three minutes. Readers still see their own successful changes immediately.
 
-## Offer open hosting
+See [Cloudflare usage](../FREE-TIER.md#choose-freshness-for-your-site) to choose lifetimes for your traffic.
 
-Set a repository's `origins` to `"*"` to let any website embed that repository. To let website owners bring other public repositories, add an `OPEN_HOSTING` JSON variable:
+## Custom theme CSS
 
-```json
-{
-  "origins": "*",
-  "category": "Announcements"
-}
-```
+Set a CSS URL as the theme in your embed or JavaScript configuration. It can come from your comments service or one of the repository's allowed websites. For CSS hosted elsewhere, add its origin to `customThemeOrigins`. Add external font origins there too.
 
-Each website owner installs your public GitHub App on their comments repository. The service checks installation and public repository access before accepting the repository. An explicit `REPOSITORIES` entry takes precedence over this default.
+Native embedding also follows your website's Content Security Policy. See [customization](EXTENDING.md#change-appearance) for theme and component options.
 
-Open hosting shares your service's Cloudflare and GitHub allowances. Whole-discussion ranking requires an explicit repository allocation; open hosting does not allocate ranking work for arbitrary repositories.
+## Sort by reactions or reply counts
 
-## Enable ranked views
-
-Add named profiles to an explicit repository policy:
+To add a "Popular" order alongside Oldest and Newest, add a `ranking` field to the repository's settings:
 
 ```json
 "ranking": {
@@ -82,29 +69,61 @@ Add named profiles to an explicit repository policy:
 }
 ```
 
-Each score is the sum of its inputs multiplied by their weights. Supported inputs are the eight reaction names, `replies`, `upvotes` and `answer`. Weights can be negative. An omitted or zero-weight input requires no ranking acquisition unless another profile uses it. Ties use creation time in the selected direction and a stable ID order.
+This example gives each thumbs-up or heart one point and each reply half a point. Tied comments show oldest first. The default interface adds `popular` to its sorting controls. A custom interface selects it with `conversation.setOrder({ profile: 'popular' })`.
 
-The example includes reply counts, so refreshes need reply metadata as well as reaction counts. A reactions-only profile can fetch more candidate records in a batch. `upvotes` reads GitHub's existing upvotes; it does not add an upvote action to the comments interface.
+Each profile can use any of the eight [reaction names](API.md#commands), plus `replies`, `upvotes` and `answer`. Weights can be positive or negative. GitHub upvotes are separate from emoji reactions; they can contribute to a score, but visitors upvote through GitHub.
 
-Use one to eight profiles. Names contain lowercase letters, digits, underscores or hyphens and start with a letter. `maxAgeSeconds` defaults to 600 and accepts 1 through 604800 seconds. The age starts at the oldest observation needed for the order. While collection is incomplete the API returns `preparing`; if it reaches a budget or freshness limit, it returns `paused` with a reason.
+`maxAgeSeconds` sets the maximum score age. The default is 600 seconds; accepted values are 1 to 604800 seconds. Increasing it allows less frequent updates. giscusflare fetches only the values used by your profiles. Including reply counts requires smaller batches than reactions alone. See [sorting costs](../FREE-TIER.md#sorting-by-reactions-or-reply-counts).
 
-The optional `RANKING_BUDGET` JSON variable sets these deployment-wide defaults:
+You can define up to eight profiles. Names start with a lowercase letter and contain up to 32 lowercase letters, digits, underscores or hyphens. Ties use creation time in the selected direction, then a stable ID order.
 
-| Setting | Default |
+### Sorting resource limits
+
+Set `RANKING_BUDGET` to a JSON object to change these service-wide limits:
+
+| Setting | Default | Controls |
+| --- | --- | --- |
+| `maxRequestsPerHour` | `240` | GitHub calls used to prepare orders |
+| `maxRowsWrittenPerDay` | `32000` | SQLite write allowance |
+| `maxRowsReadPerDay` | `500000` | SQLite read allowance |
+| `maxOrderBytes` | `524288` | Maximum size in bytes of a returned comment-ID list |
+
+The call and row allowances are divided equally among repositories with sorting profiles. Discussions in each repository share that allocation. The service reserves enough allowance for a step before starting it, so its budget can run out before actual usage reaches the number you set. GitHub calls include access checks and token renewal.
+
+These limits apply to preparing custom orders. Ordinary comments, sign-in and other services in your account also use Cloudflare resources. Check [account allowances](../FREE-TIER.md#free-allowances) when increasing the budget.
+
+A custom order reports `preparing` while its data loads and `paused` when it cannot finish. [Troubleshooting](OPERATIONS.md#when-a-custom-sort-cannot-load) explains the reasons; the [API reference](API.md#ranked-views) covers custom controls.
+
+## Offer open hosting
+
+To let any website embed comments from one repository, set that repository's `origins` to `"*"`.
+
+To let other website owners use your service with their own public repositories, add an `OPEN_HOSTING` variable:
+
+```json
+{
+  "origins": "*",
+  "category": "Announcements"
+}
+```
+
+Website owners install your GitHub App on their repository and use your setup page to generate an embed. Their traffic uses your Cloudflare and GitHub allowances.
+
+An explicit `REPOSITORIES` entry overrides `OPEN_HOSTING` for that repository. Use an explicit entry to offer sorting profiles as well.
+
+## Service settings
+
+| Variable | Value |
 | --- | --- |
-| `maxRequestsPerHour` | `240` GitHub calls |
-| `maxRowsWrittenPerDay` | `32000` SQLite rows |
-| `maxRowsReadPerDay` | `500000` SQLite rows |
-| `maxOrderBytes` | `524288` bytes per serialized ID array |
+| `PUBLIC_ORIGIN` | Your comments service's origin, without a trailing slash |
+| `GITHUB_APP_ID` | Numeric GitHub App ID as a string |
+| `GITHUB_CLIENT_ID` | GitHub App client ID |
+| `REPOSITORIES` | Repository settings shown above |
+| `OPEN_HOSTING` | Default settings for other public repositories with your App installed |
+| `RANKING_BUDGET` | Resource limits for custom sorting |
 
-The service reserves row allowances before starting work, so the charged budget can exceed actual SQLite usage. The 512 KiB ID-array ceiling bounds response size; operators can raise it for larger threads after measuring their Worker CPU costs.
+Store `GITHUB_CLIENT_SECRET`, `GITHUB_PRIVATE_KEY` and `SESSION_SECRET` as encrypted secrets. See [setup](../DEPLOY.md#configure-cloudflare) for their values and [operations](OPERATIONS.md#rotate-credentials) when rotating credentials.
 
-The service divides call and row allowances equally among explicitly ranking-enabled repositories. Discussions within each repository share that allocation. The request allowance includes ranking access checks and installation-token renewal. The order-size limit applies to each result. Leave room for sessions, ordinary reads and writes, and other services in your Cloudflare account. Increasing the allocation does not increase the provider's limits.
+## Request rate limits
 
-Omit `ranking` to disable metadata collection and storage for that repository.
-
-## Themes and rate limits
-
-Named themes are served with giscusflare. A custom CSS URL can use the service origin, an allowed website origin or an origin listed in `customThemeOrigins`. Add external font origins there too. Native presentations also follow the embedding website's Content Security Policy.
-
-The supplied Cloudflare bindings allow 120 reads, 30 writes and 15 authorization starts per IP per minute at each Cloudflare location. These are burst limits, not an account-wide daily budget. See [Cloudflare's binding documentation](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/).
+The supplied Cloudflare bindings allow 120 reads, 30 writes and 15 sign-in starts per IP per minute at each Cloudflare location. These limit bursts of requests. They do not cap daily account usage. See [Cloudflare's binding documentation](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/).

@@ -1,6 +1,8 @@
-# Default interface
+# Default interface and layout
 
-The default interface uses giscus themes and layout, with Octicons, eight emoji reactions, compact author rows and a reply timeline. Its composer appears at the bottom unless configured otherwise. Readers can switch between Write and Preview, use a fixed-width font and expand earlier replies.
+The default interface follows giscus's layout and themes. Use this reference when styling a native embed or changing the default presentation. For initial setup, see [integration](INTEGRATION.md).
+
+Readers can switch between Write and Preview, choose a fixed-width font and expand earlier replies. The composer appears at the bottom by default; set `inputPosition` or `data-input-position` to `top` to move it.
 
 Comment menus show edit, delete and hide actions according to the reader's permissions. Discussion administration stays on GitHub.
 
@@ -12,11 +14,13 @@ An iframe isolates the widget's styles from your page. Native embedding lets you
 
 ## Comment content
 
-Preview and posted comments use the same sanitized HTML renderer. It supports GitHub Markdown, syntax highlighting, copy controls and lazy math rendering. A malformed expression displays an error with its original source. Code-copy controls remain available when highlighting cannot complete.
+Comments and previews support GitHub Markdown, syntax-highlighted code with copy buttons, and math. GitHub renders the Markdown; giscusflare sanitizes that HTML and adds code and math controls.
 
 GitHub code previews retain their file links, line numbers and indentation. GitHub expands code links only in the repository containing that code; a link copied into another repository remains a link. See [GitHub's code snippet guide](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/creating-a-permanent-link-to-a-code-snippet).
 
 ## Comparing with giscus
+
+For changes to the default interface, use these references to check appearance and editing behavior.
 
 The reference source is pinned at giscus commit `3d6430237108ca4ee3eb6a1a20595201c09c72d5`. Use the same discussion, theme, width and sign-in state when comparing the two interfaces. Selected reactions and the reader's own comments have different colors from their anonymous equivalents.
 

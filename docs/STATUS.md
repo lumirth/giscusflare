@@ -4,9 +4,9 @@ Use the [GitHub releases](https://github.com/lumirth/giscusflare/releases) for p
 
 ## 2.0.0
 
-Shared reads now belong to the repository and are keyed by discussion and data selection. Mutations invalidate their discussion, overlapping count batches share individual results, and count lookup verifies repository access in the same GitHub query. Ready rankings reuse access verification and retain several discussions in bounded memory.
+Pages on the same website now share more cached work. A contribution invalidates its discussion's cached reads while leaving other discussions cached. Overlapping count requests reuse individual results and check GitHub access in the same query. Ranked views retain data for several discussions, reducing repeated reads when visitors move between them.
 
-The HTTP protocol is `/api/v2/`. Update the Worker and browser package together. Data requests no longer accept presentation settings; new-discussion metadata has its own `creation` field. Existing discussion mappings, sessions and write receipts stay in place.
+Update the Worker and your browser package together. Version 2.0 uses `/api/v2/`. For a direct HTTP integration, remove presentation settings from data requests and put new-discussion metadata in `creation`. Existing discussion mappings, sessions and write receipts stay in place.
 
 ## 1.0.2
 

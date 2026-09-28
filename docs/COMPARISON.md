@@ -4,7 +4,7 @@ Both projects put website comments in GitHub Discussions, using a repository you
 
 [giscus](https://giscus.app) runs a hosted service. You install its App and generate an embed script. It supports themes, custom CSS, website restrictions and framework wrappers. It can also be [self-hosted](https://github.com/giscus/giscus/blob/main/SELF-HOSTING.md).
 
-giscusflare starts with deployment to your Cloudflare account. Its setup page connects your GitHub App and allowed websites. Its JavaScript API lets custom interfaces share the behavior behind the default presentation.
+Deploy giscusflare to your Cloudflare account and connect GitHub through its setup page. You can embed the default interface, replace its components or build your own interface with the JavaScript API.
 
 | Choice | Hosted giscus | giscusflare |
 | --- | --- | --- |
@@ -14,12 +14,12 @@ giscusflare starts with deployment to your Cloudflare account. Its setup page co
 | Allowed websites | Repository `giscus.json` | Service policy, restricted by default |
 | Other people's repositories | Install the giscus App | Enable open hosting and let owners install your App |
 
-The [giscus advanced guide](https://github.com/giscus/giscus/blob/main/ADVANCED-USAGE.md) describes its origin restrictions and theme options. The [giscusflare customization guide](EXTENDING.md) shows the shared JavaScript API.
+See [giscus advanced usage](https://github.com/giscus/giscus/blob/main/ADVANCED-USAGE.md) and [giscusflare customization](EXTENDING.md) for configuration details.
 
 ## Reuse existing discussions
 
 Install your giscusflare App on the same repository. Keep the category, page mapping, strict setting and any explicit discussion numbers. Test a page with an existing conversation before replacing your site's embed.
 
-A matching page selects the existing GitHub discussion, so no comment import is needed. Readers authorize your App when they next sign in. Also test a page without a discussion, its first contribution, replies, reactions and custom styling.
+giscusflare then loads the existing discussion and its comments. Readers authorize your App when they next sign in.
 
 [Integration](INTEGRATION.md) explains the mapping choices.

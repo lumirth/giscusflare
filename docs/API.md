@@ -1,6 +1,6 @@
 # JavaScript API
 
-The browser API exposes one conversation object. A presentation reads its state, subscribes to changes and calls its commands. Authentication and drafts belong to that same object.
+Use `mountComments` for the default interface, `mountPresentation` for a custom interface, or `createConversation` to render comments in your own framework. All three return an object with the state and commands described here.
 
 See [native integration](INTEGRATION.md#native-rendering) for the versioned package installation command.
 
@@ -58,7 +58,7 @@ Appearance changes retain conversation state. Replacing the page saves its draft
 
 `fetching` accepts `onFocus`, `onReconnect`, `staleAfterMs` and `replyPrefetch`. Defaults enable focus and reconnect refresh after 60 seconds, with five replies prefetched per root. Set `fetching: false` to disable automatic focus/reconnect refresh. `refresh()` remains available. The server's cache lifetime and reply limit still apply.
 
-`draftRecovery` accepts a retention time and an optional `DraftStore`. The default uses browser storage for five minutes. Set it to `false` to keep drafts only in memory.
+`draftRecovery` accepts `{ retentionMs, store }`, where `store` is an optional `DraftStore`. The default uses browser storage for five minutes. Set it to `false` to keep drafts only in memory.
 
 ## State
 
@@ -116,7 +116,7 @@ Ranking covers the discussion's roots, including roots outside the currently dis
 
 `state.ranking` is null for chronological views. A ranked view reports `ready`, `preparing` or `paused`. A ready result's `observedAt` is its oldest required observation. A paused result provides a reason and an optional retry time. Use those values to offer a retry or return to chronological order. Active preparation checks stop after two minutes; an open tab does not wait indefinitely.
 
-Enabling a profile consumes the operator's metadata-read and storage allocation. More ranking inputs can mean smaller upstream batches. See [ranking configuration](CONFIGURATION.md#enable-ranked-views).
+Enabling a profile consumes the operator's metadata-read and storage allocation. More ranking inputs can mean smaller upstream batches. See [ranking configuration](CONFIGURATION.md#sort-by-reactions-or-reply-counts).
 
 ## Versioned service protocol
 
@@ -126,7 +126,9 @@ The JavaScript API sends reads as HTTP GET requests and mutations as POST reques
 
 ## HTTP reads
 
-A comment-data request selects a discussion separately from its presentation:
+Use these endpoints for comment counts outside the widget or a client that does not use the JavaScript package. The package calls them for you when you mount comments.
+
+To fetch a comment page:
 
 ```js
 const config = {
@@ -142,4 +144,4 @@ const response = await fetch(service + '/api/v2/thread?' +
 
 `config` accepts `repo`, `origin`, `term`, `strict`, `number`, `repoId`, `category` and `categoryId`. Appearance settings belong to the browser presentation. Comment creation accepts a separate `creation` object with `description` and `backLink` for a new discussion. The JavaScript conversation API supplies these fields automatically.
 
-For index-page counts, request `/api/v2/counts` with `{ repo, origin, strict, terms }`, with up to 20 terms. The response contains `counts`, `observedAt` and `expiresAt`, with timestamps in milliseconds since the Unix epoch. They describe the oldest count in the batch and its original expiry. A browser can retain these summaries, display them immediately on reload and fetch again after expiry. Bound retained entries and their age; an unavailable count is distinct from zero.
+For comment counts beside posts on an index or archive page, request `/api/v2/counts` with `{ repo, origin, strict, terms }` serialized in the `input` query parameter, as above. Batch up to 20 terms in one request. The response contains `counts`, `observedAt` and `expiresAt`, with timestamps in milliseconds since the Unix epoch. They describe the oldest count in the batch and its original expiry. A browser can retain these summaries, display them immediately on reload and fetch again after expiry. Set a maximum number of stored summaries and discard old entries. Display a count of zero only when the response contains zero; a failed request does not establish that a post has no comments.

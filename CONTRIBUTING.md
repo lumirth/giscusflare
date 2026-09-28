@@ -1,6 +1,6 @@
 # Contributing
 
-Start with the [README](README.md) for the product and [architecture](docs/DESIGN.md) for code ownership. Discuss changes to embedding, authentication, storage, or public exports before implementation.
+To work on giscusflare itself, start with the local demo below. The [architecture guide](docs/DESIGN.md) maps the source directories and explains how requests reach GitHub. For changes to embedding, authentication, storage or public exports, describe the proposed behavior in an issue before implementation.
 
 ## Local work
 

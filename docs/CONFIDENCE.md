@@ -1,6 +1,6 @@
 # Verification results
 
-These records describe the checks performed for the initial release and subsequent rendering update. To repeat them, follow [testing](../TESTING.md) and the [release procedure](IMPLEMENTATION.md). For capacity planning, start with [Cloudflare usage](../FREE-TIER.md).
+These records cover the initial release, rendering updates and the 2.0 shared-read changes. To repeat them, follow [testing](../TESTING.md) and the [release procedure](IMPLEMENTATION.md). For capacity planning, start with [Cloudflare usage](../FREE-TIER.md).
 
 ## Automated and package checks
 
@@ -43,3 +43,13 @@ A concurrent deployed test completed 12,100 HTTP requests across 100 discussions
 The repository tests exercise overlapping count batches from different website pages, cached missing discussions, a write that preserves unrelated discussion reads, and access expiry after a repository becomes private. Alternating ready rankings for two discussions makes no further GitHub calls or candidate-table reads while access verification remains fresh. Count misses combine verification and summaries in one GraphQL request.
 
 The native workerd suite checks the v2 protocol, response transfer, SQLite and encrypted-session survival across process restarts. Package checks build isolated browser and Worker consumers from the release archive. These checks complement the earlier deployed traffic measurements above.
+
+## Ranking resource measurements
+
+To measure this extra work, we ran a local workerd SQLite test with a 10,000-root discussion. It simulated a day with 10,080 ranking reads, 144 refresh cycles at ten-minute intervals, a daily membership audit and 200 confirmed reaction changes. It used 12,315 SQLite writes. An unchanged refresh used 75 writes and 14 GitHub requests. Restoring the collection after an object restart read 79 rows.
+
+The budget charged 25,237 reserved writes against the default 32,000-write allocation. Reservations cover possible work before it starts, so they can exceed actual writes. The service divides the configured allowance among ranking-enabled repositories; discussions within a repository share its allocation.
+
+For a site with several active ranked discussions, each discussion needs its own metadata refresh. Version 2.0 retains multiple discussions and orders in memory, so switching between cached rankings can reuse that work. Evicted data is restored from SQLite when requested again. See [architecture](DESIGN.md#optional-ranking) for the cache sizes.
+
+The default `maxOrderBytes` caps the returned ID list at 512 KiB. In a separate deployed test, a 100,000-ID order occupied 2.7 MB and reached 18 ms p99 Worker CPU. Measure CPU before raising that cap for very large discussions.

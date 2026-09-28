@@ -1,6 +1,6 @@
 # Release procedure
 
-Run these checks against the release build and record the results in [verification results](CONFIDENCE.md) and add the release to [release history](STATUS.md).
+Use this checklist when preparing a release. Record the version and results in [verification results](CONFIDENCE.md), then write update instructions in [release history](STATUS.md).
 
 ## Deployment and setup
 
@@ -10,7 +10,7 @@ Confirm that the GitHub callback address has wildcard matching disabled. Test th
 
 ## Browser behavior
 
-Exercise the standard and forum presentations in native and iframe modes. Check Preview, browser undo, selection, focus, refresh while composing, design changes, reply pagination and uncertain-write recovery. Cover narrow and wide layouts, themes, keyboard use, code and math.
+Exercise the standard interface in native and iframe modes, and the forum presentation in native mode. Check Preview, browser undo, selection, focus, refresh while composing, design changes, reply pagination and uncertain-write recovery. Cover narrow and wide layouts, themes, keyboard use, code and math.
 
 Include same-window and popup sign-in. Record the browsers used, including Safari, Firefox and physical iOS when tested. [Testing](../TESTING.md) describes the local harness; [presentation](PRESENTATION.md) records interface comparisons.
 

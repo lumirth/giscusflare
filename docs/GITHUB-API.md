@@ -1,6 +1,6 @@
 # GitHub API use
 
-Giscusflare reads public GitHub Discussions through a GitHub App installation. Reader writes use that reader's App-issued token. The service checks repository and target scope separately from the user's permission to act.
+Use this reference when changing GitHub queries or investigating API usage. Giscusflare uses an App installation token for anonymous reads and the reader's App-issued token for signed-in requests. Both the configured repository policy and GitHub permissions apply.
 
 ## Comment operations
 
@@ -19,7 +19,7 @@ Read [GitHub's Discussions guide](https://docs.github.com/en/graphql/guides/usin
 
 ## Display and ranking queries
 
-Display queries fetch a bounded page of comment content and a small reply preview. Whole-discussion ranking acquires compact inputs separately, then fetches content only for the selected IDs. Profiles share required inputs.
+Display queries fetch a bounded page of comment content and a small reply preview. Ranking fetches score inputs separately, then loads comment content for the selected IDs. Profiles reuse inputs they have in common.
 
 GitHub's point cost, returned nodes, resource limits and response bytes are different constraints. A query with a low point cost can still exceed resource limits. Grouped reaction totals avoid fetching individual reactors; selecting fewer fields reduces response parsing and serialization work.
 

@@ -1,6 +1,6 @@
 # Add comments to a website
 
-Deploy your service and open its setup page. It verifies the repository, category and allowed website before generating an iframe script.
+After [deploying your service](../DEPLOY.md), use its setup page to generate an iframe embed. For a site that bundles JavaScript, you can instead [mount comments directly in the page](#native-rendering).
 
 ## Iframe
 
@@ -26,6 +26,8 @@ The loader uses an existing `.giscus` container or creates one after the script.
 
 ## Page identity
 
+Choose how each website page finds its GitHub discussion. `pathname` uses the page path. Use `specific` with a permanent post ID if URLs may change, or `number` to show an existing discussion.
+
 | Mapping | Discussion lookup |
 | --- | --- |
 | `pathname` | Path without its leading slash or final file extension; the home page uses `index` |
@@ -49,7 +51,13 @@ npm install https://github.com/lumirth/giscusflare/releases/download/v2.0.0/gisc
 
 With npm 12, add `--allow-remote=root` to this command to allow the release URL. See [npm's URL dependency setting](https://docs.npmjs.com/cli/install/#allow-remote).
 
-Then import its public modules:
+Add a container where comments should appear:
+
+```html
+<div id="comments"></div>
+```
+
+Mount the interface from your website's JavaScript:
 
 ```js
 import { mountComments } from 'giscusflare';
@@ -66,9 +74,9 @@ const comments = mountComments(document.querySelector('#comments'), {
 });
 ```
 
-Call `comments.dispose()` when removing the component. For client-side navigation, call `comments.replacePage(nextPage)` with the next page's identity. Use `comments.updateAppearance({ theme: 'dark' })` for a theme change, which retains the conversation and its editors.
+Use a different `term` for each post. Call `comments.dispose()` when removing the component. For client-side navigation, call `comments.replacePage(nextPage)` with the next page's identity. To change themes, call `comments.updateAppearance({ theme: 'dark' })`.
 
-Native rendering uses your page's DOM and CSS context. Import `giscusflare/headless` for an independent interface. See [customization](EXTENDING.md), [API](API.md) and [package assets](PACKAGING.md).
+Style the container in your page to set its width and outer spacing. See [customization](EXTENDING.md) to replace components or build a different interface, and the [API reference](API.md) for options and methods.
 
 ## Content Security Policy
 

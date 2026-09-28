@@ -30,7 +30,7 @@ All discussions in one GitHub repository share a Durable Object. Readers do not 
 
 This arrangement shares installation tokens and repository checks across pages. It also coordinates discussion creation and retries so concurrent readers do not create duplicate discussions or submissions. Different requests can wait for GitHub concurrently; the object does not process an entire network round trip before accepting the next request.
 
-The current implementation has several consequences for a busy site:
+For a site with readers on several pages:
 
 - Repeated anonymous reads of the same page can share cached content. Readers visiting different discussions need different responses.
 - The repository's in-memory response cache has an 8 MiB limit. Least recently used entries are evicted when new responses need room. Keys and entry overhead count toward the bound.
@@ -38,7 +38,7 @@ The current implementation has several consequences for a busy site:
 - All signed-in reads, writes and cache misses for the repository reach the same object. Their CPU and GitHub work accumulate there.
 - Count requests batch up to 20 page identifiers. Individual counts and missing-discussion results are shared across batches and website pages. Only misses reach GitHub, in one query that also verifies repository access.
 
-These choices make the repository the unit of coordination. [Cloudflare usage](../FREE-TIER.md) explains the costs for repeated and scattered traffic.
+[Cloudflare usage](../FREE-TIER.md) explains how these traffic patterns affect the account allowance.
 
 ## Writing and retrying
 
@@ -50,7 +50,7 @@ Invalidation removes both retained entries and pending-work registrations for th
 
 ## Optional ranking
 
-Chronological reading needs only the requested comment page. Ranking needs each root comment's selected score inputs. Operator-defined profiles choose those inputs and their weights.
+Chronological reading needs only the requested comment page. Ranking needs each root comment's selected score inputs. The profiles in your repository configuration choose those inputs and their weights.
 
 Ranking starts when a reader requests a profile. Readers of the same discussion share the collection work. The service advances it in bounded steps, reserves API and storage allowances before each step, and uses alarms to finish pending work. Completed jobs stop scheduling alarms. Another visit starts a refresh when the observations are too old.
 
@@ -60,7 +60,7 @@ Ranking state persists separately for each discussion. Byte-bounded caches retai
 
 Ready rankings reuse public access verification for the display-cache lifetime. Preliminary GitHub calls and installation-token renewal are included in the ranking request allowance. Local website policy is checked on every request.
 
-If collection is incomplete or reaches its budget, the API reports `preparing` or `paused`. A presentation can keep chronological reading available while the ranked view catches up. [Configuration](CONFIGURATION.md#enable-ranked-views) describes the controls.
+If collection is incomplete or reaches its budget, the API reports `preparing` or `paused`. A presentation can keep chronological reading available while the ranked view catches up. [Configuration](CONFIGURATION.md#sort-by-reactions-or-reply-counts) describes the controls.
 
 ## Browser and presentation
 
