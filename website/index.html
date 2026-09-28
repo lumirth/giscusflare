@@ -23,16 +23,7 @@
         <h1>giscusflare</h1>
         <p>GitHub Discussions comments you can customize and deploy on Cloudflare.</p>
         <p>Use the familiar default interface, change individual components, or design a comments section to match your website. The shared conversation API handles sign-in, drafts, replies and reactions.</p>
-        <p><a class="deploy" href="https://deploy.workers.cloudflare.com/?url=https://github.com/lumirth/giscusflare">Deploy to Cloudflare</a> <a href="https://github.com/lumirth/giscusflare">GitHub</a> · <a href="https://github.com/lumirth/giscusflare/blob/main/docs/EXTENDING.md">Customization</a></p>
-
-        <h2 id="try-it">One conversation, two designs</h2>
-        <p>Try the comments below. Both designs show the same GitHub discussion and share your draft.</p>
-        <div class="design-picker" role="group" aria-label="Comment design">
-          <button type="button" data-design="standard" aria-pressed="true">Default</button>
-          <button type="button" data-design="forum" aria-pressed="false">Forum</button>
-        </div>
-        <div id="demo-comments"><p>Loading comments...</p></div>
-        <p class="demo-context">Unlike the hosted giscus service, this demo accepts comments only from this page. <a href="https://github.com/lumirth/giscusflare/blob/main/DEPLOY.md">Deploy your own</a> for your websites, or enable open hosting to let others use your service.</p>
+        <p><a class="deploy" href="https://deploy.workers.cloudflare.com/?url=https://github.com/lumirth/giscusflare">Deploy to Cloudflare</a> <a href="https://github.com/lumirth/giscusflare">GitHub</a> · <a href="https://github.com/lumirth/giscusflare/blob/main/docs/EXTENDING.md">Customization</a> · <a href="#try-it">Try the demo</a></p>
 
         <h2 id="how-it-works">How it works</h2>
         <p>Each page on your website maps to a GitHub discussion. Visitors sign in with GitHub to comment or react. You can reply and moderate on your website or on GitHub.</p>
@@ -44,7 +35,7 @@
           <li>Embed in an iframe or mount directly in your page.</li>
           <li>Build a different interface with the same authentication, editing and draft behavior.</li>
         </ul>
-        <p>The forum example above has its own markup and styles. Read its <a href="https://github.com/lumirth/giscusflare/blob/main/examples/forum.ts">source</a> or start with the <a href="https://github.com/lumirth/giscusflare/blob/main/docs/EXTENDING.md">customization guide</a>.</p>
+        <p>The forum example has its own markup and styles. Read its <a href="https://github.com/lumirth/giscusflare/blob/main/examples/forum.ts">source</a> or start with the <a href="https://github.com/lumirth/giscusflare/blob/main/docs/EXTENDING.md">customization guide</a>.</p>
 
         <h2 id="giscus">And giscus?</h2>
         <p><a href="https://giscus.app">giscus</a> provides a hosted comments service. giscusflare brings that GitHub Discussions model to your Cloudflare account and gives you a JavaScript API for designing the interface. Both use repositories you choose.</p>
@@ -52,6 +43,16 @@
         <footer><a href="https://github.com/lumirth/giscusflare/blob/main/THIRD-PARTY-NOTICES.md">Credits and licenses</a></footer>
       </div>
     </article>
+    <section class="demo" aria-labelledby="try-it">
+      <h2 id="try-it">One conversation, two designs</h2>
+      <p>Try the comments below. Both designs show the same GitHub discussion and share your draft.</p>
+      <div class="design-picker" role="group" aria-label="Comment design">
+        <button type="button" data-design="standard" aria-pressed="true">Default</button>
+        <button type="button" data-design="forum" aria-pressed="false">Forum</button>
+      </div>
+      <div id="demo-comments"><p>Loading comments...</p></div>
+      <p class="demo-context">Unlike the hosted giscus service, this demo accepts comments only from this page. <a href="https://github.com/lumirth/giscusflare/blob/main/DEPLOY.md">Deploy your own</a> for your websites, or enable open hosting to let others use your service.</p>
+    </section>
   </main>
   <script type="module" src="demo.js"></script>
 </body>
