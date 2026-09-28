@@ -1,37 +1,31 @@
-# Standard presentation
+# Default interface
 
-The standard widget follows [giscus](https://giscus.app/). Its reference source is pinned at commit `3d6430237108ca4ee3eb6a1a20595201c09c72d5`.
+The default interface uses giscus themes and layout, with Octicons, eight emoji reactions, compact author rows and a reply timeline. Its composer appears at the bottom unless configured otherwise. Readers can switch between Write and Preview, use a fixed-width font and expand earlier replies.
 
-## Appearance and behavior
+Comment menus show edit, delete and hide actions according to the reader's permissions. Discussion administration stays on GitHub.
 
-The widget uses giscus themes, Octicons, eight emoji reactions, compact author rows, a reply timeline, and a bottom composer by default. Replies initially fold to the latest five. Readers can change the sort order and expand more replies. The editor has Write and Preview tabs, Markdown help, and a focus ring. The initial loader uses giscus's Mona animation.
+## Embedding and layout
 
-Below 440px of available width, the header wraps its sorting and menu controls onto a separate row. The widget adds no outer gutter. The host page controls that spacing.
+The native widget scopes its styles to its root. It adds no outer gutter, so your page controls the space around it. Below 440px of available width, the header moves sorting and menu controls onto another row. Replies initially show the latest five and load earlier replies in pages.
 
-Comment menus expose edit, delete and hide actions according to the reader's permissions. Discussion administration stays on GitHub. Emoji reactions retain their GitHub meaning; GitHub upvotes are separate.
+An iframe isolates the widget's styles from your page. Native embedding lets you place it directly in your layout. See [integration](INTEGRATION.md) for both options and [customization](EXTENDING.md) for component replacements or a complete custom interface.
 
-The editor keeps its textarea and decoration nodes stable to preserve browser undo history through typing and preview changes. Reactions appear immediately, then reconcile with serialized GitHub writes. Reply pagination fetches bounded pages instead of loading every reply at once.
+## Comment content
 
-## Custom presentations
+Preview and posted comments use the same sanitized HTML renderer. It supports GitHub Markdown, syntax highlighting, copy controls and lazy math rendering. A malformed expression displays an error with its original source. Code-copy controls remain available when highlighting cannot complete.
 
-The standard templates use the public conversation runtime. A custom presentation can import `giscusflare/headless` without importing the standard templates or styles. See [Extending giscusflare](EXTENDING.md) and the [custom presentation example](../examples/custom.ts).
+GitHub code previews retain their file links, line numbers and indentation. GitHub expands code links only in the repository containing that code; a link copied into another repository remains a link. See [GitHub's code snippet guide](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/creating-a-permanent-link-to-a-code-snippet).
 
-Use the shared content renderer for preview and published content. It handles sanitization, code controls, and optional lazy math. A custom theme may need changes to its selectors because the native widget scopes styles to its root.
+## Comparing with giscus
 
-## Recorded comparison
+The reference source is pinned at giscus commit `3d6430237108ca4ee3eb6a1a20595201c09c72d5`. Use the same discussion, theme, width and sign-in state when comparing the two interfaces. Selected reactions and the reader's own comments have different colors from their anonymous equivalents.
 
-On September 26, 2026, a desktop WebKit comparison inspected Light, Dark, Dark Dimmed, NoBorder Light, Purple Dark, Light High Contrast, and Fro. It compared colors, padding, line heights, and border radii for author rows, prose, reactions, sorting, and the editor.
+The September 26, 2026 WebKit pass compared Light, Dark, Dark Dimmed, NoBorder Light, Purple Dark, Light High Contrast and Fro. It measured colors, spacing, line heights and border radii for author rows, prose, reactions, sorting and the editor:
 
-The [theme measurements](evidence/theme-comparison.json), [signed-in light screenshot](evidence/standard-refinement-light.png), and [anonymous light screenshot](evidence/standard-anonymous-light.png) record that pass. Match viewer state when comparing screenshots. Selected reactions and viewer-authored comments use different colors from their anonymous equivalents.
+- [Theme measurements](evidence/theme-comparison.json).
+- [Signed-in light view](evidence/standard-refinement-light.png) and [anonymous light view](evidence/standard-anonymous-light.png).
+- [Narrow layout](evidence/core-mobile-gutters.png), with an 8px gutter supplied by the test page.
 
-A narrow desktop WebKit check found equal document scroll and client widths, with the comment edge at the host's 8px gutter. See the [mobile-width screenshot](evidence/core-mobile-gutters.png).
+The September 27 comparison also checked the replacement implementation against the pre-redesign widget at 390 CSS pixels. Comment, reply, header and composer geometry matched. The September 28 pass added the complete rich-content example described above.
 
-Native undo was compared with a plain textarea using the same keystrokes, including a Preview/Write round trip. A DOM regression test checks node stability. It cannot verify the browser's undo stack.
-
-See [Verification evidence](CONFIDENCE.md) for the remaining browser coverage.
-
-## Release comparison
-
-The September 27 comparison used the pre-redesign core at `d8eb06b` and the replacement in the same browser tab at 390 CSS pixels. Both used the same fixture and anonymous viewer state. The local host wrapper was corrected to the previously recorded 8px mobile gutter; the widget styles were unchanged. The checked comment, reply, header and composer geometry and styles matched. The extra Refresh and Toggle theme buttons belong to the new local test page.
-
-The independent Kukas presentation was compared with the archive used by its previous site build. Its desktop light rendering and narrow dark reply-editing state matched across the rendered elements, including the distinct tab and textarea materials. Kukas keeps its own host spacing and presentation styles; the default widget's gutter is not a shared downstream setting.
+Native undo was checked against a plain textarea with the same keystrokes and a Preview/Write round trip. Automated tests preserve the editor's DOM nodes; browser checks exercise undo, focus and selection. See [testing](../TESTING.md#undo-regression) for the procedure.

@@ -13,7 +13,7 @@ Use Node 22.16 or newer and install the locked dependencies with `npm ci`.
 
 The workerd suite covers repository RPC, SQLite persistence, encrypted sessions across restart, authentication handoff, and native rate limits. Use the browser acceptance checks for real App permissions and the [usage guide](FREE-TIER.md#measure-your-deployment) for deployed resource measurements.
 
-JSDOM can check DOM identity, event handling, and state updates. It cannot establish layout, native undo behavior, or OAuth navigation in a real browser.
+Use JSDOM for DOM identity, events and state changes. Use a browser for layout, native undo and OAuth navigation.
 
 ## Local demo
 
@@ -38,7 +38,7 @@ Include Safari, Firefox, and physical iOS.
 
 Type a phrase with real keyboard input in a plain textarea and the comment composer. Undo should remove the typing group in both. Repeat after Preview and then redo.
 
-Keep the textarea and nearby decoration nodes mounted while typing. Replacing neighboring SVG nodes previously split WebKit's undo groups into individual characters. The DOM regression test catches that mutation pattern; only a browser check establishes the editing behavior.
+Keep the textarea and nearby decoration nodes mounted while typing. Replacing them can split WebKit's undo groups into individual characters. The DOM regression checks node stability; repeat the keyboard check in a browser.
 
 ## Release evidence
 

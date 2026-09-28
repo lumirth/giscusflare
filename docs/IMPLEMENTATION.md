@@ -1,12 +1,12 @@
 # Release procedure
 
-Run these checks against the release build and record the results in [release verification](STATUS.md).
+Run these checks against the release build and record the results in [verification results](CONFIDENCE.md) and add the release to [release history](STATUS.md).
 
 ## Deployment and setup
 
 Use the Deploy to Cloudflare button to create a service. Follow its setup page through GitHub App registration, configuration, repository verification and embed generation. Confirm that an empty deployment serves setup and refuses comment traffic, then test sign-in and a comment from an allowed website. Check that a different origin is rejected.
 
-Confirm that the GitHub callback address has wildcard matching disabled. Test the generated Cloudflare values, including the repository policy and multiline private key. The adoption path starts in Cloudflare's browser flow.
+Confirm that the GitHub callback address has wildcard matching disabled. Test the generated Cloudflare values, including the repository policy and multiline private key.
 
 ## Browser behavior
 
@@ -20,7 +20,7 @@ Verify comment, reply, edit, delete, reaction and moderation behavior with reade
 
 ## Resource measurements
 
-Measure cold and warm reads, sign-in, preview, writes, counts and ranked views. Record Worker CPU and requests, object duration, SQLite operations and GitHub requests alongside the workload, configuration and deployed version. Report the measured result against the [resource budget](../FREE-TIER.md).
+Measure cold and warm reads, sign-in, preview, writes, counts and ranked views. Record Worker CPU and requests, object duration, SQLite operations and GitHub requests alongside the workload, configuration and deployed version. Compare with the [Free allowances](../FREE-TIER.md#free-allowances). Include traffic spread across many discussions, a burst on one popular post and a mix of signed-in and anonymous readers. For ranking, alternate between several discussions as well as testing a large one.
 
 ## Artifacts and website
 

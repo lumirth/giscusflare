@@ -1,6 +1,6 @@
 # Compatibility reference
 
-This reference describes the giscus behavior used to evaluate the standard giscusflare widget. It comes from giscus commit `3d6430237108ca4ee3eb6a1a20595201c09c72d5`. See [Verification evidence](CONFIDENCE.md) for completed tests.
+Maintainers use this checklist to compare the standard giscusflare widget with giscus. It comes from giscus commit `3d6430237108ca4ee3eb6a1a20595201c09c72d5`. See [Verification evidence](CONFIDENCE.md) for completed tests.
 
 ## Behavior to preserve
 

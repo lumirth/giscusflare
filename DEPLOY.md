@@ -1,8 +1,10 @@
 # Deploy giscusflare
 
-[Deploy to Cloudflare](https://deploy.workers.cloudflare.com/?url=https://github.com/lumirth/giscusflare)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/lumirth/giscusflare)
 
-The button creates your source repository and deploys the comments service to your Cloudflare account. Open the resulting `workers.dev` address to finish setup. You need a Cloudflare account and a public GitHub repository with Discussions enabled.
+You need a Cloudflare account and a public GitHub repository with Discussions enabled.
+
+Click the button to create a source repository and deploy the comments service to your account. Open the resulting `workers.dev` address to connect GitHub and generate your embed.
 
 Your source repository holds giscusflare's code. Your comments repository holds the discussions. They can be different repositories.
 
@@ -31,9 +33,9 @@ Add these as encrypted secrets:
 | `GITHUB_PRIVATE_KEY` | The full contents of the downloaded PEM file |
 | `SESSION_SECRET` | A random key generated on the setup page |
 
-Save and deploy. Keep `SESSION_SECRET` when updating your service so readers stay signed in. The setup page generates that key in your browser; it sends no secrets to giscusflare.
+Save and deploy. Keep `SESSION_SECRET` when updating your service so readers stay signed in.
 
-The initial deployment allows no websites. Add each website's exact origin, such as `https://example.com`, to its repository's `origins` list. See [configuration](docs/CONFIGURATION.md) for open hosting, cache settings and ranking profiles.
+Add each website's exact origin, such as `https://example.com`, to its repository's `origins` list. The service accepts comments only from websites you allow. See [configuration](docs/CONFIGURATION.md) for open hosting, cache settings and ranking profiles.
 
 If you edit configuration in your source repository later, keep its `vars` consistent with the dashboard settings. A source deployment applies the variables in its Wrangler configuration.
 
@@ -41,7 +43,7 @@ If you edit configuration in your source repository later, keep its `vars` consi
 
 Return to your service's setup page. Enter the repository and website, choose how pages map to discussions, and generate the embed code. The check verifies the deployed configuration, GitHub App access and category before generating the script.
 
-Paste the script where comments should appear. Sign in on your website and post a comment. It should appear in the selected GitHub discussion category. Your next visitors can use the same discussion.
+Paste the script where comments should appear. Sign in on your website and post a comment. It should appear in the selected GitHub discussion category.
 
 See [integration](docs/INTEGRATION.md) for native JavaScript mounting, page identifiers and Content Security Policy settings.
 
@@ -55,6 +57,6 @@ Update `PUBLIC_ORIGIN`, the GitHub App's authorization callback URL and the serv
 
 Bring changes from the giscusflare source repository into your copy, then deploy through its connected Cloudflare build. Keep the repository policy, secrets and Durable Object migration history. Before a release that changes storage, follow its release notes and retain a rollback deployment.
 
-For source development and local testing, see [testing](TESTING.md). Local setup is not part of deploying a new service.
+For work on giscusflare itself, see [contributing](CONTRIBUTING.md).
 
 Cloudflare documents [Deploy to Cloudflare](https://developers.cloudflare.com/workers/platform/deploy-buttons/) and [custom domains](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/). GitHub documents the [App registration parameters](https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-using-url-parameters) used by the setup page.

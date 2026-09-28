@@ -86,7 +86,7 @@ Each score is the sum of its inputs multiplied by their weights. Supported input
 
 The example includes reply counts, so refreshes need reply metadata as well as reaction counts. A reactions-only profile can fetch more candidate records in a batch. `upvotes` reads GitHub's existing upvotes; it does not add an upvote action to the comments interface.
 
-Use one to eight profiles. Names contain lowercase letters, digits, underscores or hyphens and start with a letter. `maxAgeSeconds` defaults to 600 and accepts 1 through 604800 seconds. It measures the oldest required observation, not the time a refresh finished. If refresh work cannot meet the age or budget, the API reports that condition instead of returning an incomplete whole-discussion order.
+Use one to eight profiles. Names contain lowercase letters, digits, underscores or hyphens and start with a letter. `maxAgeSeconds` defaults to 600 and accepts 1 through 604800 seconds. The age starts at the oldest observation needed for the order. While collection is incomplete the API returns `preparing`; if it reaches a budget or freshness limit, it returns `paused` with a reason.
 
 The optional `RANKING_BUDGET` JSON variable sets these deployment-wide defaults:
 
@@ -97,11 +97,11 @@ The optional `RANKING_BUDGET` JSON variable sets these deployment-wide defaults:
 | `maxRowsReadPerDay` | `500000` SQLite rows |
 | `maxOrderBytes` | `524288` bytes per serialized ID array |
 
-Row allowances are conservative reservations, not measured row usage. The 512 KiB ID-array ceiling bounds response size; operators can raise it for larger threads after measuring their Worker CPU costs.
+The service reserves row allowances before starting work, so the charged budget can exceed actual SQLite usage. The 512 KiB ID-array ceiling bounds response size; operators can raise it for larger threads after measuring their Worker CPU costs.
 
-The service divides call and row allowances equally among explicitly ranking-enabled repositories. The order-size limit applies to each result. Leave room for sessions, ordinary reads and writes, and other services in your Cloudflare account. Increasing the allocation does not increase the provider's limits.
+The service divides call and row allowances equally among explicitly ranking-enabled repositories. Discussions within each repository share that allocation. The order-size limit applies to each result. Leave room for sessions, ordinary reads and writes, and other services in your Cloudflare account. Increasing the allocation does not increase the provider's limits.
 
-Without `ranking`, the service acquires and stores no ranking metadata. `OPEN_HOSTING` cannot contain ranking profiles. Add a repository explicitly before enabling this work for it.
+Omit `ranking` to disable metadata collection and storage for that repository.
 
 ## Themes and rate limits
 

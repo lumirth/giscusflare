@@ -4,7 +4,9 @@
 
 GitHub Discussions comments you can customize and deploy on Cloudflare.
 
-[Try the demo](https://giscusflare.kukas.me/) · [Deploy to Cloudflare](https://deploy.workers.cloudflare.com/?url=https://github.com/lumirth/giscusflare) · [Customization](docs/EXTENDING.md) · [Configuration](docs/CONFIGURATION.md)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/lumirth/giscusflare)
+
+[Demo](https://giscusflare.kukas.me/) · [Setup](DEPLOY.md) · [Customization](docs/EXTENDING.md) · [Cloudflare usage](FREE-TIER.md)
 
 Use the default GitHub/giscus-inspired interface, replace individual components, or build a comments section to match your website. The [demo](https://giscusflare.kukas.me/) shows one real conversation in two designs.
 
@@ -15,16 +17,16 @@ Use the default GitHub/giscus-inspired interface, replace individual components,
 
 ## Set up your service
 
-[Deploy to Cloudflare](https://deploy.workers.cloudflare.com/?url=https://github.com/lumirth/giscusflare) creates your source copy and a Worker in your account. Open the Worker's address to connect a GitHub App, choose a comments repository and generate your embed code. [The setup guide](DEPLOY.md) walks through the same steps.
+The deploy button creates a source repository and a Worker in your Cloudflare account. Open the Worker's address to connect a GitHub App, choose a comments repository and generate your embed code. [The setup guide](DEPLOY.md) walks through the same steps.
 
 Each page maps to a GitHub discussion. Readers sign in with GitHub to comment or react, and you can manage the conversation on GitHub too. The source copy created during deployment and the repository holding discussions can be separate.
 
 ## Make it fit your website
 
-Install the browser package from the [1.0.1 release](https://github.com/lumirth/giscusflare/releases/tag/v1.0.1):
+Install the browser package from the [1.0.2 release](https://github.com/lumirth/giscusflare/releases/tag/v1.0.2):
 
 ```sh
-npm install https://github.com/lumirth/giscusflare/releases/download/v1.0.1/giscusflare-1.0.1.tgz
+npm install https://github.com/lumirth/giscusflare/releases/download/v1.0.2/giscusflare-1.0.2.tgz
 ```
 
 With npm 12, add `--allow-remote=root` to this command to allow the release URL. See [npm's URL dependency setting](https://docs.npmjs.com/cli/install/#allow-remote).
@@ -54,11 +56,13 @@ For a different design, use the same conversation API with your own markup. The 
 
 [giscus](https://giscus.app) provides a hosted service with a familiar widget. giscusflare puts the service in your Cloudflare account and adds a JavaScript API for designing the interface. Read [the comparison](docs/COMPARISON.md) if you already use giscus.
 
-## Run it
+## Configuration and maintenance
 
 [Configuration](docs/CONFIGURATION.md) covers websites, repositories and caching. [Cloudflare usage](FREE-TIER.md) explains the resource costs and measurements. [Operations](docs/OPERATIONS.md) covers updates and troubleshooting.
 
-For development, use Node 22.16 or newer:
+## Development
+
+Use Node 22.16 or newer:
 
 ```sh
 npm ci

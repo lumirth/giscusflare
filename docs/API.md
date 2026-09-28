@@ -98,7 +98,7 @@ Comments have an ID, author, Markdown body, rendered HTML, dates, permission fla
 | `moderateComment(id, minimized, reason)` | Hide or reveal a comment when permitted |
 | `dispose()` | Release listeners and outstanding reads |
 
-The main draft's name is `main`. `bindComposer` handles the usual form commands and exposes `submission` as `idle`, `pending`, `succeeded`, `failed` or `uncertain`. Use the outcome to close a submitted editor; an empty draft alone does not establish success.
+The main draft's name is `main`. `bindComposer` handles the usual form commands and exposes `submission` as `idle`, `pending`, `succeeded`, `failed` or `uncertain`. Close the submitted editor on `succeeded`; retain it while pending or when submission needs recovery.
 
 A mutation returns its confirmed result or throws an error. Keep the original draft and retry identity after an uncertain result. The conversation object does this for its bound composers and reactions.
 
@@ -116,10 +116,10 @@ Ranking covers the discussion's roots, including roots outside the currently dis
 
 `state.ranking` is null for chronological views. A ranked view reports `ready`, `preparing` or `paused`. A ready result's `observedAt` is its oldest required observation. A paused result provides a reason and an optional retry time. Use those values to offer a retry or return to chronological order. Active preparation checks stop after two minutes; an open tab does not wait indefinitely.
 
-Enabling a profile consumes the operator's metadata-read and storage allocation. More ranking inputs can mean smaller upstream batches. Explain the cost beside the option that enables it in your own setup interface. See [ranking configuration](CONFIGURATION.md#enable-ranked-views).
+Enabling a profile consumes the operator's metadata-read and storage allocation. More ranking inputs can mean smaller upstream batches. See [ranking configuration](CONFIGURATION.md#enable-ranked-views).
 
 ## Versioned service protocol
 
 Browser packages and Workers use the `/api/v1/` protocol. Deploy matching versions of the service and your custom browser build. Requests to a retired or unknown protocol receive HTTP 409 with `VERSION_MISMATCH` and an instruction to reload the page.
 
-Ordinary presentations use the JavaScript API. The HTTP protocol carries those operations between the browser and its service; it does not require a second application-specific client. Read endpoints use GET and mutations use POST. The service checks repository scope, browser origin and authorization regardless of which presentation sent the request.
+The JavaScript API sends reads as HTTP GET requests and mutations as POST requests. The service checks repository scope, browser origin and authorization regardless of which presentation sent the request.

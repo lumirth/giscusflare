@@ -1,36 +1,39 @@
-# Verification evidence
+# Verification results
 
-Recorded on September 27, 2026. [Testing](../TESTING.md) describes the repeatable checks; [Cloudflare usage](../FREE-TIER.md) separates resource measurements from capacity estimates.
+These records describe the checks performed for the initial release and subsequent rendering update. To repeat them, follow [testing](../TESTING.md) and the [release procedure](IMPLEMENTATION.md). For capacity planning, start with [Cloudflare usage](../FREE-TIER.md).
 
-## Automated checks
+## Automated and package checks
 
-The release passes 155 core tests, 14 native workerd tests and 17 tests of the independent Kukas presentation. Coverage includes origin policy, scoped authorization, operation recovery, session rotation, response caching, ranking budgets and browser state. Unsupported HTTP protocol versions return a reload instruction without contacting GitHub.
+The September 27, 2026 release pass ran 155 core tests, 14 native workerd tests and 17 tests of the independent Kukas presentation. They covered origin policy, authorization, interrupted writes, session rotation, caching, ranking budgets and browser state.
 
-The packed archive was extracted outside the workspace. Both its browser and Worker imports built there, and the Kukas presentation built with no sibling source checkout. The package includes its asset manifest and selected asset-copy API; it excludes test and development assets.
+Package checks extracted the release archive outside the workspace and built both browser and Worker consumers. The independent presentation also built against that archive. The checks verified public imports, selected static assets and the exclusion of development files.
 
-A native workerd test transfers a 294 KB Unicode response through the production RPC representation and checks its body, status, expiry and cache headers. The service transfers completed text through RPC after deployed streamed-response tests showed canceled object calls. That change also avoids relying on the streamed-body lifetime behavior reported in [workerd issue 7277](https://github.com/cloudflare/workerd/issues/7277).
+A native workerd test transferred a 294 KB Unicode response through the production RPC format and checked its body, status, expiry and cache headers.
 
-## GitHub queries
+## Real GitHub queries
 
-Seven production query paths passed with a real GitHub App installation token: combined discussion/page access, minimal discussion access, selected comment hydration, comment permissions, fresh comment detail, replies and counts. Each GraphQL query consumed one point in the observed rate counter. This test performed no content writes.
+Seven query paths passed with a GitHub App installation token: discussion/page access, minimal discussion access, selected comment hydration, comment permissions, fresh comment detail, replies and counts. Each consumed one GraphQL point in that run.
 
-Separate live public-discussion queries returned 800 reaction candidates in 560,897 bytes and 500 candidates with all supported ranking inputs in 380,564 bytes. These tests establish that those selections worked on those discussions; GraphQL cost, response size and latency still depend on the selection and data.
+Separate queries against public discussions returned 800 reaction candidates in 560,897 bytes and 500 candidates with all supported ranking inputs in 380,564 bytes. The service uses these compact selections for ranking and fetches comment bodies separately. [GitHub API use](GITHUB-API.md) explains the query constraints.
 
-## Browser observations
+## Browser checks
 
-Desktop WebKit checks exercised GitHub sign-in, return to the website, writing, Preview/Write, posting, author editing and native undo/redo. Local release checks also covered draft preservation across design changes, focus and selection through refresh, reply expansion and posting, and an iframe whose first page arrives in its initial response.
+Desktop WebKit checks exercised sign-in, return to the website, writing, Preview/Write, posting, author editing and native undo/redo. Local checks covered draft preservation across design changes, focus and selection through refresh, reply expansion and posting, and the first-page iframe response.
 
-The narrow-layout pass preserved the host's 8px gutter without document overflow. [Presentation evidence](PRESENTATION.md) records theme and rich-content checks. Physical iOS, Firefox, the full locale/theme matrix and every real-token moderation role have not been covered by this release pass.
+The deployed demo passed same-window GitHub sign-in, draft preservation between designs, preview, posting, editing, reactions and replies. GitHub readback confirmed the saved comment and reaction. Both native and iframe requests accepted the project website and rejected an unrelated origin.
+
+The September 28 rich-content pass compared the full giscus example comment in the default and forum presentations. It checked headings, tables, code, GitHub code previews, images, malformed TeX and four valid math expressions. Mobile light and dark checks at 390 CSS pixels found no page overflow. [Presentation](PRESENTATION.md) links the earlier theme comparisons.
+
+The recorded checks used desktop WebKit and Chromium. Physical iOS, Firefox and a complete locale/theme matrix remain useful additions to release coverage.
 
 ## Storage and recovery
 
-A production state export restored all 143 operational records into native workerd SQLite with identical contents. The export included mappings, sessions and 129 completed operation receipts. The existing deployed code was restored after the export, which also exercised code rollback.
+A production state export restored all 143 operational records into native workerd SQLite with identical contents. The export included mappings, sessions and 129 completed operation receipts. The check also restored the previous deployed code.
 
-The ranking runtime tests include actual object restarts, stale job fencing, partial GitHub failures, changed permissions and daily budget pauses. A 10,000-candidate collection restored from 79 rows; 100,000 candidates restored from 782 rows. These are compact candidate records, not copies of comment bodies.
+Ranking tests exercised object restarts, interrupted jobs, partial GitHub failures, permission changes and daily budget pauses. Restoring a 10,000-candidate collection read 79 rows; restoring 100,000 candidates read 782 rows.
 
+## Deployment and resource checks
 
-## Deployed reference run
+The Deploy to Cloudflare button reached the source-import screen with the expected build and deploy commands. The deployed setup page generated GitHub App settings and checked repository policy before producing an embed. The demo service used Wrangler for deployment; a complete fresh account setup through the button remains on the [release checklist](IMPLEMENTATION.md#deployment-and-setup).
 
-All 12,100 HTTP requests completed successfully. Cloudflare recorded 6.85 ms p99 outer Worker CPU, 20.57 GB-s of repository duration and 3,071 written SQLite rows. The workload used a simulated upstream and concurrent traffic. [Cloudflare usage](../FREE-TIER.md) gives the full workload, the missed 5 ms engineering target, real GitHub timing and the limits of extrapolating daily capacity.
-
-The public demo passed same-window GitHub sign-in, draft preservation between designs, preview, posting, editing, reactions and replies. GitHub readback confirmed the saved comment and reaction. Its native and iframe paths accepted the project origin and rejected another origin. Repeated iframe requests also passed the real Cache API immutable-header case.
+A concurrent deployed test completed 12,100 HTTP requests across 100 discussions, with 6.85 ms p99 Worker CPU, 20.57 GB-s of object duration and 3,071 SQLite writes. [Cloudflare usage](../FREE-TIER.md#measurements-from-a-deployed-service) records its traffic mix, simulated upstream timing, CPU tail and comparison with separate real GitHub queries.

@@ -1,57 +1,81 @@
-# Architecture
+# How giscusflare works
 
-Giscusflare connects a website to GitHub Discussions. A Cloudflare Worker checks requests and public response caches; a SQLite Durable Object coordinates each repository's GitHub access, sessions and writes. Static Assets serves browser code, styles and setup.
+Giscusflare connects your website to GitHub Discussions. GitHub stores the comments. A Cloudflare Worker handles requests from readers, and one SQLite Durable Object per repository coordinates GitHub access, sessions and writes. Static Assets serves the browser code, themes and setup page.
 
 ```mermaid
 flowchart LR
-  Page[Website] --> Worker[Cloudflare Worker]
-  Page --> Assets[Static Assets]
+  Readers[Readers on different pages] --> Worker[Cloudflare Worker]
+  Readers --> Assets[Static Assets]
   Worker --> Cache[Public response cache]
-  Worker --> Repo[Repository Durable Object]
-  Repo --> GitHub[GitHub Discussions]
-  Repo --> Store[SQLite state]
+  Worker --> Repository[Repository Durable Object]
+  Repository --> GitHub[GitHub Discussions]
+  Repository --> SQLite[Sessions and operational state]
 ```
 
-GitHub stores comment content. SQLite keeps durable state such as page mappings, encrypted sessions, creation records and mutation receipts. Optional ranking adds derived metadata in the same repository object.
+SQLite stores page-to-discussion mappings, encrypted sessions, discussion-creation records and write receipts. If you enable ranking, it also stores the inputs needed to order comments.
 
-## Browser contract
+## Loading a conversation
 
-The public conversation object owns sign-in, drafts, read state, pagination and write intent. Presentations subscribe to normalized state and call its commands. The default interface and the independent forum example use that same contract.
+The Worker checks your repository and website policy before looking for a cached response. For anonymous readers, it can serve a public response from Cloudflare's local cache. On a miss, it calls the repository object. The object has another shared cache and combines identical reads in progress into one GitHub fetch.
 
-A presentation owns its DOM and listeners. Appearance changes keep the conversation and editors. Replacing the page saves the old draft and starts a conversation for the next identity. Stable comment and editor IDs let a renderer preserve textarea nodes during refresh.
+Caches distinguish the requested discussion, page and options. A response keeps its original expiry as it passes between caches. Signed-in reads use the reader's GitHub token and bypass public caching so permissions and selected reactions belong to that reader.
 
-Reactions display the reader's latest intent while writes for that target serialize. Confirmed results reconcile into the comment collection. A submission keeps its draft and retry identity until it has a definite result.
+An iframe response includes the first anonymous comment page. A native presentation requests that page through the API. Further comments and replies load as the reader asks for them.
 
-## Reads and writes
+The repository object serializes the response once and passes its body, status and headers to the Worker. The Worker returns that body without parsing and serializing the JSON again.
 
-Anonymous GET responses can be reused at the Worker and inside the object. Their expiry starts with the original read and does not restart when a response enters another cache. Viewer-specific responses bypass public caching. Policy is checked before cache lookup.
+## Traffic across pages
 
-Read RPC returns a completed payload: status, headers and a serialized body. The object owns JSON serialization and cache expiry; the Worker reconstructs HTTP without parsing the body. Keeping live response streams within their originating runtime avoids the Response-over-RPC failure described in [workerd issue 7277](https://github.com/cloudflare/workerd/issues/7277).
+All discussions in one GitHub repository share a Durable Object. Readers do not get their own objects, and opening another website page does not allocate one. Separate repositories use separate objects.
 
-Iframe HTML carries the first anonymous comment page. The browser can render it without a second initial thread request. Native presentations request that page directly.
+This arrangement shares installation tokens and repository checks across pages. It also coordinates discussion creation and retries so concurrent readers do not create duplicate discussions or submissions. Different requests can wait for GitHub concurrently; the object does not process an entire network round trip before accepting the next request.
 
-Mutations return confirmed values to the writer and invalidate object reuse. A revision check prevents a read started before a write from refilling the cache with its older result. Other edge locations may retain public responses until their original expiry.
+The current implementation has several consequences for a busy site:
 
-Timestamped operation IDs bound the retry window. Existing receipts are checked before age validation. Completed receipts can replay their result; pending records retain uncertainty. An expired identity without a receipt cannot become a new write.
+- Repeated anonymous reads of the same page can share cached content. Readers visiting different discussions need different responses.
+- The repository's in-memory response cache has an 8 MiB limit. Older entries are evicted when new responses need room.
+- A comment, edit, deletion, moderation action or reaction clears that object's whole read cache. Unrelated discussions can need another fetch afterward. Existing edge responses retain their original expiry.
+- All signed-in reads, writes and cache misses for the repository reach the same object. Their CPU and GitHub work accumulate there.
+- Count requests batch up to 20 page identifiers. Repeated identical batches can reuse cached results, including zero counts.
+
+These choices make the repository the unit of coordination. [Cloudflare usage](../FREE-TIER.md) explains the costs for repeated and scattered traffic.
+
+## Writing and retrying
+
+A write returns GitHub's confirmed result to the reader. The conversation updates immediately. Other readers receive it through subsequent reads.
+
+Before sending a mutation, the service records its operation ID and content fingerprint. If a response is lost, that record lets a retry recover the original operation instead of blindly submitting again. Completed receipts return the saved result. Pending receipts preserve the uncertain outcome. An expired operation ID without a receipt cannot start a new write.
+
+A cache revision prevents a read that started before a write from caching its older result after the write completes.
 
 ## Optional ranking
 
-Chronological reads need only the requested page. A whole-discussion ranking also needs each root's selected score inputs. Named operator profiles define those inputs and weights.
+Chronological reading needs only the requested comment page. Ranking needs each root comment's selected score inputs. Operator-defined profiles choose those inputs and their weights.
 
-Ranking stores compact candidate groups with an ID locator. It writes changed groups, coalesces demand and advances work in bounded steps. Request and row allowances are reserved before work. Profile scores share metadata and the browser retains an ordered ID traversal while hydrating visible pages.
+Ranking starts when a reader requests a profile. Readers of the same discussion share the collection work. The service advances it in bounded steps, reserves API and storage allowances before each step, and uses alarms to finish pending work. Completed jobs stop scheduling alarms. Another visit starts a refresh when the observations are too old.
 
-A complete order requires complete membership and valid observations. The oldest required observation determines freshness. Missing data, upstream throttling and exhausted budgets produce explicit preparation or pause states. Ordinary comment reading and writing remain available.
+The stored candidates contain ranking metadata rather than full comment bodies. Once an order is ready, the browser retains its ID list and fetches content for the visible pages. Reaction changes do not move comments across pages during that reading session.
 
-## Code map
+Ranking state persists separately for each discussion, but the current in-memory candidate cache holds one discussion and the computed-order cache holds one discussion/profile pair. Alternating ranked views can reload candidates and recompute the order. Discussions in the same repository also share its ranking budget.
+
+If collection is incomplete or reaches its budget, the API reports `preparing` or `paused`. A presentation can keep chronological reading available while the ranked view catches up. [Configuration](CONFIGURATION.md#enable-ranked-views) describes the controls.
+
+## Browser and presentation
+
+The conversation object owns sign-in, drafts, loaded comments, pagination and pending writes. A presentation subscribes to that state and supplies the DOM and controls. The default widget and forum example use the same API.
+
+Theme changes retain the conversation and its editors. Changing the page saves its draft and starts a conversation for the next page. Stable comment and editor IDs let presentations update content without replacing a focused textarea.
+
+## Source map
 
 | Directory | Responsibility |
 | --- | --- |
-| `src/contracts` | Request, configuration and upstream schemas |
-| `src/worker` | HTTP policy, Cache API, rate limits and Durable Object RPC |
-| `src/domain` | GitHub access, scope checks, sessions, mappings and receipts |
+| `src/contracts` | Request, configuration and GitHub response schemas |
+| `src/worker` | HTTP policy, public caching, rate limits and object calls |
+| `src/domain` | GitHub access, authorization, sessions, mappings and receipts |
 | `src/ranking` | Metadata collection, storage, budgets and ordering |
 | `src/conversation` | Browser state, commands, drafts and reaction intent |
 | `src/browser` | Browser lifecycle, content rendering and interaction bindings |
 | `src/browser/standard` | Default presentation |
 
-Hono and Valibot stay in the service build. The headless browser entry excludes the default presentation. [Packaging](PACKAGING.md) describes the published artifacts and selected static assets.
+The Worker and browser have separate builds. Custom interfaces can import `giscusflare/headless` without the default presentation. See [package assets](PACKAGING.md) for the published modules and deployment files.

@@ -23,7 +23,7 @@ Display queries fetch a bounded page of comment content and a small reply previe
 
 GitHub's point cost, returned nodes, resource limits and response bytes are different constraints. A query with a low point cost can still exceed resource limits. Grouped reaction totals avoid fetching individual reactors; selecting fewer fields reduces response parsing and serialization work.
 
-A partial GraphQL error does not establish that an omitted comment was deleted or that discovery reached the end. Incomplete inputs keep ranking work incomplete. Upstream throttling supplies a retry boundary rather than triggering an immediate retry loop.
+Treat partial GraphQL errors as incomplete reads. Keep known comments until a complete discovery pass confirms membership changes. When GitHub throttles a request, wait until its retry time before continuing.
 
 GitHub documents [GraphQL rate and resource limits](https://docs.github.com/en/graphql/overview/rate-limits-and-query-limits-for-the-graphql-api). Cache lifetime and ranking allowances are configured by the service operator, as described in [configuration](CONFIGURATION.md).
 

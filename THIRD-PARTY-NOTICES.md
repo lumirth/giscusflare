@@ -1,6 +1,6 @@
 # Third-party notices
 
-giscusflare implements a GitHub Discussions comment service for Cloudflare Workers. It uses [giscus](https://github.com/giscus/giscus) as its presentation and compatibility reference. The project is independent of giscus, GitHub, and Cloudflare.
+giscusflare implements a GitHub Discussions comment service for Cloudflare Workers. It uses [giscus](https://github.com/giscus/giscus) as its presentation and compatibility reference.
 
 The project license is [MIT](LICENSE). [Source provenance](docs/PROVENANCE.md) identifies the original source archive.
 

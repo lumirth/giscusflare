@@ -1,10 +1,29 @@
-# Cloudflare usage
+# Running on Cloudflare's Free plan
 
-Giscusflare uses Workers, Static Assets and SQLite Durable Objects. Public response caching reduces calls to GitHub and Durable Objects. Ranking is optional because ordering an entire discussion requires work beyond fetching the page someone reads.
+Start with the default one-minute comment cache and five-minute count cache. Giscusflare shares anonymous reads between visitors, fetches comments a page at a time and does no ranking work unless you enable it. An idle comments tab does not poll GitHub.
+
+Your usage depends on how often people open comments, how many different discussions they visit, and how much they participate. A popular post can serve many readers from the same cached response. Visits spread across older posts are less likely to share a cached response, even at the same total traffic.
+
+## What uses your allowance
+
+| Activity | Work performed |
+| --- | --- |
+| Load anonymous comments | One dynamic request for the first page, through either the iframe or native API |
+| Read a cached page | The Worker checks website policy and returns the cached response |
+| Read an uncached page | The repository object reuses its own cache or fetches from GitHub; identical reads in progress share that fetch |
+| Read while signed in | The service fetches with the reader's permissions and reaction selections |
+| Load more comments or replies | Another request for that page |
+| Comment, react or sign in | GitHub requests and durable session or operation records |
+| Show counts on an index page | One count request can cover up to 20 page identifiers |
+| Use a ranked view | Shared metadata collection for the discussion, followed by content reads for the selected page |
+
+The iframe includes the first anonymous comment page in its HTML. It does not make a second request for that same page. Scripts, styles and other files served directly by Static Assets do not consume dynamic Worker requests.
+
+For example, 10,000 anonymous first-page loads use 10,000 dynamic requests, or 10% of the daily Worker request allowance. Pagination, sign-in, writes and refreshes add to that count. Cache hits reduce GitHub and Durable Object work, but still count as Worker requests.
 
 ## Free allowances
 
-Checked on 2026-09-27. Include your other services when budgeting the account's allowances.
+Cloudflare's published allowances, checked September 28, 2026:
 
 | Resource | Free allowance |
 | --- | --- |
@@ -16,68 +35,64 @@ Checked on 2026-09-27. Include your other services when budgeting the account's 
 | SQLite rows written | 100,000 per day |
 | SQLite storage | 5 GB total, up to 1 GB per object |
 
-Sources: [Workers limits](https://developers.cloudflare.com/workers/platform/limits/), [Durable Object pricing](https://developers.cloudflare.com/durable-objects/platform/pricing/) and [storage limits](https://developers.cloudflare.com/durable-objects/platform/limits/). Static files served without invoking the Worker do not use dynamic Worker requests. See [Static Assets billing](https://developers.cloudflare.com/workers/static-assets/billing-and-limitations/).
+Other services in your account use these allowances too. See [Workers limits](https://developers.cloudflare.com/workers/platform/limits/), [Durable Object pricing](https://developers.cloudflare.com/durable-objects/platform/pricing/), [storage limits](https://developers.cloudflare.com/durable-objects/platform/limits/) and [Static Assets billing](https://developers.cloudflare.com/workers/static-assets/billing-and-limitations/).
 
-## What a visit costs
+## Choose freshness for your site
 
-An anonymous iframe load includes its first comment page in the HTML response. It does not need a second initial thread request. A native presentation requests the first page directly. Scripts, styles and images use Static Assets.
-
-A cached public response still invokes the outer Worker to check policy. It returns before the repository object. A miss calls the object, which can reuse its own response or query GitHub. Signed-in reads use the reader's permissions and bypass public caching.
-
-Ten thousand anonymous first-page loads therefore start at 10,000 dynamic Worker requests, or 10% of the daily allowance, before additional activity. This is a request-count model, not a measured workload. Sign-in, pagination, refreshes, reactions, comments, retries and count requests add work.
-
-Page-list counts accept up to 20 terms in one request. Their cache includes empty conversations. Count entries stay in memory rather than generating SQLite writes on every refresh.
-
-## Choose freshness
-
-| Setting | Default | Cost tradeoff |
+| Setting | Default | When to change it |
 | --- | --- | --- |
-| `displayCacheMs` | 60 seconds | Longer public reuse reduces object and GitHub reads |
-| `countCacheMs` | 5 minutes | Longer count reuse suits indexes and archive pages |
-| Browser `replyPrefetch` | 5 replies per root | Smaller previews reduce response size and GitHub work |
-| Whole-discussion ranking | Disabled | Enabling it adds metadata reads and derived storage |
-| Ranking `maxAgeSeconds` | 600 seconds | Longer observation reuse reduces metadata requests and progress writes |
+| `displayCacheMs` | 60,000 ms | Increase it if a few minutes' delay for other readers is acceptable |
+| `countCacheMs` | 300,000 ms | Increase it when archive or index counts need less frequent updates |
+| Browser `replyPrefetch` | 5 replies per root | Reduce it to download fewer replies before a reader expands them |
+| Ranking `maxAgeSeconds` | 600 seconds | Increase it if ranked order can update less often |
 
-Cache settings accept milliseconds in configuration. A reader sees their own confirmed write immediately. Other readers see changes on a later read after the cached response expires. An open tab does not keep requesting comments on a timer.
+A reader sees their own confirmed comment or reaction immediately. Other readers see changes on their next read after public cache expiry. Returning to a stale tab or reconnecting can trigger a read. There is no continuous comment refresh timer.
 
-The same settings work on Free and paid plans. Change them to match the freshness your website needs and the usage you observe.
+Longer caching helps most when people revisit the same pages within that interval. It does less for a site where each visit opens a different discussion. Signed-in reads bypass public caches, so a busy community with many participants has different costs from a mostly anonymous readership.
 
-## Ranking costs
+These settings work on both Free and paid plans. [Configuration](docs/CONFIGURATION.md) lists their accepted values.
 
-A ranked view needs the chosen inputs for every root comment, then fetches content only for the selected display page. Compact metadata batches avoid repeatedly downloading all comment bodies and reply previews.
+## Measurements from a deployed service
 
-Reaction ranking, reply-count ranking and other profiles share their stored inputs when possible. Giscusflare writes changed records rather than rewriting the whole index. Changes made through the service update known values; activity directly on GitHub is found during later refresh work.
+We ran a concurrent traffic test on September 27, 2026, to measure the deployed service's Worker CPU, object use and SQLite operations. It sent 12,100 HTTP requests:
 
-Operators allocate ranking resources to explicit repositories. A budget-limited or incomplete ranking does not become a misleading sort of only the comments already loaded. Chronological comments remain usable while the derived view catches up.
+- 10,000 iframe page loads across 100 discussions.
+- 1,000 signed-in reads and 100 complete sign-in flows.
+- 200 writes and 500 count requests, each containing 20 page identifiers.
 
-## CPU and object duration
+Comment pages requested 20 root comments and up to five replies per root. Public caching used the default 60 seconds. A simulated GitHub endpoint added an 80 ms delay to each upstream request.
 
-Network waiting does not count toward the outer Worker's CPU time. Parsing, validation, cryptography and serialization do. Durable Object duration is different: an active object can accrue wall time while waiting for GitHub. Its published duration uses a 128 MB allocation, so 13,000 GB-s corresponds to 104,000 active object-seconds across the account. Overlapping work in the same object is not counted by summing individual request durations.
-
-The service serializes JSON inside the object and transfers its completed body, status and headers through RPC. The Worker reconstructs the HTTP response without parsing the JSON again. It uses bounded jobs and clears upstream deadlines when response bodies finish, so completed work does not keep an object active unnecessarily.
-
-## Measurements
-
-The September 27, 2026 deployed reference run made 12,100 HTTP requests. It included 10,000 iframe page loads across 100 discussions, 1,000 signed-in reads, 100 complete sign-in flows, 200 writes and 500 count batches of 20 terms. Pages requested 20 root comments and up to five replies each. Public display caching used the default 60 seconds. All requests returned HTTP 200; Cloudflare reported no execution errors.
-
-| Measured resource | Result |
+| Measurement | Result |
 | --- | --- |
-| Outer Worker CPU median / p95 / p99 | 1.11 / 2.95 / 6.85 ms |
-| Outer Worker CPU p99.9 | 25.17 ms |
+| Worker CPU, median / p95 / p99 | 1.11 / 2.95 / 6.85 ms |
+| Worker CPU, p99.9 | 25.17 ms |
 | Repository object requests | 1,815 |
 | Repository object duration | 20.57 GB-s |
 | SQLite rows read / written | 6,277 / 3,071 |
+| HTTP failures / execution errors | 0 / 0 |
 
-This was a compressed, concurrent workload with a simulated GitHub endpoint that waited 80 ms. It measures the deployed application and Cloudflare accounting, but its cache hits and overlapping object activity are not a prediction for uniformly spaced visits. A separate check read complete responses through Chicago, Amsterdam and Osaka cache locations.
+The run used about 1.8% of the daily object request allowance, 0.16% of object duration and 3.1% of SQLite writes. Most requests took less than the Free plan's 10 ms CPU limit, with a small tail above it. A separate sequential run measured p99 CPU of 3 ms for sign-in preparation, 4 ms for callbacks and 5 ms for signed-in comment reads.
 
-The 5 ms p99 engineering target was not met. Cloudflare allows occasional CPU overshoots, so successful responses do not establish that every request fits within 10 ms. A sequential follow-up measured p99 of 3 ms for sign-in preparation, 4 ms for callbacks and 5 ms for signed-in comment reads. Monitor your deployment's percentiles and errors, including less frequent operations.
+The concurrent run concentrated visits within cache lifetimes and overlapped work in the repository object. For a site with scattered visits, the same number of readers can cause more GitHub fetches. Real GitHub timing also matters. Two separate live queries took about one second for five roots with replies and four seconds for 20 roots with 53 prefetched replies.
 
-Real GitHub reads take longer than the fixture. A production installation-token query for five roots and their replies took about one second. A separate public discussion query for 20 roots and 53 prefetched replies took about four seconds. Network waiting affects object duration even when Worker CPU stays low. For scale, 10,000 non-overlapping one-second object waits use about 1,250 GB-s, or 9.6% of the Free duration allowance, before other work. Four-second waits use about 38%. Caching and overlapping requests reduce that total; a quiet site spread across many discussions may get fewer cache hits.
+Network waiting does not count toward Worker CPU. It does count toward active Durable Object duration. Cloudflare charges that duration at a 128 MB allocation. As a sizing example, 10,000 separate one-second object waits use about 1,250 GB-s, or 9.6% of the daily allowance. At four seconds each, they use about 38%. Concurrent waits in the same object overlap rather than adding their full durations together.
 
-## Ranking measurements
+## If you enable ranking
 
-A native workerd SQLite run simulated a full day of demand for a 10,000-root discussion. It included 10,080 ranking reads, 144 refresh cycles at the default ten-minute age, a daily membership audit, and 200 confirmed reaction changes with updated-order reads. It used 12,315 actual SQLite writes. Conservative reservations charged 25,237 against the default 32,000-write ranking allocation. These are different counters: the reservation covers possible work before starting it.
+Ordinary chronological reading fetches the page someone wants to read. A ranked view also needs score inputs for every root comment in that discussion. Giscusflare collects those inputs separately from comment bodies, shares them between profiles and writes records when they change. A ranking refresh begins on demand; after it completes, an unread discussion does not keep refreshing.
 
-An unchanged refresh used 75 actual writes and 14 upstream requests, without rewriting candidate data. Restoring the collection after an object restart read 79 rows. The native tests also stored and sorted 100,000 candidates with an explicit larger allowance, but transmitting that complete 2.7 MB order reached 18 ms outer Worker p99 in a deployed probe. The default `maxOrderBytes` therefore limits the serialized ID array to 512 KiB. Raise it only after measuring the resulting response on your plan.
+For a 10,000-root discussion, a local workerd SQLite test simulated a day with 10,080 ranking reads, 144 refresh cycles at ten-minute intervals, a daily membership audit and 200 confirmed reaction changes. It used 12,315 SQLite writes. An unchanged refresh used 75 writes and 14 GitHub requests. Restoring the collection after an object restart read 79 rows.
 
-[Verification evidence](docs/CONFIDENCE.md) describes the runtime, browser and real GitHub checks. GitHub also has [GraphQL request and resource limits](https://docs.github.com/en/graphql/overview/rate-limits-and-query-limits-for-the-graphql-api). Cloudflare rate-limit bindings control bursts at each location; they do not replace daily quota monitoring.
+The budget charged 25,237 reserved writes against the default 32,000-write allocation. Reservations cover possible work before it starts, so they can exceed actual writes. The service divides the configured allowance among ranking-enabled repositories; discussions within a repository share its allocation.
+
+Several active ranked discussions can therefore use more resources than repeated visits to one ranked discussion. The current object keeps only one candidate collection and one computed order in memory. Switching between discussions can require SQLite reads and another sort. See [architecture](docs/DESIGN.md#traffic-across-pages) for how the shared state works.
+
+The default `maxOrderBytes` caps the returned ID list at 512 KiB. In a separate deployed test, a 100,000-ID order occupied 2.7 MB and reached 18 ms p99 Worker CPU. Measure CPU before raising that cap for very large discussions.
+
+## Measure your deployment
+
+Use the Worker's metrics for request counts, CPU percentiles and execution errors. Check Durable Object requests and duration alongside SQLite rows read, rows written and storage. GitHub has its own [API limits](https://docs.github.com/en/graphql/overview/rate-limits-and-query-limits-for-the-graphql-api).
+
+Measure a normal day's traffic and a busy period. Compare anonymous and signed-in use, repeated visits to popular posts and visits across the archive. If you offer ranking, include several active discussions. Those patterns tell you more about your site's capacity than its largest thread alone.
+
+For high GitHub or object usage, inspect cache reuse and reply prefetch first. For ranking usage, inspect the number of active discussions, selected inputs and observation age. If CPU is the constraint, inspect response size and the operations with the highest percentiles. [Operations](docs/OPERATIONS.md) covers troubleshooting, and [verification results](docs/CONFIDENCE.md) records the other release checks.

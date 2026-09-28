@@ -22,4 +22,4 @@ Install your giscusflare App on the same repository. Keep the category, page map
 
 A matching page selects the existing GitHub discussion, so no comment import is needed. Readers authorize your App when they next sign in. Also test a page without a discussion, its first contribution, replies, reactions and custom styling.
 
-Keep the previous embed configuration with your deployment history so you can restore it if needed. [Integration](INTEGRATION.md) explains the mapping choices.
+[Integration](INTEGRATION.md) explains the mapping choices.
