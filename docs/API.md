@@ -100,6 +100,8 @@ Comments have an ID, author, Markdown body, rendered HTML, dates, permission fla
 
 The main draft's name is `main`. `bindComposer` handles the usual form commands and exposes `submission` as `idle`, `pending`, `succeeded`, `failed` or `uncertain`. Close the submitted editor on `succeeded`; retain it while pending or when submission needs recovery.
 
+Custom presentations can call `bindComposer(conversation, name, { form, textarea }, { draftWhileSignedOut: true })` to allow local writing before authentication. The default still requires sign-in to edit. Both configurations respect closed or unavailable discussions. Submitting while signed out starts authentication and retains the draft; it does not post automatically after sign-in. Markdown preview still requires an authenticated service session.
+
 A mutation returns its confirmed result or throws an error. Keep the original draft and retry identity after an uncertain result. The conversation object does this for its bound composers and reactions.
 
 Reaction types are `THUMBS_UP`, `THUMBS_DOWN`, `LAUGH`, `HOORAY`, `CONFUSED`, `HEART`, `ROCKET` and `EYES`. These are GitHub emoji reactions, separate from GitHub Discussions upvotes.

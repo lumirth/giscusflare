@@ -64,6 +64,22 @@ test('changing a model draft updates custom composer markup without an unrelated
  const binding=bindComposer(runtime,'main',{form,textarea});runtime.setDraft('main','Externally restored text');assert.equal(textarea.value,'Externally restored text');binding.dispose();runtime.dispose();form.remove();
 });
 
+test('custom composers can opt into signed-out drafts without posting or bypassing closed discussions',async()=>{
+ const {createConversation,bindComposer}=await import('../dist/presentation-test.mjs');
+ const runtime=createConversation({service:'https://comments.example',page:config,appearance:config,draftRecovery:false});await runtime.load();
+ const form=document.createElement('form'),textarea=document.createElement('textarea');form.append(textarea);document.body.append(form);
+ const binding=bindComposer(runtime,'main',{form,textarea},{draftWhileSignedOut:true});
+ try {
+  assert.equal(textarea.disabled,false);
+  textarea.value='Written before signing in';textarea.dispatchEvent(new window.Event('input'));
+  assert.equal(runtime.draft(),'Written before signing in');assert.equal(textarea.disabled,false);
+  let signIns=0,writes=0;runtime.signIn=async()=>{signIns++;};runtime.submit=async()=>{writes++;};
+  await binding.submit();assert.equal(signIns,1);assert.equal(writes,0);assert.equal(runtime.draft(),'Written before signing in');
+  const original=globalThis.fetch;globalThis.fetch=async()=>Response.json({discussion:{id:'D_1',number:1,locked:true,comments:{nodes:[],totalCount:0},reactionGroups:[]},viewer:null,archived:false,nextCursor:null});
+  try {await runtime.refresh();assert.equal(textarea.disabled,true);} finally {globalThis.fetch=original;}
+ } finally {binding.dispose();runtime.dispose();form.remove();}
+});
+
 test('typing does not replace composer children, preserving WebKit undo grouping',async()=>{
  const target=document.createElement('div');document.body.append(target);
  const mounted=mountComments(target,{service:'https://comments.example',page:config,appearance:config,draftRecovery:false});mounted.initialize({session:'c'.repeat(43)});await new Promise(r=>setTimeout(r,20));

@@ -48,6 +48,7 @@ export function bindComposer(
   runtime: Conversation,
   name: string,
   elements: { form: HTMLFormElement; textarea: HTMLTextAreaElement },
+  options: { draftWhileSignedOut?: boolean } = {},
 ): ComposerBinding {
   const { form, textarea } = elements,
     controller = runtime;
@@ -72,7 +73,7 @@ export function bindComposer(
     // previews, reactions and refreshes leave the native editing history alone.
     const value = controller.draft(name);
     if (textarea.value !== value) textarea.value = value;
-    textarea.disabled = !runtime.signedIn || !runtime.state.canCompose;
+    textarea.disabled = (!runtime.signedIn && !options.draftWhileSignedOut) || !runtime.state.canCompose;
     state = {
       ...state,
       pending: controller.operationFor("composer", name)?.status === "pending",
