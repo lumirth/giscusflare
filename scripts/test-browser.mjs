@@ -177,7 +177,7 @@ try {
           await page.mouse.up();
           const resizeDetails = await textarea.evaluate(element => {
             const style = getComputedStyle(element), bounds = element.getBoundingClientRect(), hit = element.ownerDocument.elementFromPoint(bounds.right - 4, bounds.bottom - 4);
-            return { resize: style.resize, fieldSizing: style.fieldSizing, direction: style.direction, inlineStyle: element.getAttribute('style'), viewport: [innerWidth, innerHeight], hit: [hit?.tagName, hit?.className] };
+            return { resize: style.resize, fieldSizing: style.fieldSizing, overflow: [style.overflowX, style.overflowY], direction: style.direction, inlineStyle: element.getAttribute('style'), viewport: [innerWidth, innerHeight], hit: [hit?.tagName, hit?.className] };
           });
           await expect.poll(async () => (await textarea.boundingBox()).height, { message: engineName + ' ' + mode + ' manual resize from ' + JSON.stringify({ box, resizeDetails }) }).toBeGreaterThan(box.height + 40).catch(async error => {
             console.error('RESIZE_SCREENSHOT:' + (await page.screenshot()).toString('base64')); throw error;

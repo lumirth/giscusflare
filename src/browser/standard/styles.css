@@ -93,7 +93,7 @@
 .giscusflare :is(.gsc-editor-tabs, .gsc-editor-toolbar, .gsc-editor-footer) { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .giscusflare .gsc-editor-toolbar { margin-inline-start: auto; }
 .giscusflare .gsc-comment-box-textarea {
-  field-sizing: content; inline-size: 100%; min-block-size: 100px; max-block-size: 500px; resize: vertical;
+  field-sizing: content; inline-size: 100%; min-block-size: 100px; max-block-size: 500px; resize: vertical; overflow: auto;
   padding: 12px; border: 1px solid var(--gsc-line); border-radius: 6px; background: var(--gsc-inset); margin: 0;
 }
 .giscusflare .gsc-comment-box-preview { min-block-size: 100px; padding: 12px; border: 1px solid var(--gsc-line); border-radius: 6px; }
