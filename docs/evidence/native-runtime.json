@@ -1,10 +1,10 @@
 {
   "name": "native-service-workflows",
   "source": {
-    "commit": "214cb2d3f6383e2184abaa5f68133c3624faa41e",
-    "sha256": "abef80260187258cf57fdabb8ca8a686c84f200a274e219487430bf48eb272ec"
+    "commit": "045e560b490e10d7696e5ce7c94ab4760aadcb9d",
+    "sha256": "4c9f003cb9a61b4c70f43a4a3914cb81cddc8acb30697336f7519253af46425b"
   },
-  "startedAt": "2026-10-08T08:41:05.603Z",
+  "startedAt": "2026-10-08T09:12:21.090Z",
   "node": "v22.23.2",
   "github": "local test-only simulation",
   "status": "passed",
@@ -28,5 +28,5 @@
     "workerd": "1.20261006.1",
     "compatibilityDate": "2026-09-25"
   },
-  "completedAt": "2026-10-08T08:41:06.347Z"
+  "completedAt": "2026-10-08T09:12:21.819Z"
 }
