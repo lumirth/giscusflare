@@ -248,6 +248,6 @@ try {
 finally {
   if (demo.exitCode === null && demo.signalCode === null) { demo.kill('SIGTERM'); await once(demo, 'exit'); }
   report.completedAt = new Date().toISOString();
-  await mkdir(resolve(root, 'docs/evidence'), { recursive: true });
-  await writeFile(resolve(root, 'docs/evidence/browser-acceptance.json'), JSON.stringify(report, null, 2) + '\n');
+  await mkdir(resolve(root, 'test-results/evidence'), { recursive: true });
+  await writeFile(resolve(root, 'test-results/evidence/browser-acceptance.json'), JSON.stringify(report, null, 2) + '\n');
 }

@@ -159,7 +159,7 @@ finally {
         delete workload.independentOrder;
     }
     report.completedAt = new Date().toISOString();
-    const output = process.env.RANKING_SERVICE_PROOF_OUTPUT ?? resolve(root, 'docs/evidence/ranking-service-runtime.json');
+    const output = process.env.RANKING_SERVICE_PROOF_OUTPUT ?? resolve(root, 'test-results/evidence/ranking-service-runtime.json');
     await mkdir(dirname(output), { recursive: true });
     await writeFile(output, JSON.stringify(report, null, 2) + '\n');
     console.log(JSON.stringify(report, null, 2));

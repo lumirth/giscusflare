@@ -114,6 +114,6 @@ catch (error) {
 finally {
     await service.dispose();
     report.completedAt = new Date().toISOString();
-    await mkdir('docs/evidence', { recursive: true });
-    await writeFile('docs/evidence/native-runtime.json', JSON.stringify(report, null, 2) + '\n');
+    await mkdir('test-results/evidence', { recursive: true });
+    await writeFile('test-results/evidence/native-runtime.json', JSON.stringify(report, null, 2) + '\n');
 }

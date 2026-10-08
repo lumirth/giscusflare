@@ -24,7 +24,7 @@ Current product outcomes include root/reply reading, chronological and configure
 
 ## Replacement-inclusive accounting
 
-The [file-level ledger](source-ledger.csv) compares committed `b39375bbba0b8249c3bc661c63150b5917b31d80`, the dirty checkout saved when this effort began, and the complete current implementation. It includes every present replacement under `src`, `test`, `scripts`, `examples`, `package`, `public` and `website`, including native/browser verification support.
+The version 3 release accounting compared committed `b39375bbba0b8249c3bc661c63150b5917b31d80`, the dirty checkout saved when this effort began, and the complete current implementation. It included every replacement under `src`, `test`, `scripts`, `examples`, `package`, `public` and `website`, including native/browser verification support.
 
 Documentation, configuration, lockfiles, dependencies, vendor/platform reference data and generated outputs are excluded from authored-source savings. TypeScript 5.9.3 `createPrinter` with LineFeed normalizes JS/TS before counting nonblank lines. CSS, HTML and template literal contents retain formatting. Physical lines and bytes are also reported. These measures expose formatting and replacement costs; they are not a semantic complexity score.
 
@@ -43,7 +43,7 @@ The generated visual dependency is disclosed separately in [source provenance](P
 
 ## Behavior and resource evidence
 
-The [release gate](../TESTING.md) exercises public HTTP/OAuth/contribution workflows through native workerd and SQLite, browser journeys in Chromium/WebKit, complete-service ranking with native SQL counters and due alarms, and consumers built from an extracted package. Old unit suites and synthetic ranking/runtime worlds are not current qualification. Receipts in `docs/evidence` identify the exact source hash, runtime, conditions and passing or failing result.
+The [release gate](../TESTING.md) exercises public HTTP/OAuth/contribution workflows through native workerd and SQLite, browser journeys in Chromium/WebKit, complete-service ranking with native SQL counters and due alarms, and consumers built from an extracted package. Old unit suites and synthetic ranking/runtime worlds are not current qualification. Generated reports in ignored `test-results/evidence/` identify the exact source hash, runtime, conditions and passing or failing result.
 
 The visual qualification separately compares the actual pre-PR and replacement demos in both engines and embedding modes at narrow and desktop widths. Equivalent reading, writing, preview, appearance, menu, reaction, reply, edit and delete-dialog states use full RGBA comparison without masks. Its receipt declares controlled input and state normalization. Restoring the presentation does not restore the old ownership model.
 
@@ -53,4 +53,4 @@ The ranking workload covers a warm stable 10,000-root/10,000-visit/200-reaction 
 
 Simplification does not imply every resource is cheaper. A confirmed existing-target effect uses preflight, minimal mutation and optional canonical observation: three provider calls excluding token renewal. This pays for a single fresh canonical representation instead of keeping effect-specific projection/reconciliation. Ranking SQL thresholds stop between bounded steps and can overshoot the last step; HTTP admission is enforced before provider calls. Ready orders describe an acquisition interval, not a globally atomic or uniformly fresh remote snapshot.
 
-Local evidence does not establish deployed CPU, object-duration distributions, real GitHub permissions, Cloudflare billing, Firefox or physical Safari/iOS behavior. No version 3 deployment or package publication is claimed. Cutover requires matching Worker/browser versions and manual reconciliation of old uncertain writes; old namespaces remain retained for recovery.
+Local evidence does not establish deployed CPU, object-duration distributions, real GitHub permissions, Cloudflare billing, Firefox or physical Safari/iOS behavior. Deployments require matching Worker/browser versions; old namespaces remain retained for recovery.
