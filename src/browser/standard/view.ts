@@ -148,7 +148,7 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
                   </div>`
                 : nothing
             }
-            ${replying ? composer(runtime.writing({kind:'reply',id:c.id})) : runtime.canCompose ? html`<div class="gsc-reply-box color-bg-tertiary"><button type="button" class="form-control color-text-secondary color-border-primary w-full cursor-text rounded border px-2 py-1 text-left focus:border-transparent" @click=${replyTo(c.id)}>${t.writeReply}</button></div>` : nothing}
+            ${replying ? composer(runtime.writing({kind:'reply',id:c.id})) : runtime.actions(c.id).reply.status !== 'unavailable' ? html`<div class="gsc-reply-box color-bg-tertiary"><button type="button" class="form-control color-text-secondary color-border-primary w-full cursor-text rounded border px-2 py-1 text-left focus:border-transparent" @click=${replyTo(c.id)}>${t.writeReply}</button></div>` : nothing}
           </div>
         </article>`;
       }
@@ -211,7 +211,7 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
             @click=${() => { error = '';void runtime.restart(); }}>${t.retry}</button></div>` : nothing}
           ${runtime.ready && !writable ? html`<p class="flash">${metadata.unavailable ? t.discussionUnavailable : metadata.archived ? t.archived : t.locked}</p>` : nothing}
           ${commentsView}
-          <div class="gsc-main-composer" ?hidden=${!writable}>${composer(runtime.writing())}</div>`, root);
+          <div class="gsc-main-composer" ?hidden=${runtime.actions().reply.status === 'unavailable'}>${composer(runtime.writing())}</div>`, root);
       } finally { drawing = false; }
     }
     let renderedDocument = runtime.document;

@@ -245,8 +245,10 @@ try {
             assert.equal(expiredWriting.text, recoveryText, 'Passive credential expiry preserves writing');
             assert.deepEqual(expiredWriting.issued, originalWriting.issued, 'Passive credential expiry preserves the issued contribution identity');
             assert.equal(expiredWriting.error.status, 'uncertain', 'Expiry preserves unresolved submission state');
+            await expect(composer.getByRole('alert')).toBeVisible();
             await page.reload();
             await expect(textarea).toHaveValue(recoveryText);
+            await expect(textarea).toBeVisible();
             await page.context().unroute(service + '/api/v4/preview');
             await page.evaluate(capability => window.demoComments.conversation.session.setSession(capability), capability);
             await expect.poll(() => page.evaluate(() => window.demoComments.conversation.writing().actions.retry)).toBe(true);
@@ -270,6 +272,7 @@ try {
             await page.evaluate(() => sessionStorage.setItem('__qualification_clock', '301000'));
             await page.reload(); releaseResponse(); await page.context().unroute(service + '/api/v4/contribute');
             await expect(textarea).toHaveValue(pendingText);
+            await expect(textarea).toBeVisible();
             await page.evaluate(capability => window.demoComments.conversation.session.setSession(capability), capability);
             await expect.poll(() => page.evaluate(() => window.demoComments.conversation.writing().actions.retry)).toBe(true);
             await composer.getByRole('button', { name: 'Sign out', exact: true }).click();
