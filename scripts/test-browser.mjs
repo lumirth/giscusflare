@@ -85,6 +85,22 @@ try {
           assert.ok(callbacks.length > 0, 'the actual callback document was observed');
           for (const secret of [...proofs, ...capabilities]) for (const html of callbacks) assert.ok(!html.includes(secret), 'callback document contains neither capability nor private proof');
           for (const capability of capabilities) for (const request of requests) assert.ok(!request.url.includes(capability) && !request.referer.includes(capability) && !request.body.includes(capability), 'the preallocated capability never travels in URLs, referrers or request bodies');
+          const resize = async () => {
+            await textarea.scrollIntoViewIfNeeded();
+            const box = await textarea.boundingBox();
+            await page.mouse.move(box.x + box.width - 10, box.y + box.height - 10);
+            await page.mouse.down();
+            await page.mouse.move(box.x + box.width - 10, box.y + box.height + 70, { steps: 8 });
+            await page.mouse.up();
+            await expect.poll(async () => (await textarea.boundingBox()).height).toBeGreaterThan(box.height + 40);
+            return (await textarea.boundingBox()).height;
+          };
+          const blankHeight = await resize();
+          await textarea.click(); await page.keyboard.type('First writing');
+          await expect(textarea).toHaveValue('First writing');
+          assert.ok(Math.abs((await textarea.boundingBox()).height - blankHeight) < 2, 'first typing respects a height chosen before writing');
+          await textarea.press(modifier + '+z'); await expect(textarea).toHaveValue('');
+          await page.reload(); await expect(textarea).toBeEditable(); await expect(textarea).toHaveValue('');
           await textarea.click(); await page.keyboard.type('A contribution with native undo');
           await expect(textarea).toHaveValue('A contribution with native undo');
           const originalEditor=await textarea.elementHandle();
@@ -169,14 +185,7 @@ try {
           await expect.poll(async () => (await textarea.boundingBox()).height).toBeGreaterThan(compactHeight + 40);
           await textarea.fill('A contribution with native undo');
           await expect.poll(async () => (await textarea.boundingBox()).height).toBeLessThanOrEqual(compactHeight + 2);
-          await textarea.scrollIntoViewIfNeeded();
-          const box = await textarea.boundingBox();
-          await page.mouse.move(box.x + box.width - 10, box.y + box.height - 10);
-          await page.mouse.down();
-          await page.mouse.move(box.x + box.width - 10, box.y + box.height + 70, { steps: 8 });
-          await page.mouse.up();
-          await expect.poll(async () => (await textarea.boundingBox()).height).toBeGreaterThan(box.height + 40);
-          const chosenHeight = (await textarea.boundingBox()).height;
+          const chosenHeight = await resize();
           await textarea.click(); await textarea.press('End');
           await page.keyboard.type(' and manual resizing');
           await expect(textarea).toHaveValue('A contribution with native undo and manual resizing');

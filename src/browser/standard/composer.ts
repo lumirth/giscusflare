@@ -17,7 +17,7 @@ export function createComposer({ runtime, report }: StandardContext, name: strin
       previewElement.className = 'markdown color-border-primary gsc-comment-box-preview';
       let automaticHeight = '';
       textarea.addEventListener('input', () => {
-        if (automaticHeight && textarea.style.height !== automaticHeight) return;
+        if (textarea.style.height && textarea.style.height !== automaticHeight) return;
         const scroll = window.scrollY;
         textarea.style.height = 'auto';
         textarea.style.height = automaticHeight = textarea.scrollHeight + 'px';

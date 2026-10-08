@@ -32,12 +32,12 @@ Documentation, configuration, lockfiles, dependencies, vendor/platform reference
 | --- | ---: | ---: | ---: |
 | Product `src`: consistently printed nonblank lines | 7,863 | 7,225 | 6,094 |
 | Product `src`: physical lines | 6,718 | 5,884 | 5,178 |
-| Product `src`: bytes | 446,474 | 423,479 | 384,916 |
-| All authored implementation/examples/verification: printed lines | 12,078 | 11,318 | 8,360 |
-| All authored implementation/examples/verification: physical lines | 9,596 | 8,758 | 7,091 |
-| All authored implementation/examples/verification: bytes | 680,915 | 662,251 | 533,864 |
+| Product `src`: bytes | 446,474 | 423,479 | 384,922 |
+| All authored implementation/examples/verification: printed lines | 12,078 | 11,318 | 8,373 |
+| All authored implementation/examples/verification: physical lines | 9,596 | 8,758 | 7,100 |
+| All authored implementation/examples/verification: bytes | 680,915 | 662,251 | 534,500 |
 
-Against committed main, product printed source falls **22.5%** (1,769 lines), and the complete authored apparatus falls **30.8%** (3,718 lines). Total bytes fall **21.6%** (147,051 bytes). Against the already modified dirty starting checkout, product printed source falls **15.7%** and the complete apparatus **26.1%**, with total bytes down **19.4%**. New verification drivers grow `scripts`; their full cost is included rather than hidden by deletion of the older test directory.
+Against committed main, product printed source falls **22.5%** (1,769 lines), and the complete authored apparatus falls **30.7%** (3,705 lines). Total bytes fall **21.5%** (146,415 bytes). Against the already modified dirty starting checkout, product printed source falls **15.7%** and the complete apparatus **26.0%**, with total bytes down **19.3%**. New verification drivers grow `scripts`; their full cost is included rather than hidden by deletion of the older test directory.
 
 The generated visual dependency is disclosed separately in [source provenance](PROVENANCE.md); it is not counted as authored source and no runtime CSS payload reduction is claimed. Project overrides, markup and native/theme adaptation remain fully counted. The ordinary build removes Tailwind and its 67-package compiler chain. Removing JSDOM retires the simulated browser environment and 43 installed packages; dependency removals are not counted as authored LOC savings.
 
