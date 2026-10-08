@@ -279,6 +279,7 @@ try {
             await expect.poll(() => page.evaluate(() => window.demoComments.conversation.session.signedIn)).toBe(false);
             await expect(textarea).toHaveValue(pendingText);
             await composer.getByRole('button', { name: 'Sign in with GitHub', exact: true }).click();
+            await expect(composer.getByRole('button', { name: 'Sign out', exact: true })).toBeVisible();
             await expect.poll(() => page.evaluate(() => window.demoComments?.conversation.writing().actions.retry ?? false)).toBe(true);
             await expect(textarea).toHaveValue(pendingText);
             capability = [...capabilities].at(-1);
