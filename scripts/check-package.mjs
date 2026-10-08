@@ -32,7 +32,7 @@ try {
   const standard = await copyAssets(join(temporary, 'standard-assets'));
   assert(standard.includes('widget.js'));
   assert(standard.includes('themes/dark.css'));
-  await writeFile(join(temporary, 'custom.ts'), `import { createConversation, mountPresentation } from 'giscusflare/headless';\nimport { createEditor } from 'giscusflare/interactions';\nimport { createContentRenderer } from 'giscusflare/content';\nexport { createConversation, mountPresentation, createEditor, createContentRenderer };\n`);
+  await writeFile(join(temporary, 'custom.ts'), `import { createConversation, mountPresentation } from 'giscusflare/headless';\nimport { createEditor } from 'giscusflare/interactions';\nimport { mountContent } from 'giscusflare/content';\nexport { createConversation, mountPresentation, createEditor, mountContent };\n`);
   await cp('examples', join(temporary, 'examples'), { recursive: true });
   await writeFile(join(temporary, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2022', module: 'ESNext', moduleResolution: 'Bundler', strict: true, noUncheckedIndexedAccess: true, noEmit: true, skipLibCheck: true, types: [], lib: ['ES2022', 'DOM', 'DOM.Iterable'] }, include: ['custom.ts', 'examples/**/*.ts'] }));
   execFileSync(process.execPath, [resolve('node_modules/typescript/bin/tsc'), '-p', join(temporary, 'tsconfig.json')], { stdio: 'inherit' });

@@ -6,7 +6,7 @@ The giscus themes and presentation reference files are pinned at commit `3d64302
 
 ## Generated visual foundation
 
-`vendor/giscus/reference/styles/compiled.css` is a generated, project-selected dependency. It expands the pinned giscus `base.css`/`globals.css`, Tailwind 3.4.17 and `tailwindcss-vanilla-rtl` 0.4.0 using the standard presentation class vocabulary from Giscusflare `b39375bbba0b8249c3bc661c63150b5917b31d80`. PostCSS is 8.5.28. It contains no project-specific override stylesheet. Those rules remain in `src/browser/standard/styles.css`; ordinary builds concatenate the two and scope native output without scanning source or installing Tailwind.
+`vendor/giscus/reference/styles/compiled.css` is a generated, project-selected dependency. It expands the pinned giscus `base.css`/`globals.css`, Tailwind 3.4.17 and `tailwindcss-vanilla-rtl` 0.4.0 using the standard presentation class vocabulary from Giscusflare `b39375bbba0b8249c3bc661c63150b5917b31d80`. PostCSS is 8.5.28. It contains no project-specific override stylesheet. Those rules remain in `src/browser/standard/styles.css`; independently usable content structure rules live in `src/browser/content.css`. Ordinary builds assemble the standard stylesheet and scope native output without scanning source or installing Tailwind.
 
 | Input/output | SHA-256 |
 | --- | --- |

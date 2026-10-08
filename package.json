@@ -1,6 +1,6 @@
 {
   "name": "giscusflare",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -68,7 +68,12 @@
     "./content": {
       "types": "./dist/types/browser/content.d.ts",
       "import": "./dist/browser/content.js"
-    }
+    },
+    "./content/github": {
+      "types": "./dist/types/browser/github-content.d.ts",
+      "import": "./dist/browser/github-content.js"
+    },
+    "./content.css": "./dist/assets/content.css"
   },
   "files": [
     "dist/browser",

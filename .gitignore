@@ -28,3 +28,5 @@ public/chunks/
 # Retired report locations; current verification output belongs in test-results/.
 /docs/evidence/
 /docs/source-ledger.csv
+
+/public/content.css

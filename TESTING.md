@@ -1,6 +1,6 @@
 # Verification
 
-Use Node 22.16 or newer and `npm ci`. Run the complete release gate before proposing a release; use focused checks while implementing a change.
+Use Node 22.16 or newer and `npm ci`. Run the complete release gate before proposing a release; use focused checks while implementing a change. Version 4 is a release candidate; historical results do not qualify its replacement contracts.
 
 | Command | Evidence |
 | --- | --- |
@@ -20,7 +20,7 @@ Native and browser workflows use the actual production Worker and SQLite Durable
 
 `npm run demo` prints iframe and native URLs. Comments and sign-in are simulated. `test:browser` starts and stops its own fixture and records the source/runtime conditions in `test-results/evidence/browser-acceptance.json`.
 
-The browser portfolio exercises native and iframe embedding, future-capability sign-in, actual typing and undo/redo, preview, refresh, appearance and contributions. Cohesive custom-view workflows cover rich-content sanitization and failed enhancements, acquired-resource retirement, forum switching and editing, and local setup/configuration. Use the current receipt for executed scenarios and engines; a fixed case count is not an acceptance target.
+The browser portfolio must exercise native and iframe embedding, future-capability sign-in, actual typing and undo/redo, preview, reading continuity, appearance and contributions. Cohesive custom-view workflows must cover local/server/default content selection, complete feature replacement, rich-content safety and readable failures, mounted-resource updates/retirement, retained writing destination and unresolved outcomes, forum switching and editing, and setup/configuration. Use the current receipt for executed scenarios and engines; a fixed case count is not an acceptance target.
 
 CI runs the complete gate on [macOS 26](https://docs.github.com/en/actions/reference/runners/github-hosted-runners) to exercise WebKit's native controls on the Apple port. The Linux Playwright GTK build used during qualification did not enter resize mode through the mouse driver even for isolated plain textareas with fixed or content sizing. That observation does not establish behavior in a deployed GTK browser. The gate retains actual resize, subsequent typing and native undo assertions on macOS; it has no programmatic resize substitute or engine-specific skip.
 
@@ -30,7 +30,7 @@ For manual editor checks, compare real typing, undo and redo with a plain textar
 
 ## Visual reference
 
-The 3.0 demo/default presentation must retain the pre-PR appearance. The [version 3 qualification](https://github.com/lumirth/giscusflare/pull/2) included a one-time comparison against `b39375bbba0b8249c3bc661c63150b5917b31d80`, built and run outside the repository. Both actual versions render equal fixture content in Chromium and WebKit, native and iframe modes, at 390px and 900px widths. Reading and editing states are captured before mutating journeys, so edge-cache freshness cannot make their input data unequal. Contribution/edit/delete-dialog states follow real local sign-in and writes.
+The demo/default presentation must retain its established appearance. The [version 3 qualification](https://github.com/lumirth/giscusflare/pull/2) included a one-time comparison against `b39375bbba0b8249c3bc661c63150b5917b31d80`, built and run outside the repository. Both actual versions render equal fixture content in Chromium and WebKit, native and iframe modes, at 390px and 900px widths. Reading and editing states are captured before mutating journeys, so edge-cache freshness cannot make their input data unequal. Contribution/edit/delete-dialog states follow real local sign-in and writes.
 
 The comparison uses complete RGBA pixels and equal image dimensions, without masking or tolerance. Both versions receive the same deterministic avatar, display date, focus/hover state and settled fonts. These controlled inputs establish the recorded visual states; they do not turn historical DOM structure or ownership into a contract. The reference runner is a qualification artifact, not a second maintained runtime or a source-shape regression suite.
 

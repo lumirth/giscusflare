@@ -8,6 +8,7 @@ import { reactions } from "./reactions.js";
 import { header } from "./header.js";
 import { actions } from "./actions.js";
 import { body } from "./body.js";
+import type { Writing } from "../../conversation/writing.js";
 import type { StandardParts, StandardContext } from "./contracts.js";
 
 /** Baseline giscus appearance over the canonical page and renderer-owned resources. */
@@ -31,8 +32,8 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
       }
     });
     target.append(root);target.classList.add('giscusflare');
-    const composer = (name: string) => parts.composer ? parts.composer(context, name)
-      : name === 'main' ? main ??= createComposer(context, name, scope.signal) : boundComposer(context, name);
+    const composer = (writing: Writing) => parts.composer ? parts.composer(context, writing)
+      : writing.id === 'main' ? main ??= createComposer(context, writing, scope.signal) : boundComposer(context, writing);
     const react = (subject: Comment | Discussion | null, position: 'top' | 'bottom') =>
       (parts.reactions || reactions)(context, { subject, position });
     const attempt = (work: () => Promise<unknown>) => () => {
@@ -42,13 +43,13 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
     };
     const loading = (label: string) => html`<div class="gsc-loading" role="status"><div class="gsc-loading-image" aria-hidden="true"></div><p class="gsc-loading-text">${label}</p></div>`;
     const replyTo = (id: string) => () => {
-      if (!scope.signal.aborted) runtime.interactions.focus(runtime.beginReply(id));
+      if (!scope.signal.aborted) runtime.interactions.focus(runtime.writing({kind:'reply',id}).show().id);
     };
       function content(c: Comment, reply: boolean) {
         const t = strings(runtime.appearance.lang);
         return html` ${
-          runtime.drafts.get("edit:" + c.id)?.editor
-            ? composer("edit:" + c.id)
+          runtime.writings.get("edit:" + c.id)?.open
+            ? composer(runtime.writing({kind:'edit',id:c.id}))
             : html`<div
                 dir="auto"
                 class=${"markdown " + (reply ? "gsc-reply-content" : "gsc-comment-content") + (c.isMinimized ? " minimized" : "")}
@@ -100,7 +101,7 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
           replies = (window?.ids || []).map(id => doc.nodes[id]).filter((node): node is Comment => Boolean(node)),
           count = window?.total ?? replies.length,
           hidden = Math.max(0, count - replies.length),
-          replying = Boolean(runtime.drafts.get("reply:" + c.id)?.editor);
+          replying = Boolean(runtime.writings.get("reply:" + c.id)?.open);
         return html`<article class="gsc-comment" id=${"comment-" + c.id}>
           <div
             class=${"color-bg-primary w-full min-w-0 rounded-md border " + (c.viewerDidAuthor ? "gsc-comment-author-is-viewer" : "")}
@@ -135,10 +136,10 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
                             <button
                               class="color-text-link underline"
                               type="button"
-                              ?disabled=${runtime.reading(c.id)}
+                              ?disabled=${runtime.acquisition(c.id)}
                               @click=${attempt(() => runtime.loadReplies(c.id))}
                             >
-                              ${runtime.reading(c.id) ? t.loadingReplies : message(runtime.appearance.lang, "showPreviousReplies", hidden)}
+                              ${runtime.acquisition(c.id) ? t.loadingReplies : message(runtime.appearance.lang, "showPreviousReplies", hidden)}
                             </button>
                           </div>`
                         : nothing
@@ -147,7 +148,7 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
                   </div>`
                 : nothing
             }
-            ${replying ? composer("reply:" + c.id) : runtime.canCompose ? html`<div class="gsc-reply-box color-bg-tertiary"><button type="button" class="form-control color-text-secondary color-border-primary w-full cursor-text rounded border px-2 py-1 text-left focus:border-transparent" @click=${replyTo(c.id)}>${t.writeReply}</button></div>` : nothing}
+            ${replying ? composer(runtime.writing({kind:'reply',id:c.id})) : runtime.canCompose ? html`<div class="gsc-reply-box color-bg-tertiary"><button type="button" class="form-control color-text-secondary color-border-primary w-full cursor-text rounded border px-2 py-1 text-left focus:border-transparent" @click=${replyTo(c.id)}>${t.writeReply}</button></div>` : nothing}
           </div>
         </article>`;
       }
@@ -162,6 +163,8 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
           problem = error || runtime.error || runtime.session.error,
           initial = !runtime.ready && !problem,
           writable = runtime.canCompose,
+          restartAvailable = runtime.continuity.status === 'restart-required' ||
+            [roots, ...Object.values(doc.replies)].some(window => window.cursor === null && window.total !== null && window.total > window.ids.length),
           total = Object.values(discussion?.reactions || {}).reduce((sum, group) => sum + group.count, 0),
           replyCount = comments.reduce((sum, node) => sum + (doc.replies[node.id]?.total ?? doc.replies[node.id]?.ids.length ?? 0), 0);
         if (root.lang !== lang) root.lang = lang;
@@ -192,10 +195,11 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
             </ul>
             ${discussion ? actions(context, target, discussion) : nothing}
           </div>
-          ${runtime.ready && runtime.reading() ? loading(t.loading) : nothing}
+          ${runtime.ready && runtime.acquisition()?.purpose !== 'revalidate' && runtime.acquisition() ? loading(t.loading) : nothing}
+          ${restartAvailable ? html`<p class="color-text-secondary text-sm">${runtime.continuity.reason || 'New comments are available.'}<button type="button" class="ml-2 color-text-link" @click=${attempt(() => runtime.restart())}>${t.retry}</button></p>` : nothing}
           <div class="gsc-timeline">${repeat(comments, node => node.id, comment)}</div>
           ${roots.cursor ? html`<div class="gsc-pagination"><button type="button" class="gsc-pagination-button"
-            ?disabled=${runtime.reading()} @click=${attempt(() => runtime.refresh(true))}>${t.more}</button></div>` : nothing}
+            ?disabled=${runtime.acquisition()} @click=${attempt(() => runtime.loadMore())}>${t.more}</button></div>` : nothing}
         </section>`;
         render(html`
           ${initial ? loading(t.loading) : nothing}
@@ -204,10 +208,10 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
             <div class="gsc-discussion-reactions">${react(discussion || null, 'bottom')}</div>
           </section>` : nothing}
           ${problem ? html`<div class="flash flash-error" role="alert">${problem}<button class="ml-2 color-text-link" type="button"
-            @click=${() => { error = '';void runtime.refresh(); }}>${t.retry}</button></div>` : nothing}
+            @click=${() => { error = '';void runtime.restart(); }}>${t.retry}</button></div>` : nothing}
           ${runtime.ready && !writable ? html`<p class="flash">${metadata.unavailable ? t.discussionUnavailable : metadata.archived ? t.archived : t.locked}</p>` : nothing}
           ${commentsView}
-          <div class="gsc-main-composer" ?hidden=${!writable}>${composer('main')}</div>`, root);
+          <div class="gsc-main-composer" ?hidden=${!writable}>${composer(runtime.writing())}</div>`, root);
       } finally { drawing = false; }
     }
     let renderedDocument = runtime.document;

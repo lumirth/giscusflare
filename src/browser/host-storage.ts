@@ -1,5 +1,5 @@
-import { scopedStorage, storageNamespace, draftIdentity } from './storage.js';
-import type { DraftStore } from './draft-store.js';
+import { scopedStorage, storageNamespace, writingIdentity } from './storage.js';
+import type { WritingStore } from './writing-store.js';
 import type { Login } from './session.js';
 import { challenge } from './dom.js';
 type Pending = Login & { fragment?: string; scroll?: number; composer?: string };
@@ -7,12 +7,12 @@ const capability = (value: unknown): value is string => typeof value === 'string
 const pending = (value: unknown): value is Pending => {
   if (!value || typeof value !== 'object') return false;
   const saved = value as Partial<Pending>;
-  return saved.version === 3 && capability(saved.capability) && capability(saved.attempt) && typeof saved.created === 'number' && saved.created <= Date.now() && Date.now() - saved.created < 600000;
+  return saved.version === 4 && capability(saved.capability) && capability(saved.attempt) && typeof saved.created === 'number' && saved.created <= Date.now() && Date.now() - saved.created < 600000;
 };
 /** The website owns storage and navigation in both native and iframe embeddings. */
-export function hostStorage(service: string, repo: string, recovery: DraftStore | null, position: () => { composer?: string } = () => ({})) {
+export function hostStorage(service: string, repo: string, recovery: WritingStore | null, position: () => { composer?: string } = () => ({})) {
   const prefix = storageNamespace(service, repo), { read, write, forget } = scopedStorage(prefix);
-  let draft = draftIdentity({});
+  let draft = writingIdentity({});
   const session = (changed?: string | null) => {
     if (changed !== undefined) forget('session');
     let value: unknown;
@@ -21,13 +21,13 @@ export function hostStorage(service: string, repo: string, recovery: DraftStore 
   };
   return {
     sessionKey: prefix + 'session', session,
-    usePage(page: Parameters<typeof draftIdentity>[0]) { draft = draftIdentity(page); },
-    draft: () => recovery?.load(prefix + draft),
+    usePage(page: Parameters<typeof writingIdentity>[0]) { draft = writingIdentity(page); },
+    writing: () => recovery?.load(prefix + draft),
     receive(value: Record<string, unknown>): void {
       if (value.session === '' || capability(value.session)) write('session', value.session || null, true);
-      if (value.signOut) { write('session', null, true); write('pending', null); recovery?.remove(prefix + draft); }
-      if (typeof value.draftState === 'string' && value.draftState.length <= 240000) {
-        if (value.draftsPresent) recovery?.save(prefix + draft, value.draftState);
+      if (value.signOut) { write('session', null, true); write('pending', null); }
+      if (typeof value.writingState === 'string' && value.writingState.length <= 240000) {
+        if (value.writingPresent) recovery?.save(prefix + draft, value.writingState, Boolean(value.writingProtected));
         else recovery?.remove(prefix + draft);
       }
       const previous = read('pending');
@@ -48,7 +48,7 @@ export function hostStorage(service: string, repo: string, recovery: DraftStore 
         const matched = value.repo === repo && capability(value.attempt) && ['ready','denied'].includes(value.status) && pending(stored) && stored.attempt === value.attempt;
         url.hash = matched ? stored.fragment || '' : '';
         history.replaceState(history.state, '', url);
-        if (matched) return { handoff: { capability: stored.capability, attempt: stored.attempt, created: stored.created, version: 3, status: value.status }, position: stored };
+        if (matched) return { handoff: { capability: stored.capability, attempt: stored.attempt, created: stored.created, version: 4, status: value.status }, position: stored };
       } catch { /* Malformed return fragments never grant a session. */ }
     },
     async navigate(value: string): Promise<boolean> {

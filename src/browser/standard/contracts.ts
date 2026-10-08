@@ -1,3 +1,4 @@
+import type { Writing } from "../../conversation/writing.js";
 import type { Conversation } from "../headless.js";
 import type { ResourceScope } from '../presentation.js';
 import type { Comment, Discussion } from "../../contracts/document.js";
@@ -11,7 +12,7 @@ export interface StandardContext {
 }
 export type ComposerSlot = (
   context: StandardContext,
-  name: string,
+  writing: Writing,
 ) => StandardValue;
 export interface ReactionInput {
   subject: Comment | Discussion | null;

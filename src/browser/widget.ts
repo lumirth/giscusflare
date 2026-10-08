@@ -105,7 +105,7 @@ const observe = () => {
   const conversation = mounted.conversation;
   return conversation.subscribe(() => {
     const metadata = conversation.document.metadata;
-    if (conversation.ready && !conversation.reading()) {
+    if (conversation.ready && !conversation.acquisition()) {
       emit({ rendered: true });
       if (conversation.appearance.emitMetadata)
         emit({ discussion: metadata.thread, viewer: metadata.viewer });

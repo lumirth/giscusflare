@@ -1,60 +1,100 @@
-import {icon} from './icons.js';
-import { markdown } from './markdown.js';
-export type MathRenderer = (source: string, display: boolean, signal: AbortSignal) => Promise<DocumentFragment | null>;
-export type CodeRenderer = (source: string, language: string, signal: AbortSignal) => Promise<DocumentFragment | null>;
-export interface ContentProfile {
-  /** Trusted application renderer; null or rejection keeps sanitized source and copy control. */
-  code?: CodeRenderer;
-  /** Optional lightweight renderer. Null delegates to the full lazy default. */
-  math?: MathRenderer | 'source';
-  codeCopy?: boolean;
-  labels?: {copy:string;copied:string;copyFailed:string;mathFailed:string};
+/** Original writing is available to every renderer, including previews. */
+export interface ContentInput {
+  markdown: string;
+  html?: string;
+  purpose: 'comment' | 'preview';
+  repo: string;
+  comment?: { id: string; url: string; parentId: string | null };
+  draft?: string;
+  /** Change this when external rendering inputs, such as a theme, change. */
+  revision?: string | number;
 }
-const defaults={copy:'Copy',copied:'Copied!',copyFailed:'Select and copy the code manually.',mathFailed:'Unable to render expression.'};
-export function createContentRenderer(profile:ContentProfile={}) {
-  return (html:string,fallback:string,signal:AbortSignal):DocumentFragment=>{
-    signal.throwIfAborted();
-    const fragment=markdown(html,fallback),labels=profile.labels||defaults;
-    for(const pre of fragment.querySelectorAll('pre')){
-      const source=pre.textContent||'';
-      const block=document.createElement('div');block.className='code-block';pre.replaceWith(block);block.append(pre);
-      if(profile.codeCopy!==false) {
-      const button=document.createElement('button');button.type='button';button.className='code-copy';button.append(icon('copy'));button.title=labels.copy;button.setAttribute('aria-label',labels.copy);
-      let reset: ReturnType<typeof setTimeout> | undefined;
-      signal.addEventListener('abort', () => clearTimeout(reset), { once: true });
-      button.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(source);if(signal.aborted)return;button.replaceChildren(icon('check'));button.title=labels.copied;button.setAttribute('aria-label',labels.copied);clearTimeout(reset);reset=setTimeout(()=>{button.replaceChildren(icon('copy'));button.title=labels.copy;button.setAttribute('aria-label',labels.copy);},2000);}catch{if(!signal.aborted){button.title=labels.copyFailed;button.setAttribute('aria-label',labels.copyFailed);}}}, { signal });
-      block.append(button);
-      }
-      if (profile.code) {
-        pre.setAttribute('aria-busy','true');
-        void profile.code(source,pre.dataset.language||'text',signal).then(replacement=>{
-          if(replacement&&!signal.aborted) pre.replaceWith(replacement);
-        }).catch(()=>{ /* The readable source and copy control remain available. */ })
-          .finally(()=>{if(!signal.aborted)pre.removeAttribute('aria-busy');});
-      }
-    }
-    if(profile.math!=='source')for(const element of fragment.querySelectorAll<HTMLElement>('.giscus-math')){
-      const source=element.textContent||'',display=element.dataset.display==='block';
-      element.setAttribute('aria-busy','true');
-      void (async()=>{
-        try{
-          const alternate=typeof profile.math==='function'?await profile.math(source,display,signal):null;
-          if(signal.aborted)return;
-          const renderer=alternate?null:await import('./math.js');
-          if(signal.aborted)return;
-          const math=alternate||renderer!.renderMath(source,display);
-          element.replaceChildren(math);
-        }catch{
-          if(signal.aborted)return;
-          element.classList.add('math-render-error');
-          const message=document.createElement('span');message.className='math-render-message';message.textContent=labels.mathFailed;
-          const sourceCode=document.createElement('code');sourceCode.className='math-render-source';sourceCode.textContent=element.dataset.source||source;
-          element.replaceChildren(message,sourceCode);
+export interface ContentContext {
+  /** Cancels this rendering generation. Mounted trees are released through dispose(), not this signal. */
+  signal: AbortSignal;
+  /** No provider request occurs unless the renderer calls this function. */
+  providerHTML(): Promise<string>;
+}
+/** Frameworks can retain a mounted tree and update it without remounting. */
+export interface MountedContent {
+  node: Node;
+  update?(input: ContentInput, context: ContentContext): void | Promise<void>;
+  dispose?(): void;
+}
+export type ContentOutput = Node | MountedContent;
+export type ContentRenderer = ((input: ContentInput, context: ContentContext) => ContentOutput | Promise<ContentOutput>) & {
+  /** Opt into provider HTML for published content. Markdown pipelines omit this capability. */
+  providerHTML?: boolean;
+};
+export interface ContentMount {
+  update(input: ContentInput): Promise<void>;
+  clear(): void;
+  dispose(): void;
+}
+const mounted = (output: ContentOutput): output is MountedContent => 'node' in output;
+const same = (a: ContentInput, b: ContentInput) => a.markdown === b.markdown && a.html === b.html &&
+  a.purpose === b.purpose && a.repo === b.repo && a.draft === b.draft && a.comment?.id === b.comment?.id &&
+  a.comment?.url === b.comment?.url && a.comment?.parentId === b.comment?.parentId && a.revision === b.revision;
+
+/** One owner for published content, previews, and framework-mounted output. */
+export function mountContent(target: HTMLElement, renderer: ContentRenderer, options: {
+  signal?: AbortSignal;
+  providerHTML?: (input: ContentInput, signal: AbortSignal) => Promise<string>;
+} = {}): ContentMount {
+  let input: ContentInput | undefined, generation: AbortController | undefined,
+    view: MountedContent | undefined, pending = Promise.resolve(), disposed = false;
+  const release = () => { const previous = view; view = undefined; previous?.dispose?.(); };
+  const clear = () => {
+    generation?.abort(); generation = undefined; input = undefined;
+    try { release(); } finally { target.replaceChildren(); }
+  };
+  const dispose = () => {
+    if (disposed) return;
+    disposed = true; options.signal?.removeEventListener('abort', dispose); clear();
+  };
+  if (options.signal?.aborted) dispose();
+  else options.signal?.addEventListener('abort', dispose, { once: true });
+  return {
+    clear, dispose,
+    update(value) {
+      if (disposed) return Promise.resolve();
+      const next = { ...value, ...(value.comment ? { comment: { ...value.comment } } : {}) };
+      if (input && same(input, next)) return pending;
+      generation?.abort();
+      const current = generation = new AbortController(); input = next;
+      let html: Promise<string> | undefined;
+      const context: ContentContext = {
+        signal: current.signal,
+        providerHTML() {
+          current.signal.throwIfAborted();
+          return html ||= next.html !== undefined ? Promise.resolve(next.html)
+            : options.providerHTML ? options.providerHTML(next, current.signal)
+            : Promise.reject(new Error('This content renderer requires a provider HTML source.'));
+        },
+      };
+      const active = () => !disposed && generation === current && !current.signal.aborted;
+      const fail = (cause: unknown) => {
+        if (!active()) return;
+        current.abort(); input = undefined;
+        try { release(); } finally { target.textContent = next.markdown; }
+        throw cause;
+      };
+      const install = (output: ContentOutput) => {
+        if (!active()) { if (mounted(output)) output.dispose?.(); return; }
+        view = mounted(output) ? output : undefined;
+        target.replaceChildren(mounted(output) ? output.node : output);
+      };
+      try {
+        if (view?.update) {
+          pending = Promise.resolve(view.update(next, context)).catch(fail);
+        } else {
+          release(); target.textContent = next.markdown;
+          const output = renderer(next, context);
+          if ('then' in output) pending = Promise.resolve(output).then(install).catch(fail);
+          else { install(output); pending = Promise.resolve(); }
         }
-        finally{if(!signal.aborted)element.removeAttribute('aria-busy');}
-      })();
-    }
-    return fragment;
+      } catch (cause) { pending = Promise.resolve().then(() => fail(cause)); }
+      return pending;
+    },
   };
 }
-export const renderContent=createContentRenderer();

@@ -125,6 +125,13 @@ export class FakeGitHub {
         data={...(x.signedIn?{viewer:this.profile(user)}:{}),repository:{...clone(this.meta),discussion:d?this.discussion(d,user,{...x,replyPrefetch:x.previewReplies?x.prefetch:0}):null}};
         if(x.selected)data.nodes=x.ids.map(id=>project(this.locate(id)));
         if(x.reply){const t=this.locate(x.parent);data.parent=project(t);if(data.parent){const page=connection(t.node.replies,{last:50,before:x.replyBefore});data.parent.replies={...page,nodes:page.nodes.map(c=>this.comment(c,user))};}}
+        if (!x.html) {
+          for (const comment of [...(data.repository.discussion?.comments.nodes ?? []), ...(data.nodes ?? []), ...(data.parent ? [data.parent] : [])]) {
+            if (!comment) continue;
+            delete comment.bodyHTML; for (const reply of comment.replies?.nodes ?? []) delete reply.bodyHTML;
+          }
+          if (data.repository.discussion) delete data.repository.discussion.bodyHTML;
+        }
         if(!x.roots&&data.repository.discussion)data.repository.discussion.comments.nodes=[];
         if(!x.previewReplies){for(const node of [...(data.repository.discussion?.comments.nodes??[]),...(data.nodes??[])])if(node)node.replies.nodes=[];}
         if(data.repository.discussion)for(const root of data.repository.discussion.comments.nodes)root.discussion=this.identity(d);

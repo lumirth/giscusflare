@@ -1,35 +1,28 @@
-# Verification results
+# Verification scope
 
-Version 3.0 replaces browser ownership, internal service transport and ranking persistence. Earlier release results establish historical behavior and workloads; they do not qualify this replacement. Follow [verification](https://github.com/lumirth/giscusflare/blob/main/TESTING.md) to reproduce the current checks.
+Version 4 changes content customization, writing recovery, reading continuity and public action availability. It is a release candidate. Earlier release results do not qualify these replacements, and this document does not claim a completed current gate or deployment. Use the PR and current run artifacts for execution results; follow [verification](../TESTING.md) to reproduce them.
 
-## Current verification
+## Local evidence
 
-The release commands produce receipts identifying the source commit/content hash, runtime, conditions and result. Reports are ignored local output and CI artifacts, not committed evidence. Inspect each report’s status rather than treating the presence of a file as a passing check:
-
-| Receipt | Evidence |
+| Check | What it can establish |
 | --- | --- |
-| `test-results/evidence/native-runtime.json` | Actual workerd/SQLite, RPC, encrypted-session restart and an independent simulated remote effect |
-| `test-results/evidence/browser-acceptance.json` | Chromium/WebKit native/iframe and custom-view workflows against the actual local Worker/DO service |
-| `test-results/evidence/ranking-service-runtime.json` | Actual repository, credentials, provider transport and due native alarms for the warm full-day workload and divided allowance pause |
+| Worker/DO workflows in actual local workerd and SQLite | RPC, encrypted-session persistence, website policy, contribution replay and interrupted external effects |
+| Chromium/WebKit journeys against production built browser modules | Native/iframe editing, content rendering, lifecycle retirement, writing recovery, reading continuity and custom presentations |
+| Ranking service with native SQL cursor counters and controlled due alarms | Complete-service row work, configured admission, cadence and budget pauses under the recorded workload |
+| Independent consumers built from an extracted archive | Published export shape, packaged browser/Worker entry points and assets |
 
-GitHub is explicitly simulated in the native/browser receipts. Both use the production Worker and SQLite Durable Object in local workerd; the browser loads production built modules and actual browser resources. Provider effects remain outside workerd across restart. The resource receipt records complete-service native SQL and due alarms under its declared clock and workload. Package checks build consumers from an extracted archive. [Verification](https://github.com/lumirth/giscusflare/blob/main/TESTING.md) defines the full gate and separately required deployed checks.
+The simulated GitHub fixture validates GraphQL against the recorded official schema and holds remote effects outside workerd so they survive its restart. Schema agreement does not establish actual App permissions. Contribution recovery needs independent remote effect/readback oracles, not receipt identity alone. Writing tests need the correct destination and original issued body/key after hide/reload/account changes. Content tests need observable output, no unnecessary preview request, readable failure and retirement of mounted resources. Continuity tests need preserved accumulated reading and explicit invalidation, not an internal flag copied from implementation.
 
-The replacement removed DOM-identity and mutation-count proxies for native undo. Actual typing exposed failures despite stable editor nodes, and typing/undo/redo remains the oracle. Retiring a page, view or authentication flow must prevent late publication even when already-issued remote work completes. Check each receipt for the interleavings actually exercised; passing a happy-path journey alone does not establish those obligations.
+Native typing, selection, undo and redo are behavioral oracles. Stable DOM alone is insufficient. Retiring page/view/content must prevent late publication even when already issued work finishes. Default visual fidelity remains required, without making historical DOM structure an architectural constraint.
 
-Local evidence does not establish production latency, CPU distributions, real GitHub permissions, fresh-account deployment, Firefox, Safari or physical iOS behavior. These local receipts do not establish a deployed service.
+Generated reports live in ignored `test-results/evidence/`; CI uploads them, including partial failure reports. Each identifies its source/runtime/conditions/status. A report file is not automatically a passing result. One-time visual comparisons and source accounting belong in run or PR artifacts.
 
-## Historical observations
+## Boundaries and historical evidence
 
-A September 27, 2026 deployed workload sent 12,100 requests across 100 discussions with simulated 80 ms upstream latency. It recorded 6.85 ms p99 Worker CPU, 20.57 GB-s object duration and 3,071 SQLite writes. That workload preceded both the v2 cache changes and v3 typed ranking storage.
+Local checks do not establish production latency, CPU distributions, object duration, Cloudflare billing, real GitHub permissions, fresh-account deployment, Firefox, Safari or physical iOS. GitHub is simulated in local service/browser workflows. Extracted-package checks do not establish a deployed service. Actual deployed acceptance uses matching browser/Worker versions and independent GitHub readback.
 
-Earlier real GitHub query checks exercised discussion access, comment hydration, permissions, replies and counts. Desktop Chromium/WebKit checks covered native and iframe presentation, editor undo and OAuth flows. These observations guide acceptance coverage but must be repeated when their boundary changes.
+The [version 3 visual qualification](https://github.com/lumirth/giscusflare/pull/2) compared 168 paired renders: 167 were pixel-identical; one differed at five SVG antialiasing pixels. It is historical evidence. The default reference remains pinned at `3d6430237108ca4ee3eb6a1a20595201c09c72d5`; [provenance](PROVENANCE.md) records source and licenses.
 
-The one-time [version 3 visual qualification](https://github.com/lumirth/giscusflare/pull/2) compared 168 paired renders: 167 were pixel-identical; one differed at five SVG antialiasing pixels. Detailed comparison output remains qualification material, not a maintained source dependency.
+A September 27, 2026 workload recorded 12,100 requests, 6.85 ms p99 Worker CPU, 20.57 GB-s object duration and 3,071 SQLite writes. It predates the current cache/ranking representations and is not a current capacity guarantee. Measure native SQL counters and actual platform metrics under declared cold/warm, acquisition and correction workloads. [Cloudflare usage](../FREE-TIER.md) explains limits and measurement.
 
-The giscus presentation reference remains pinned at `3d6430237108ca4ee3eb6a1a20595201c09c72d5`; [source provenance](PROVENANCE.md) identifies its attribution. Measure actual behavior instead of requiring the replacement to reproduce historical DOM structure or storage groups.
-
-## Capacity evidence
-
-Use actual SQL cursor counters for rows, platform metrics for CPU and object duration, and independent request/remote-effect observations. Record cold restoration, unchanged refresh, changed observations, correction during acquisition, multiple active discussions, every configured profile and membership reconciliation. [Cloudflare usage](../FREE-TIER.md) explains the constraints.
-
-Old grouped-JSON row counts, earlier freshness-fenced proofs and warm-cache limits are not current v3 capacity claims. The replacement exposes refresh cadence and acquisition intervals; a ready traversal does not promise an atomic remote snapshot or that every observation is younger than one age cutoff. Qualify the current representation and configured budgets directly.
+Ranking ready results describe acquisition intervals and cadence, not atomic remote snapshots or a universal source-age bound. Bounded background observation retains traversal; it does not promise continuous freshness of all loaded comments. Qualify those actual contracts rather than restoring older guarantees through tests.

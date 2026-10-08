@@ -1,51 +1,58 @@
 # System design
 
-GitHub owns discussion content and account permissions. One canonical repository actor owns credentials, selection mappings, contribution receipts and optional ranking observations. The Worker resolves a repository name to its installed GitHub identity before selecting that actor. Native and iframe consumers use the same page owner and canonical document.
+GitHub owns stored discussion content and account permissions. The Worker owns HTTP, website policy and canonical repository selection. One repository Durable Object owns credentials, mappings, contribution receipts and ranking observations. One browser page owns reading, writing and ordered effects. Presentation and content rendering have separate, replaceable resource lifetimes.
 
 ```mermaid
 flowchart LR
-  Page[Page document and writing] --> Worker[HTTP and current website policy]
-  Worker --> Actor[Canonical GitHub repository actor]
-  Actor --> GitHub[Content and permissions]
-  Actor --> Records[Operational records]
-  Actor --> Ranking[SQL observations and scan]
-  Page --> View[Presentation lifetime and editors]
+  Page[Page: document, reading, writing, actions] --> Worker[Worker: HTTP and website policy]
+  Worker --> Actor[Repository Durable Object]
+  Actor --> GitHub[GitHub: content and permissions]
+  Actor --> SQL[Receipts, credentials and ranking SQL]
+  Page --> View[Standard or host presentation]
+  View --> Content[Chosen content renderer]
+  Content -. Optional provider preview .-> Worker
 ```
 
-## Identity and service
+## Browser ownership
 
-Repository names locate; immutable GitHub IDs determine Durable Object addresses. Configured and open-hosting repositories use the same addressing rule. The Worker supplies that identity as a private RPC argument. Each acquired provider result must agree with it. Clients supply a page selection, not repository/category authority hints; the operator's category policy supplies that authority.
+`PageDocument` stores each canonical node once. Root/reply windows own ordered IDs, continuation cursors and observed totals. `start`, `restart`, `loadMore`, `loadReplies`, `setOrder` and `revalidate` distinguish acquisition purposes. Restart and order changes deliberately replace traversal. Background revalidation observes a bounded set of loaded IDs, retaining membership/order/cursors and removing confirmed missing nodes. Successive observations rotate through loaded content. It does not silently reset expansion or promise all loaded content is always fresh. Identity changes or invalid continuations expose a restart requirement.
 
-`page` acquires a root window, a reply window or a requested sequence of IDs. The provider boundary converts its response once into canonical nodes, ID windows and metadata. Nodes carry content once. Root and reply windows contain membership, pagination and observed totals. Native RPC returns values and expiry; the Worker constructs JSON or the iframe document. There is no second browser DTO or mutation-result conversion.
+A `Writing` owns immutable contribution destination, text, visibility and clear undo. An issued contribution freezes target/body/key/author; that identity survives hiding and persistence, including reload during dispatch. Hidden writing cannot submit until reopened. Uncertain writing is protected from edits and clearing; retry recovers the original effect. Explicit abandonment belongs to a deliberate reader decision and cannot undo an external effect. Protected persisted snapshots survive ordinary writing retention and sign-out; a known outcome or explicit abandonment returns them to ordinary retention. Browser persistence is best effort and can be disabled explicitly. Editor state is not contribution identity.
 
-`contribute` accepts one tagged user intent: comment, edit, delete, reaction or moderation. One acquisition owner resolves the selection, checks scope and acquires the affected nodes. Unmapped first contributions resolve or create a discussion under the same term owner. The durable creation marker handles an uncertain external creation; it is not a second discovery pipeline.
+One effect queue serializes dispatch and canonical patch adoption. Reaction intent retains desired/issued commands; deletion and moderation retain unresolved effects. Public action availability derives from those owners and current authority, without a second mutable action store. Changing account identity retires reads and queued work; issued remote effects may finish, but cannot publish into a replacement identity. A page can join its already issued work.
 
-Before dispatch, a receipt records the immutable account and intent fingerprint. Its nullable confirmation is the workflow state: no result means uncertain; a result contains only the external ID, discussion number and affected parent ID. It contains no read body, reactions or counts. Replaying a confirmed intent cannot dispatch another effect. Timestamped intent expiry remains independent of receipt pruning.
+The mount owns page replacement and an independently replaceable presentation. Consumers observe the actual page, not a projected state or forwarding facade. Presentations own acquired resources through abort signals. The optional native editor owns its form, textarea, preview and native interactions; writing outlives that DOM. The standard main editor has one permanent insertion point, with CSS controlling visual position. Reply/edit forms remain presentation choices rather than determining writing targets.
 
-A fresh canonical observation can accompany confirmation. Observation failure leaves the effect confirmed, with no patch. The client reports that the contribution was saved and reading needs refreshing. It does not infer global totals from the loaded window or reopen the effect because its display observation failed.
+## Content ownership
 
-Public edge and actor caches retain bounded completed reads until their original expiry. Current deployment website policy applies before edge reuse; authenticated reads bypass public caches. Confirmed contributions invalidate affected actor reads. One native alarm selects the next operational expiry or ranking continuation.
+Headless consumers explicitly choose a `ContentRenderer`. The standard mount supplies the optional GitHub renderer unless replaced. Every renderer receives original Markdown and purpose/context; provider HTML is lazy. A local pipeline does not make a provider preview call or acquire unused provider HTML in reads and contribution observations. The optional GitHub renderer opts into that HTML explicitly. Custom output can be asynchronous or a mounted tree with update/dispose methods. It owns its safe interpretation, styles and resources.
+
+`mountContent` owns both published bodies and previews: unchanged inputs retain output; changed generations cancel work; removed output is disposed; late output cannot install. Rendering failure leaves readable source. There is no separate preview-HTML channel or body enhancement lifecycle.
+
+The optional GitHub renderer sanitizes provider HTML and supplies code/math presentation. Feature overrides own complete output, including frames and controls. Disabling a feature preserves sanitized readable source. Built-in math is loaded only when selected and present. Content CSS is independently importable; the standard appearance remains the pinned giscus visual reference.
+
+## Service identity and effects
+
+Repository names locate; immutable GitHub IDs select Durable Object addresses. Configured/open hosting use the same addressing rule. The Worker supplies identity as a private RPC argument; acquired provider data must agree with it. Clients supply page selection, not category or repository authority. Operator policy chooses the category.
+
+`page` acquires roots, replies, explicit IDs or an observation of loaded content. The provider boundary converts once to canonical nodes/windows/metadata. RPC returns values and expiry; the Worker constructs JSON or the iframe document. `contribute` accepts tagged comment/edit/delete/reaction/moderation intent. One acquisition path resolves selection and fresh scope. First contribution resolution/creation shares the term owner; an uncertain external creation has a durable marker.
+
+Before dispatch, a receipt records immutable principal and intent fingerprint. Nullable confirmation is its workflow state: absent result means uncertain; confirmed result contains only external ID, discussion number and affected parent. It contains no saved read body, reactions or counts. Replay cannot redispatch a confirmed effect. Optional fresh observation supplies a canonical patch; observation failure leaves the effect confirmed rather than inventing counts or reopening dispatch. Version 4 uses `/api/v4/` while retaining the `3.` durable receipt-key format.
+
+Public edge/actor caches retain completed reads until original expiry. Current website policy applies before edge reuse; authenticated reads bypass public caches. Contributions invalidate affected actor reads. One native alarm selects operational expiry or ranking continuation.
 
 ## Authentication
 
-The page creates its future bearer capability before sign-in. Its hash is the private preparation proof; the proof's hash is the public attempt identity. Only the private proof enters the trusted authorization window, in a fragment removed before asynchronous work. The bearer capability stays with the page and its host persistence.
+The page creates its future bearer capability before sign-in. Its hash is the private preparation proof; the proof's hash is the public attempt ID. Only the proof enters the trusted authorization window, in a fragment removed before asynchronous work. The capability stays with page persistence.
 
-Preparation binds a browser cookie and independent GitHub PKCE. Callback exchanges credentials, obtains the immutable account ID, atomically creates the encrypted session under the already chosen capability hash, and deletes the attempt. The return carries only public attempt/status. The page adopts its own saved capability; no completion polling, staged ready credentials or second capability issuance exists. Preparation cannot replace an installed capability. A lost return requires another sign-in.
-
-## Reading and writing
-
-The page owns one normalized document, explicit reading windows and contribution records. Refresh replaces reading windows; it does not reconstruct prior expansion depth. Draft records own text, retry key and editor identity together. One contribution queue orders dispatch and canonical patch adoption. Reaction intent concerns issued and desired commands rather than deriving another write from a possibly stale read.
-
-Read signals belong to their acquisition. Replacing the root document retires child acquisitions. Changing identity retires prior acquisitions and queued contributions; issued remote effects can finish but cannot publish into the replacement. The page can join its issued work. There is no mixed registry combining drafts, reaction intent, reply loading and arbitrary operation status.
-
-The mount owns page and presentation replacement. Consumers observe the actual current page directly. Presentations receive an abortable view lifetime; renderer-owned descendants register cleanup when acquired. An editor owns its actual form, textarea, preview and native interactions. Drafts retain writing independently of read-window membership. The default view renders reply/edit forms inline and retires their DOM with the row; the main editor has one permanent insertion point; visual position uses CSS. The main editor's native history does not depend on moving its textarea during render.
+Preparation binds a browser cookie and independent GitHub PKCE. Callback exchanges credentials, obtains immutable account ID, atomically installs the encrypted session under the chosen capability hash, and deletes the attempt. Return carries only public attempt/status. The page adopts its saved capability without polling, staged credentials or second issuance. A lost return requires another sign-in. Preparation cannot replace an installed capability.
 
 ## Ranking
 
-An operator names weighted root-comment profiles. SQL holds typed observations. One collection checkpoint owns a two-mode scan: enumerate membership after the count/newest-ID signature changes, otherwise renew known IDs. Completed scans report an acquisition interval and next refresh time. This is a refresh cadence and a scoped traversal, not an atomic remote snapshot or a uniform bound on every field's age.
+Operator-named weighted profiles use typed SQL observations. One checkpoint owns a two-mode scan: enumerate membership after the count/newest-ID signature changes, otherwise renew known IDs. Completed scans report acquisition interval and next refresh time: cadence and scoped traversal, not an atomic snapshot or uniform source-age guarantee.
 
-Returning source observations cannot overwrite a newer complete local fact. Canonical contribution observations supply complete facts, so ranking has no partial-fact merger or missing-input repair protocol. SQL computes scores; a bounded cache holds completed scored orders. A reader receives a copied ID sequence and hydrates explicit windows without reordering that traversal halfway through reading.
+Older remote observations cannot overwrite newer complete local facts. Canonical contribution observations update complete facts directly; there is no partial-fact merger. SQL computes scores; a bounded cache retains completed orders. Readers copy the ID sequence and hydrate bounded windows without changing order halfway through reading.
 
-Native SQL cursor counters meter actual row work. HTTP calls are admitted against the configured allowance; SQL scheduling stops between bounded steps when its threshold is reached. Thresholds can overshoot by the final bounded step. The implementation has no prepaid per-operation row reservations, emergency global invalidation or legacy ranking migration. [Capacity](../FREE-TIER.md) records the measured workload and its limits.
+Native SQL cursor counters meter actual row work. HTTP admission enforces the configured allowance before provider calls. SQL scheduling stops between bounded steps; the final step can overshoot its threshold. There are no per-operation reservations, emergency global invalidation or legacy ranking migration. [Capacity](../FREE-TIER.md) records workload conditions and limits.
 
-[API](API.md), [customization](EXTENDING.md) and [verification results](CONFIDENCE.md) describe adoption and evidence. The replacement ledger includes new contracts, consumers and verification support.
+[API](API.md), [customization](EXTENDING.md) and [verification](CONFIDENCE.md) describe the public contracts and their evidence.

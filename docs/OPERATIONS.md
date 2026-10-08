@@ -27,7 +27,7 @@ Record the current Worker version and website revision before an update. If an u
 | Comments fail during busy periods | Check Worker execution errors and CPU, then requests, object duration and SQLite allowances |
 | A custom sort does not load | Check the returned reason and retry time in [custom sort troubleshooting](#when-a-custom-sort-cannot-load) |
 
-The setup page's repository check contacts GitHub and verifies access and the category. `/api/v3/setup` reports whether service settings are configured. `/healthz` checks that the service responds.
+The setup page's repository check contacts GitHub and verifies access and the category. `/api/v4/setup` reports whether service settings are configured. `/healthz` checks that the service responds.
 
 ## When a custom sort cannot load
 
@@ -37,7 +37,7 @@ For an order such as "Popular", check the reason returned with the API's `paused
 - `upstream`: GitHub could not complete the read. Retry after the reported time.
 - `size`: the collection or returned order exceeded its size limit. Check discussion size and `maxOrderBytes`.
 
-See [sorting configuration](CONFIGURATION.md#sort-by-reactions-or-reply-counts) for the settings and [API state](API.md#ranked-views) for custom interfaces.
+See [sorting configuration](CONFIGURATION.md#sort-by-reactions-or-reply-counts) for the settings and [API state](API.md#reading-document) for custom interfaces.
 
 ## Rotate credentials
 

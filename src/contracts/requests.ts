@@ -41,8 +41,10 @@ export function queryObject(url: URL): Record<string, string> {
 export const PageRequest = v.pipe(v.strictObject({
   config: Selection, order: v.optional(Order, 'oldest'), cursor: v.optional(Cursor, ''),
   parentId: v.optional(NodeID), ids: v.optional(v.pipe(v.array(NodeID), v.maxLength(100))),
+  observe: v.optional(v.boolean(), false), html: v.optional(v.boolean(), false),
   replyPrefetch: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(100)), 5),
-}), v.check(p => p.parentId === undefined || p.ids === undefined));
+}), v.check(p => p.parentId === undefined || p.ids === undefined),
+  v.check(p => !p.observe || (p.ids !== undefined && !p.parentId && !p.cursor && p.replyPrefetch === 0)));
 export const ModerationReason = v.picklist(['ABUSE', 'DUPLICATE', 'OFF_TOPIC', 'OUTDATED', 'RESOLVED', 'SPAM']);
 export type ModerationReason = v.InferOutput<typeof ModerationReason>;
 /** Commands describe user intent; all effects use the same contribution protocol. */
@@ -54,7 +56,7 @@ export const Action = v.variant('type', [
   v.strictObject({ type: v.literal('moderate'), id: NodeID, minimized: v.boolean(), reason: v.optional(ModerationReason, 'OFF_TOPIC') }),
 ]);
 export const ContributionRequest = v.pipe(v.strictObject({
-  config: Selection, key: IdempotencyKey, action: Action, creation: v.optional(Creation, {}),
+  config: Selection, key: IdempotencyKey, action: Action, html: v.optional(v.boolean(), false), creation: v.optional(Creation, {}),
 }), v.check(c => !c.creation.backLink || new URL(c.creation.backLink).origin === new URL(c.config.origin).origin));
 export type PageRequest = v.InferOutput<typeof PageRequest>;
 export type Action = v.InferOutput<typeof Action>;

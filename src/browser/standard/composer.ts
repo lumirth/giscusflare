@@ -4,12 +4,14 @@ import { directive } from "lit-html/directive.js";
 import { createEditor } from "../headless.js";
 import { strings, message } from "../i18n.js";
 import { icon } from "./icon.js";
+import type { Writing } from "../../conversation/writing.js";
 import type { StandardContext } from "./contracts.js";
 
-export function createComposer({ runtime, report }: StandardContext, name: string, signal: AbortSignal): HTMLElement {
+export function createComposer({ runtime, report }: StandardContext, contribution: Writing, signal: AbortSignal): HTMLElement {
+  const name = contribution.id;
   let acquired = false;
   const icons = { typography: icon('typography'), markdown: icon('markdown'), signOut: icon('sign-out'), github: icon('mark-github') };
-  return createEditor(runtime, name, { signal, render(editor) {
+  return createEditor(runtime, contribution, { signal, render(editor) {
     const { form, textarea, previewElement } = editor;
     if (!acquired) {
       acquired = true;
@@ -60,14 +62,14 @@ export function createComposer({ runtime, report }: StandardContext, name: strin
       </div>
       ${previewElement}
     </div>
-    ${editor.error ? html`<p class="color-text-danger px-2" role="alert">${editor.error}</p>` : nothing}
+    ${editor.error ? html`<p class="color-text-danger px-2" role="alert">${editor.error}${contribution.actions.abandon ? html`<button type="button" class="ml-2 color-text-link" @click=${() => { if (window.confirm('This submission may already exist on GitHub. Forget its recovery attempt and keep the text?')) contribution.abandon(); }}>${t.cancel}</button>` : nothing}</p>` : nothing}
     <div class="gsc-comment-box-bottom">
       ${signedIn && !reply && !edit ? html`<button type="button" class="link-secondary text-sm inline-flex items-center gap-2"
         @click=${() => { if (!editor.signal.aborted) void runtime.session.signOut().catch(report); }}>${icons.signOut}${t.signOut}</button>` : nothing}
       <div class="gsc-comment-box-buttons">
-        ${reply || edit ? html`<button type="button" class="btn ml-1" @click=${() => editor.cancel()}>${t.cancel}</button>` : nothing}
+        ${reply || edit ? html`<button type="button" class="btn ml-1" @click=${() => contribution.hide()}>${t.cancel}</button>` : nothing}
         <button type="submit" class="btn btn-primary inline-flex items-center ml-1 gap-2"
-          ?disabled=${editor.pending || (signedIn && !runtime.draft(name).trim())}>
+          ?disabled=${editor.pending || (signedIn && !(contribution.actions.submit || contribution.actions.retry))}>
           ${signedIn ? nothing : icons.github}${signedIn ? (edit ? t.save : reply ? t.reply : t.post) : t.signIn}
         </button>
       </div>
@@ -78,12 +80,12 @@ export function createComposer({ runtime, report }: StandardContext, name: strin
 class Composer extends AsyncDirective {
   #element?: HTMLElement;
   #release?: () => void;
-  render(context: StandardContext, name: string) {
+  render(context: StandardContext, contribution: Writing) {
     context.scope.signal.throwIfAborted();
     if (!this.#element) {
       const abort = new window.AbortController();
       this.#release = context.scope.own(() => { abort.abort();this.#element = undefined; });
-      try { this.#element = createComposer(context, name, abort.signal); }
+      try { this.#element = createComposer(context, contribution, abort.signal); }
       catch (error) { this.#release();throw error; }
     }
     return this.#element;

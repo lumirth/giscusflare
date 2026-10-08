@@ -1,5 +1,5 @@
 import {hostStorage} from './host-storage.js';
-import {browserDraftStore} from './draft-store.js';
+import {browserWritingStore} from './writing-store.js';
 import {fetchPolicy} from '../conversation/fetch-policy.js';
 (() => {
   const script = document.currentScript;
@@ -7,7 +7,7 @@ import {fetchPolicy} from '../conversation/fetch-policy.js';
   const service = new URL(script.src).origin, data = script.dataset, repo = (data.repo || '').toLowerCase();
   let fetching=fetchPolicy();
   try{if(data.fetching)fetching=fetchPolicy(JSON.parse(data.fetching));}catch{console.warn('giscusflare: invalid fetching policy; using defaults.');}
-  const recovery=data.draftRecovery==='off'?null:browserDraftStore(Number(data.draftRetentionMs)||300_000);
+  const recovery=data.writingRecovery==='off'?null:browserWritingStore(Number(data.writingRetentionMs)||300_000);
   const persistence=hostStorage(service,repo,recovery),returned=persistence.returning();
   let returnScroll=returned?.position.scroll,handoff=returned?.handoff??null;
   const page = new URL(location.href);
@@ -43,7 +43,7 @@ import {fetchPolicy} from '../conversation/fetch-policy.js';
     if (message.ready) {
       const config = message.context as Record<string, unknown> | undefined;
       if (config?.repo === repo && typeof config.term === 'string' && config.term.length <= 256) persistence.usePage(config);
-      post({ init: { session: persistence.session(), draftState: persistence.draft(), fetching, handoff } }); handoff = null;
+      post({ init: { session: persistence.session(), writingState: persistence.writing(), fetching, handoff } }); handoff = null;
     }
     if (typeof message.resizeHeight === 'number' && Number.isFinite(message.resizeHeight)) frame.style.height = `${Math.min(100000, Math.max(80, Math.ceil(message.resizeHeight)))}px`;
     persistence.receive(message);
