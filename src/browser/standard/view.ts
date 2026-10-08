@@ -1,120 +1,53 @@
 import { html, render, nothing } from "lit-html";
 import { repeat } from "lit-html/directives/repeat.js";
-import type { Presentation, Comment, RootComment } from "../headless.js";
+import type { Presentation, Comment, Discussion } from "../headless.js";
 import { strings, message } from "../i18n.js";
-import { icon } from "../icons.js";
-import { createComposer } from "./composer.js";
-import { createReactions } from "./reactions.js";
-import { createHeader } from "./header.js";
-import { createActions } from "./actions.js";
-import type { Part, StandardParts, StandardContext } from "./contracts.js";
+import { icon } from "./icon.js";
+import { createComposer, composer as boundComposer } from "./composer.js";
+import { reactions } from "./reactions.js";
+import { header } from "./header.js";
+import { actions } from "./actions.js";
+import { body } from "./body.js";
+import type { StandardParts, StandardContext } from "./contracts.js";
 
-/** The default UI is a consumer of the same public runtime as replacement UIs. */
-export function createStandardPresentation(
-  parts: StandardParts = {},
-): Presentation {
-  return {
-    mount(target, runtime) {
-      const root = document.createElement("main");
-      root.className = "gsc-main";
-      target.append(root);
-      const hadClass = target.classList.contains("giscusflare");
-      target.classList.add("giscusflare");
-      const previousTheme = target.getAttribute("data-theme"),
-        previousDir = target.getAttribute("dir");
-      const model = runtime;
-      let error = "",
-        disposed = false,
-        drawing = false;
-      const context: StandardContext = {
-        runtime,
-        report(e) {
-          error = e instanceof Error ? e.message : String(e);
-          draw();
-        },
-      };
-      const composers = new Map<string, Part<void>>();
-      const headers = new Map<string, ReturnType<typeof createHeader>>();
-      const reactions = new Map<string, ReturnType<typeof createReactions>>();
-      const actions = new Map<string, ReturnType<typeof createActions>>();
-      const bodies = new Map<
-        string,
-        { signature: string; node: HTMLElement }
-      >();
-      let used = new Set<string>();
-      function composer(name: string) {
-        used.add("composer:" + name);
-        let p = composers.get(name);
-        if (!p) {
-          p = (parts.composer || createComposer)(context, name);
-          composers.set(name, p);
-        }
-        p.update();
-        return p.element;
+/** Baseline giscus appearance over the canonical page and renderer-owned resources. */
+export function createStandardPresentation(parts: StandardParts = {}): Presentation {
+  return (target, runtime, scope) => {
+    scope.signal.throwIfAborted();
+    const root = document.createElement('section');root.className = 'gsc-main';
+    const hadClass = target.classList.contains('giscusflare'),
+      previousTheme = target.getAttribute('data-theme'), previousDir = target.getAttribute('dir');
+    let error = '', disposed = false, drawing = false, main: HTMLElement | undefined, stop: (() => void) | undefined;
+    const context: StandardContext = { runtime, scope, report(cause) {
+      error = cause instanceof Error ? cause.message : String(cause);draw();
+    } };
+    scope.own(() => {
+      disposed = true;stop?.();
+      try { render(nothing, root); } finally {
+        root.remove();
+        if (!hadClass) target.classList.remove('giscusflare');
+        if (previousTheme === null) target.removeAttribute('data-theme');else target.setAttribute('data-theme', previousTheme);
+        if (previousDir === null) target.removeAttribute('dir');else target.setAttribute('dir', previousDir);
       }
-      function header(comment: Comment, reply: boolean) {
-        used.add("header:" + comment.id);
-        let p = headers.get(comment.id);
-        if (!p) {
-          p = (parts.header || createHeader)(context);
-          headers.set(comment.id, p);
-        }
-        p.update({ comment, reply });
-        return p.element;
-      }
-      function react(
-        subject: Parameters<
-          ReturnType<typeof createReactions>["update"]
-        >[0]["subject"],
-        position: "top" | "bottom",
-      ) {
-        const id =
-          position === "bottom" ? "discussion" : subject?.id || "discussion";
-        used.add("reaction:" + id);
-        let p = reactions.get(id);
-        if (!p) {
-          p = (parts.reactions || createReactions)(context);
-          reactions.set(id, p);
-        }
-        p.update({ subject, position });
-        return p.element;
-      }
-      function menu(
-        item: Parameters<ReturnType<typeof createActions>["update"]>[0],
-      ) {
-        used.add("action:" + item.id);
-        let p = actions.get(item.id);
-        if (!p) {
-          p = createActions(context, target);
-          actions.set(item.id, p);
-        }
-        p.update(item);
-        return p.element;
-      }
-      function body(comment: Comment) {
-        used.add("body:" + comment.id);
-        const signature = JSON.stringify([comment.body, comment.bodyHTML]);
-        let old = bodies.get(comment.id);
-        if (!old || old.signature !== signature) {
-          const node = document.createElement("div");
-          node.className = "markdown";
-          node.append(runtime.renderContent(comment.bodyHTML, comment.body));
-          old = { signature, node };
-          bodies.set(comment.id, old);
-        }
-        return old.node;
-      }
-      const attempt = (work: () => Promise<unknown>) => () => {
-        void work().catch(context.report);
-      };
-      const replyTo = (id: string) => () => {
-        const name = model.beginReply(id);
-        runtime.interactions.focus(name);
-      };
+    });
+    target.append(root);target.classList.add('giscusflare');
+    const composer = (name: string) => parts.composer ? parts.composer(context, name)
+      : name === 'main' ? main ??= createComposer(context, name, scope.signal) : boundComposer(context, name);
+    const react = (subject: Comment | Discussion | null, position: 'top' | 'bottom') =>
+      (parts.reactions || reactions)(context, { subject, position });
+    const attempt = (work: () => Promise<unknown>) => () => {
+      if (!scope.signal.aborted) void work().catch(error => {
+        if (error?.name !== 'AbortError') context.report(error);
+      });
+    };
+    const loading = (label: string) => html`<div class="gsc-loading" role="status"><div class="gsc-loading-image" aria-hidden="true"></div><p class="gsc-loading-text">${label}</p></div>`;
+    const replyTo = (id: string) => () => {
+      if (!scope.signal.aborted) runtime.interactions.focus(runtime.beginReply(id));
+    };
       function content(c: Comment, reply: boolean) {
         const t = strings(runtime.appearance.lang);
         return html` ${
-          model.editors.has("edit:" + c.id)
+          runtime.drafts.get("edit:" + c.id)?.editor
             ? composer("edit:" + c.id)
             : html`<div
                 dir="auto"
@@ -130,9 +63,9 @@ export function createStandardPresentation(
                           <summary class="color-text-secondary">
                             ${t.hidden}${c.minimizedReason ? " · " + c.minimizedReason : ""}
                           </summary>
-                          ${body(c)}
+                          ${body(context, c)}
                         </details>`
-                      : body(c)
+                      : body(context, c)
                 }
               </div>`
         }`;
@@ -146,14 +79,14 @@ export function createStandardPresentation(
             </div>
             <div class="w-full min-w-0 ml-2">
               <div class="gsc-header-with-actions">
-                ${header(c, true)}${menu(c)}
+                ${(parts.header || header)(context, c)}${actions(context, target, c)}
               </div>
               ${content(c, true)}
               ${
                 !c.deletedAt && !c.isMinimized
                   ? html`<div class="gsc-reply-footer">
                       <div class="gsc-reply-reactions">${react(c, "top")}</div>
-                      ${c.isAnswer ? html`<span class="color-text-success">${icon("check")}${strings(runtime.appearance.lang).answered}</span>` : nothing}
+                      ${runtime.document.metadata.thread?.answerId === c.id ? html`<span class="color-text-success">${icon("check")}${strings(runtime.appearance.lang).answered}</span>` : nothing}
                     </div>`
                   : nothing
               }
@@ -161,19 +94,19 @@ export function createStandardPresentation(
           </div>
         </article>`;
       }
-      function comment(c: RootComment) {
-        const state = model.state,
+      function comment(c: Comment) {
+        const doc = runtime.document, window = doc.replies[c.id],
           t = strings(runtime.appearance.lang),
-          visible = state.visibleReplies.get(c.id) || 5,
-          replies = c.replies.items.slice(-visible),
-          hidden = Math.max(0, c.replies.count - replies.length),
-          replying = model.editors.has("reply:" + c.id);
+          replies = (window?.ids || []).map(id => doc.nodes[id]).filter((node): node is Comment => Boolean(node)),
+          count = window?.total ?? replies.length,
+          hidden = Math.max(0, count - replies.length),
+          replying = Boolean(runtime.drafts.get("reply:" + c.id)?.editor);
         return html`<article class="gsc-comment" id=${"comment-" + c.id}>
           <div
             class=${"color-bg-primary w-full min-w-0 rounded-md border " + (c.viewerDidAuthor ? "gsc-comment-author-is-viewer" : "")}
           >
             <div class="gsc-header-with-actions">
-              ${header(c, false)}${menu(c)}
+              ${(parts.header || header)(context, c)}${actions(context, target, c)}
             </div>
             ${content(c, false)}
             ${
@@ -181,13 +114,13 @@ export function createStandardPresentation(
                 ? html`<div class="gsc-comment-footer">
                     <div class="gsc-comment-reactions">${react(c, "top")}</div>
                     <div class="gsc-comment-replies-count color-text-secondary">
-                      ${message(runtime.appearance.lang, "replies", c.replies.count)}
+                      ${message(runtime.appearance.lang, "replies", count)}
                     </div>
                   </div>`
                 : nothing
             }
             ${
-              c.replies.count
+              count
                 ? html`<div class="gsc-replies color-bg-inset">
                     ${
                       hidden
@@ -202,10 +135,10 @@ export function createStandardPresentation(
                             <button
                               class="color-text-link underline"
                               type="button"
-                              ?disabled=${state.loadingReplies.has(c.id)}
-                              @click=${attempt(() => model.revealReplies(c.id))}
+                              ?disabled=${runtime.reading(c.id)}
+                              @click=${attempt(() => runtime.loadReplies(c.id))}
                             >
-                              ${state.loadingReplies.has(c.id) ? t.loadingReplies : message(runtime.appearance.lang, "showPreviousReplies", hidden)}
+                              ${runtime.reading(c.id) ? t.loadingReplies : message(runtime.appearance.lang, "showPreviousReplies", hidden)}
                             </button>
                           </div>`
                         : nothing
@@ -214,148 +147,74 @@ export function createStandardPresentation(
                   </div>`
                 : nothing
             }
-            ${replying ? composer("reply:" + c.id) : state.canCompose ? html`<div class="gsc-reply-box color-bg-tertiary"><button type="button" class="form-control color-text-secondary color-border-primary w-full cursor-text rounded border px-2 py-1 text-left focus:border-transparent" @click=${replyTo(c.id)}>${t.writeReply}</button></div>` : nothing}
+            ${replying ? composer("reply:" + c.id) : runtime.canCompose ? html`<div class="gsc-reply-box color-bg-tertiary"><button type="button" class="form-control color-text-secondary color-border-primary w-full cursor-text rounded border px-2 py-1 text-left focus:border-transparent" @click=${replyTo(c.id)}>${t.writeReply}</button></div>` : nothing}
           </div>
         </article>`;
       }
-      function sweep<T>(map: Map<string, Part<T>>, prefix: string) {
-        for (const [id, p] of map)
-          if (!used.has(prefix + id)) {
-            p.dispose();
-            map.delete(id);
-          }
-      }
-      function draw() {
-        if (disposed || drawing) return;
-        drawing = true;
-        try {
-          used = new Set();
-          const state = model.state,
-            t = strings(runtime.appearance.lang),
-            discussion = state.thread;
-          target.dataset.theme = runtime.appearance.theme;
-          target.dir = /^(ar|he|fa|ur)(-|$)/.test(runtime.appearance.lang)
-            ? "rtl"
-            : "ltr";
-          if (!state.ready && !state.error && !error && !runtime.authenticationError) {
-            render(html`<div class="gsc-loading" role="status">
-              <div class="gsc-loading-image" aria-hidden="true"></div>
-              <p class="gsc-loading-text">${t.loading}</p>
-            </div>`, root);
-            return;
-          }
-          const writable = state.canCompose;
-          const total =
-            Object.values(discussion?.reactions ?? {}).reduce((sum, g) => sum + g.count, 0) || 0;
-          const comments = html`<section class="gsc-comments">
-            <div class="gsc-header">
-              <div class="gsc-left-header">
-                <a
-                  class="gsc-comments-count link-primary"
-                  href=${discussion?.url || "https://github.com/" + runtime.page.repo + "/discussions"}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  >${message(runtime.appearance.lang, "comments", discussion?.commentCount || 0)}</a
-                >${
-                  state.comments.some((c) => c.replies.count)
-                    ? html`<span>·</span
-                        ><span
-                          >${message(
-                            runtime.appearance.lang,
-                            "replies",
-                            state.comments.reduce(
-                              (n, c) => n + c.replies.count,
-                              0,
-                            ),
-                            state.nextCursor ? "+" : "",
-                          )}</span
-                        >`
-                    : nothing
-                }<em class="text-sm color-text-secondary"
-                  >– powered by
-                  <a
-                    class="link-secondary"
-                    href="https://github.com/lumirth/giscusflare"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    >giscusflare</a
-                  ></em
-                >
-              </div>
-              <ul class="BtnGroup gsc-right-header" aria-label=${t.commentOrder}>
-                ${(["oldest", "newest"] as const).map((order) => html`<li class=${"BtnGroup-item " + (state.order === order ? "BtnGroup-item--selected" : "")}><button type="button" class="btn" aria-pressed=${String(state.order === order)} @click=${attempt(() => model.setOrder(order))}>${t[order]}</button></li>`)}
-                ${state.profiles.map(profile=>html`<li class=${"BtnGroup-item " + (typeof state.order==='object'&&state.order.profile===profile ? "BtnGroup-item--selected" : "")}><button type="button" class="btn" aria-pressed=${String(typeof state.order==='object'&&state.order.profile===profile)} @click=${attempt(()=>model.setOrder({profile}))}>${profile}</button></li>`)}
-              </ul>
-              ${discussion ? menu(discussion) : nothing}
+    function draw() {
+      if (disposed || drawing) return;
+      drawing = true;
+      try {
+        const { document: doc } = runtime, { metadata, roots } = doc,
+          lang = runtime.appearance.lang, t = strings(lang), discussion = metadata.thread,
+          comments = roots.ids.map(id => doc.nodes[id]).filter((node): node is Comment => Boolean(node)),
+          destination = discussion?.url || 'https://github.com/' + runtime.config.repo + '/discussions',
+          problem = error || runtime.error || runtime.session.error,
+          initial = !runtime.ready && !problem,
+          writable = runtime.canCompose,
+          total = Object.values(discussion?.reactions || {}).reduce((sum, group) => sum + group.count, 0),
+          replyCount = comments.reduce((sum, node) => sum + (doc.replies[node.id]?.total ?? doc.replies[node.id]?.ids.length ?? 0), 0);
+        if (root.lang !== lang) root.lang = lang;
+        if (root.getAttribute('aria-label') !== t.comments) root.setAttribute('aria-label', t.comments);
+        if (target.dataset.theme !== runtime.appearance.theme) target.dataset.theme = runtime.appearance.theme;
+        if (root.dataset.inputPosition !== runtime.appearance.inputPosition) root.dataset.inputPosition = runtime.appearance.inputPosition;
+        const direction = /^(ar|he|fa|ur)(-|$)/.test(lang) ? 'rtl' : 'ltr';
+        if (target.dir !== direction) target.dir = direction;
+        const selected = (profile: string) => typeof runtime.order === 'object' && runtime.order.profile === profile;
+        const commentsView = html`<section class="gsc-comments" ?hidden=${initial}>
+          <div class="gsc-header">
+            <div class="gsc-left-header">
+              <a class="gsc-comments-count link-primary" href=${destination} target="_blank" rel="noopener noreferrer">
+                ${message(lang, 'comments', roots.total ?? comments.length, roots.total === null ? '+' : '')}
+              </a>
+              ${replyCount ? html`<span>·</span><span>${message(lang, 'replies', replyCount, roots.cursor ? '+' : '')}</span>` : nothing}
+              <em class="text-sm color-text-secondary">– powered by
+                <a class="link-secondary" href="https://github.com/lumirth/giscusflare" target="_blank" rel="noopener noreferrer">giscusflare</a>
+              </em>
             </div>
-            ${state.sorting ? html`<div class="gsc-loading" role="status"><div class="gsc-loading-image" aria-hidden="true"></div><p class="gsc-loading-text">${t.loading}</p></div>` : nothing}
-            <div class="gsc-timeline">
-              ${repeat(state.comments, (c) => c.id, comment)}
-            </div>
-            ${state.nextCursor ? html`<div class="gsc-pagination"><button type="button" class="gsc-pagination-button" ?disabled=${state.loading} @click=${attempt(() => model.loadMore())}>${t.more}</button></div>` : nothing}
-          </section>`;
-          render(
-            html` ${
-              runtime.appearance.reactionsEnabled
-                ? html`<section class="gsc-reactions">
-                    <h4 class="gsc-reactions-count"><a class="link-primary" href=${discussion?.url || "https://github.com/" + runtime.page.repo + "/discussions"} target="_blank" rel="noopener noreferrer">${message(runtime.appearance.lang, "reactions", total)}</a></h4>
-                    <div class="gsc-discussion-reactions">
-                      ${react(discussion || null, "bottom")}
-                    </div>
-                  </section>`
-                : nothing
-            }
-            ${
-              error || state.error || runtime.authenticationError
-                ? html`<div class="flash flash-error" role="alert">
-                    ${error || state.error || runtime.authenticationError}<button
-                      class="ml-2 color-text-link"
-                      type="button"
-                      @click=${() => {
-                        error = "";
-                        void model.refresh();
-                      }}
-                    >
-                      ${t.retry}
-                    </button>
-                  </div>`
-                : nothing
-            }
-            ${!writable ? html`<p class="flash">${state.unavailable ? t.discussionUnavailable : state.archived ? t.archived : t.locked}</p>` : nothing}
-            ${runtime.appearance.inputPosition === "top" && writable ? composer("main") : nothing}
-            ${comments}
-            ${runtime.appearance.inputPosition === "bottom" && writable ? composer("main") : nothing}`,
-            root,
-          );
-          sweep(composers, "composer:");
-          sweep(headers, "header:");
-          sweep(reactions, "reaction:");
-          sweep(actions, "action:");
-          for (const id of bodies.keys())
-            if (!used.has("body:" + id)) bodies.delete(id);
-        } finally {
-          drawing = false;
-        }
-      }
-      const stop = model.subscribe(draw);
-      draw();
-      return {
-        update() {
-          draw();
-        },
-        dispose() {
-          disposed = true;
-          stop();
-          for (const map of [composers, headers, reactions, actions])
-            for (const p of map.values()) p.dispose();
-          root.remove();
-          if (!hadClass) target.classList.remove("giscusflare");
-          if (previousTheme === null) delete target.dataset.theme;
-          else target.setAttribute("data-theme", previousTheme);
-          if (previousDir === null) target.removeAttribute("dir");
-          else target.setAttribute("dir", previousDir);
-        },
-      };
-    },
+            <ul class="BtnGroup gsc-right-header" aria-label=${t.commentOrder}>
+              ${(['oldest', 'newest'] as const).map(order => html`<li class=${'BtnGroup-item ' + (runtime.order === order ? 'BtnGroup-item--selected' : '')}>
+                <button type="button" class="btn" aria-pressed=${String(runtime.order === order)} @click=${attempt(() => runtime.setOrder(order))}>${t[order]}</button>
+              </li>`)}
+              ${metadata.profiles.map(profile => html`<li class=${'BtnGroup-item ' + (selected(profile) ? 'BtnGroup-item--selected' : '')}>
+                <button type="button" class="btn" aria-pressed=${String(selected(profile))} @click=${attempt(() => runtime.setOrder({ profile }))}>${profile}</button>
+              </li>`)}
+            </ul>
+            ${discussion ? actions(context, target, discussion) : nothing}
+          </div>
+          ${runtime.ready && runtime.reading() ? loading(t.loading) : nothing}
+          <div class="gsc-timeline">${repeat(comments, node => node.id, comment)}</div>
+          ${roots.cursor ? html`<div class="gsc-pagination"><button type="button" class="gsc-pagination-button"
+            ?disabled=${runtime.reading()} @click=${attempt(() => runtime.refresh(true))}>${t.more}</button></div>` : nothing}
+        </section>`;
+        render(html`
+          ${initial ? loading(t.loading) : nothing}
+          ${runtime.appearance.reactionsEnabled && !initial ? html`<section class="gsc-reactions">
+            <h4 class="gsc-reactions-count"><a class="link-primary" href=${destination} target="_blank" rel="noopener noreferrer">${message(lang, 'reactions', total)}</a></h4>
+            <div class="gsc-discussion-reactions">${react(discussion || null, 'bottom')}</div>
+          </section>` : nothing}
+          ${problem ? html`<div class="flash flash-error" role="alert">${problem}<button class="ml-2 color-text-link" type="button"
+            @click=${() => { error = '';void runtime.refresh(); }}>${t.retry}</button></div>` : nothing}
+          ${runtime.ready && !writable ? html`<p class="flash">${metadata.unavailable ? t.discussionUnavailable : metadata.archived ? t.archived : t.locked}</p>` : nothing}
+          ${commentsView}
+          <div class="gsc-main-composer" ?hidden=${!writable}>${composer('main')}</div>`, root);
+      } finally { drawing = false; }
+    }
+    let renderedDocument = runtime.document;
+    stop = runtime.subscribe(page => {
+      if (page.document === renderedDocument) return;
+      renderedDocument = page.document; draw();
+    });
+    draw();
   };
 }

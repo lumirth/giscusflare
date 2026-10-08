@@ -239,3 +239,17 @@ summary.gsc-reactions-button:focus-visible {
   .gsc-left-header { flex-basis: 100%; }
   .gsc-right-header { margin-inline-start: auto; }
 }
+
+/* Stable editor placement changes visual order without moving its textarea. */
+.gsc-main-composer { order: 2; }
+.gsc-main[data-input-position="top"] > .gsc-main-composer { order: 0; }
+.gsc-comments { order: 1; }
+.giscusflare [hidden] { display: none !important; }
+
+/* The picker label is a visual derivation of the active native control. */
+.gsc-reactions-popover:has(.gsc-emoji-button:not(:disabled):is(:hover, :focus)) > p { visibility: hidden; }
+.gsc-emoji-button:not(:disabled):is(:hover, :focus)::after {
+  content: attr(aria-label); position: absolute; inset-inline: 8px; top: 8px;
+  text-align: start; font-size: 14px; line-height: 20px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; pointer-events: none;
+}

@@ -1,5 +1,5 @@
-import { readResponse } from './read-response.js';
-import type { SerializedRead } from '../contracts/rpc.js';
+import type { ReadValue } from '../contracts/results.js';
+import { json } from './html.js';
 import type { Context } from 'hono';
 import type { AppEnv } from './types.js';
 import { configuration } from '../contracts/config.js';
@@ -14,17 +14,24 @@ function policyKey(config:object):Promise<string>{
 
 /** Authorization from current deployment settings always precedes edge reuse.
  * Remote GitHub changes become visible when the original response expires. */
-export async function publicRead(c:Context<AppEnv>, input:{repo:string;origin:string}|{config:Selection},read:()=>Promise<SerializedRead>):Promise<Response>{
+export async function publicRead(c:Context<AppEnv>, input:{repo:string;origin:string}|{config:Selection},read:()=>Promise<ReadValue<unknown>>,render:(value:unknown,expires:number)=>Response=value=>json(value)):Promise<Response>{
   const config=configuration(c.env);
   if('config' in input)authorizeWidget(config,input.config);
   else parentOrigin(policy(config,input.repo),input.origin);
-  if(c.get('session'))return readResponse(await read());
+  const respond = async () => {
+    const {value,expires} = await read(), response = render(value,expires);
+    const remaining = Math.max(0, Math.floor((expires - Date.now()) / 1000));
+    response.headers.set('Cache-Control', remaining ? 'public, max-age=' + remaining : 'no-store');
+    response.headers.set('X-Giscusflare-Expires', String(expires));
+    return response;
+  };
+  if(c.get('session'))return respond();
   const cache=typeof caches==='undefined'?null:caches.default;
-  if(!cache)return readResponse(await read());
+  if(!cache)return respond();
   const url=new URL(c.req.url);
   // Changed deployment policy cannot reuse entries admitted by an old policy.
   if(url.pathname.startsWith('/api/')){
-    const payload=JSON.parse(url.searchParams.get('input')||'{}');
+    const payload=structuredClone(input) as {config?:Selection;origin?:string;terms?:string[]};
     if(payload.config)payload.config.origin=new URL(payload.config.origin).origin;
     else if(payload.origin)payload.origin=new URL(payload.origin).origin;
     if(payload.terms)payload.terms=[...new Set(payload.terms)].sort();
@@ -33,8 +40,8 @@ export async function publicRead(c:Context<AppEnv>, input:{repo:string;origin:st
   url.searchParams.set('policy',await policyKey(config));
   const key=new Request(url,{method:'GET'});
   const found=await cache.match(key);
-  if(found&&Number(found.headers.get('X-Giscusflare-Expires'))>Date.now())return found;
-  const response=readResponse(await read());
+  if(found&&Number(found.headers.get('X-Giscusflare-Expires'))>Date.now())return new Response(found.body,found);
+  const response=await respond();
   if(response.ok&&Number(response.headers.get('X-Giscusflare-Expires'))>Date.now()&&response.headers.get('Cache-Control')?.startsWith('public,')){
     c.executionCtx.waitUntil(cache.put(key,response.clone()).catch(()=>undefined));
   }

@@ -43,13 +43,13 @@ Strict matching searches for the identifier's hash in the discussion body. Numbe
 
 ## Native rendering
 
-Install the versioned GitHub release archive in your website project:
+Install the released browser package in your website project:
 
 ```sh
-npm install https://github.com/lumirth/giscusflare/releases/download/v2.0.0/giscusflare-2.0.0.tgz
+npm install https://github.com/lumirth/giscusflare/releases/download/v3.0.0/giscusflare-3.0.0.tgz
 ```
 
-With npm 12, add `--allow-remote=root` to this command to allow the release URL. See [npm's URL dependency setting](https://docs.npmjs.com/cli/install/#allow-remote).
+[GitHub releases](https://github.com/lumirth/giscusflare/releases) contain the package archives. Use the same release for the service and your website.
 
 Add a container where comments should appear:
 
@@ -74,7 +74,7 @@ const comments = mountComments(document.querySelector('#comments'), {
 });
 ```
 
-Use a different `term` for each post. Call `comments.dispose()` when removing the component. For client-side navigation, call `comments.replacePage(nextPage)` with the next page's identity. To change themes, call `comments.updateAppearance({ theme: 'dark' })`.
+Use `comments.conversation` for state and contribution commands. Use a different `term` for each post. Call `comments.dispose()` when removing the component. For client-side navigation, call `comments.replacePage(nextPage)` with the next page's identity. To change themes, call `comments.conversation.updateAppearance({ theme: 'dark' })`.
 
 Style the container in your page to set its width and outer spacing. See [customization](EXTENDING.md) to replace components or build a different interface, and the [API reference](API.md) for options and methods.
 

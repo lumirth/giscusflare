@@ -7,10 +7,9 @@ export { createStandardPresentation };
 export type {
   StandardParts,
   StandardContext,
-  Part,
-  ComposerFactory,
-  ReactionFactory,
-  HeaderFactory,
+  ComposerSlot,
+  ReactionSlot,
+  HeaderSlot,
 } from "./standard/contracts.js";
 export function mountComments(
   target: HTMLElement,

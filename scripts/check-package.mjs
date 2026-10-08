@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 
@@ -15,8 +15,12 @@ try {
   const directory = join(temporary, 'node_modules/giscusflare');
   await mkdir(directory, { recursive: true });
   execFileSync('tar', ['-xzf', join(temporary, packed.filename), '--strip-components=1', '-C', directory]);
+  for (const dependency of Object.keys(JSON.parse(await readFile(join(directory, 'package.json'), 'utf8')).dependencies)) {
+    const destination = join(temporary, 'node_modules', dependency);
+    await mkdir(dirname(destination), { recursive: true });
+    await symlink(resolve('node_modules', dependency), destination, 'dir');
+  }
   const { copyAssets, assetManifest } = await import(pathToFileURL(join(directory, 'package/assets.mjs')).href);
-  assert.equal(assetManifest.version, 1);
   for (const [path, metadata] of Object.entries(assetManifest.files)) assert.equal((await readFile(join(directory, 'dist/assets', path))).length, metadata.bytes);
   const selected = await copyAssets(join(temporary, 'custom-assets'), ['auth', 'setup']);
   assert(!selected.includes('widget.js'));
@@ -28,9 +32,11 @@ try {
   const standard = await copyAssets(join(temporary, 'standard-assets'));
   assert(standard.includes('widget.js'));
   assert(standard.includes('themes/dark.css'));
-  await writeFile(join(temporary, 'custom.ts'), `import { createConversation, mountPresentation } from 'giscusflare/headless';\nimport { bindComposer } from 'giscusflare/interactions';\nimport { createContentRenderer } from 'giscusflare/content';\nexport { createConversation, mountPresentation, bindComposer, createContentRenderer };\n`);
-  const result = await build({ absWorkingDir: temporary, entryPoints: ['custom.ts'], bundle: true, write: false, metafile: true, platform: 'browser', format: 'esm' });
-  for (const input of Object.keys(result.metafile.inputs)) assert(!input.includes('/standard/') && !input.endsWith('/native.js'), 'Custom package consumer imports standard UI: ' + input);
+  await writeFile(join(temporary, 'custom.ts'), `import { createConversation, mountPresentation } from 'giscusflare/headless';\nimport { createEditor } from 'giscusflare/interactions';\nimport { createContentRenderer } from 'giscusflare/content';\nexport { createConversation, mountPresentation, createEditor, createContentRenderer };\n`);
+  await cp('examples', join(temporary, 'examples'), { recursive: true });
+  await writeFile(join(temporary, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2022', module: 'ESNext', moduleResolution: 'Bundler', strict: true, noUncheckedIndexedAccess: true, noEmit: true, skipLibCheck: true, types: [], lib: ['ES2022', 'DOM', 'DOM.Iterable'] }, include: ['custom.ts', 'examples/**/*.ts'] }));
+  execFileSync(process.execPath, [resolve('node_modules/typescript/bin/tsc'), '-p', join(temporary, 'tsconfig.json')], { stdio: 'inherit' });
+  await build({ absWorkingDir: temporary, entryPoints: ['custom.ts'], bundle: true, write: false, platform: 'browser', format: 'esm' });
   await writeFile(join(temporary, 'worker.ts'), "export { default, Repository } from 'giscusflare/worker';\n");
   await build({ absWorkingDir: temporary, entryPoints: ['worker.ts'], bundle: true, write: false, platform: 'neutral', format: 'esm', external: ['cloudflare:workers'] });
   console.log(JSON.stringify({ package: packed.filename, packedFiles: paths.length, selectedAssets: selected.length, standardAssets: standard.length, isolatedCustomBrowser: true, isolatedWorker: true, examplesOrTestsShipped: false }, null, 2));

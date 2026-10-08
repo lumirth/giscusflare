@@ -1,29 +1,10 @@
-import postcss from "postcss";
-import tailwind from "tailwindcss";
-import rtl from "tailwindcss-vanilla-rtl";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from 'node:fs/promises';
+/** The pinned visual foundation is independent of runtime markup scanning. */
 export async function buildStyles() {
-  const upstream = await Promise.all(
-    ["base", "globals"].map((name) =>
-      readFile(`vendor/giscus/reference/styles/${name}.css`, "utf8"),
-    ),
-  );
-  const source =
-    "@tailwind base;\n@tailwind components;\n" +
-    upstream.join("\n") +
-    "\n@tailwind utilities;\n" +
-    (await readFile("src/browser/standard/styles.css", "utf8"));
-  const result = await postcss([
-    tailwind({
-      content: [
-        "src/browser/standard/**/*.ts",
-        "src/browser/markdown.ts",
-        "vendor/giscus/reference/components/*.tsx",
-      ],
-      plugins: [rtl],
-      corePlugins: { ...rtl.disabledCorePlugins },
-    }),
-  ]).process(source, { from: "src/browser/standard/styles.css" });
-  const sheet = postcss.parse(result.css);
-  await writeFile("public/widget.css", sheet.toString());
+  const sheets = await Promise.all([
+    'vendor/giscus/reference/styles/compiled.css',
+    'src/browser/standard/styles.css',
+  ].map(path => readFile(path, 'utf8')));
+  await writeFile('public/widget.css', sheets.join('\n'));
+  await writeFile('public/iframe.css', 'body { margin: 0; background: transparent; }\n');
 }

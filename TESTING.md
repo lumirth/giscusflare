@@ -1,45 +1,51 @@
-# Testing
+# Verification
 
-Use Node 22.16 or newer and install the locked dependencies with `npm ci`.
+Use Node 22.16 or newer and `npm ci`. Run the complete release gate before proposing a release; use focused checks while implementing a change.
 
-## Automated checks
-
-| Command | What it checks |
+| Command | Evidence |
 | --- | --- |
-| `npm test` | TypeScript, package builds, Node tests, domain behavior, and browser events in JSDOM. |
-| `npm run test:runtime` | The service in local workerd with SQLite Durable Objects and simulated GitHub. |
-| `npm run check:release` | Both suites and required package files. |
-| `npm run deploy:check` | Release checks, public configuration validation, and a Wrangler dry run. |
+| `npm test` | TypeScript, public examples, builds and native/browser workflows |
+| `npm run test:runtime` | Actual Worker/DO RPC, SQLite persistence, encrypted sessions, website policy and interrupted remote writes in local workerd |
+| `npm run test:ranking` | Actual service SQL costs, refresh cadence, observations and resource-budget boundaries |
+| `npm run test:browser` | Chromium/WebKit native/iframe editing, sign-in, contributions, rich content and custom views |
+| `npm run test:package` | Extracted archive, independent browser/Worker consumers and public assets |
+| `npm run check:release` | Complete local release gate |
+| `npm run deploy:check` | Release gate, public configuration and Wrangler dry run |
 
-The workerd suite covers repository RPC, SQLite persistence, encrypted sessions across restart, authentication handoff, and native rate limits. Use the browser acceptance checks for real App permissions and the [usage guide](FREE-TIER.md#check-your-usage) for deployed resource measurements.
+The shared provider fixture validates actual GraphQL documents and variables against the recorded official GitHub schema. This establishes the recorded schema shape; real App permissions remain a deployed check.
 
-Use JSDOM for DOM identity, events and state changes. Use a browser for layout, native undo and OAuth navigation.
+Native and browser workflows use the actual production Worker and SQLite Durable Object in local workerd. The shared fixture keeps remote GitHub effects outside workerd so they survive its restart. An uncertain mutation must not become a second contribution after retry. Chromium and WebKit load the built browser modules and use real DOM parsing, AbortSignal, storage, dialogs, editing and layout. GitHub is explicitly simulated; these checks do not establish actual GitHub permissions or production Cloudflare costs.
 
-## Local demo
+## Local use
 
-Run `npm run demo`. Open the printed iframe and native page URLs. The default iframe page is `http://127.0.0.1:8788/article`; the native page is `/native`. Comments and GitHub sign-in are simulated.
+`npm run demo` prints iframe and native URLs. Comments and sign-in are simulated. `test:browser` starts and stops its own fixture and records the source/runtime conditions in `docs/evidence/browser-acceptance.json`.
 
-## Browser acceptance
+The browser portfolio exercises native and iframe embedding, future-capability sign-in, actual typing and undo/redo, preview, refresh, appearance and contributions. Cohesive custom-view workflows cover rich-content sanitization and failed enhancements, acquired-resource retirement, forum switching and editing, and local setup/configuration. Use the current receipt for executed scenarios and engines; a fixed case count is not an acceptance target.
 
-Use a disposable discussion and a deployed App for these checks. Record the source version, browser, embedding mode, and observed result.
+CI runs the complete gate on [macOS 26](https://docs.github.com/en/actions/reference/runners/github-hosted-runners) to exercise WebKit's native controls on the Apple port. The Linux Playwright GTK build used during qualification did not enter resize mode through the mouse driver even for isolated plain textareas with fixed or content sizing. That observation does not establish behavior in a deployed GTK browser. The gate retains actual resize, subsequent typing and native undo assertions on macOS; it has no programmatic resize substitute or engine-specific skip.
 
-- Load an existing conversation while signed out. Check comments, replies, themes, and narrow layouts.
-- Sign in through full-page navigation and a popup. Check cancellation, blocked popups, sign-out, and return to the original page.
-- Type a sentence, use Preview, return to Write, and undo and redo. Check selection and focus after refreshes and reactions.
-- Post a comment and reply. Check their author and contents on GitHub. Exercise edits, deletion, pagination, and uncertain-write recovery.
-- Toggle all eight emoji reactions. Check rapid toggles and permission failures against the final GitHub state.
-- Try an unrelated reader and a moderator. Confirm that controls and server responses match their permissions.
-- Embed from an unlisted origin. Check iframe rejection and native request rejection.
-- Test representative Markdown, code, math, images, long identifiers, and rendering failures in preview and posted comments.
+Browser fixtures navigate an actual local HTTP document served by the native service and load the same built assets as consumers. The resource command measures native SQLite counters across the complete repository service. Its controlled clock delivers due alarms; its receipt distinguishes actual SQL use, admitted HTTP allowance, and upstream requests from unmeasured ingress CPU, object billing and production latency.
 
-Include Safari, Firefox, and physical iOS.
+For manual editor checks, compare real typing, undo and redo with a plain textarea. Repeat after Preview/Write, theme changes, refresh and an asynchronous contribution completion. Verify the intended text, selection and focus; DOM identity alone is supporting evidence.
 
-## Undo regression
+## Visual reference
 
-Type a phrase with real keyboard input in a plain textarea and the comment composer. Undo should remove the typing group in both. Repeat after Preview and then redo.
+The 3.0 demo/default presentation must retain the pre-PR appearance. [Visual qualification](docs/evidence/visual-parity.json) records a one-time comparison against `b39375bbba0b8249c3bc661c63150b5917b31d80`, built and run outside the repository. Both actual versions render equal fixture content in Chromium and WebKit, native and iframe modes, at 390px and 900px widths. Reading and editing states are captured before mutating journeys, so edge-cache freshness cannot make their input data unequal. Contribution/edit/delete-dialog states follow real local sign-in and writes.
 
-Keep the textarea and nearby decoration nodes mounted while typing. Replacing them can split WebKit's undo groups into individual characters. The DOM regression checks node stability; repeat the keyboard check in a browser.
+The comparison uses complete RGBA pixels and equal image dimensions, without masking or tolerance. Both versions receive the same deterministic avatar, display date, focus/hover state and settled fonts. These controlled inputs establish the recorded visual states; they do not turn historical DOM structure or ownership into a contract. The reference runner is a qualification artifact, not a second maintained runtime or a source-shape regression suite.
+
+## Independent behavior
+
+Tautological tests and change detectors are harmful. Unit tests are presumed unnecessary in most cases. These rules apply to existing tests as well as new ones. Retained workflows must independently establish valuable user behavior or a real boundary; neither an old expectation nor a historic bug earns a test by itself. Avoid assertions about source spelling, prose, chosen maps/tables, dependency identity or a copy of the implementation’s calculation. A bug fix needs a new test only when existing behavior coverage has a genuine gap.
+
+Use controlled interleavings for asynchronous behavior: retirement during a read, identity change during authentication, a correction during ranking acquisition, and a response lost after a remote effect commits. Compare with independent remote state or physical storage counters rather than internal bookkeeping.
+
+## Deployed acceptance
+
+Use a disposable discussion and a real GitHub App. Record version, browser, embedding mode and results. Check allowed and rejected origins; existing mappings and first contribution; sign-in by popup and full-page return; comments, replies, edits, deletion, reactions and moderation against GitHub readback; pagination and ranked traversal; Markdown, code, math and failed enhancements; and narrow layouts and native editor behavior.
+
+Include Safari, Firefox and physical iOS where available. Local Chromium/WebKit results do not establish those environments. Exercise fresh-account setup and the generated App callback/configuration separately from an existing deployment.
 
 ## Release evidence
 
-Record completed checks in [verification results](docs/CONFIDENCE.md), including the version and test conditions. Link screenshots and theme comparisons from [presentation](docs/PRESENTATION.md). Summarize the changes for users in [release history](docs/STATUS.md).
+Record completed checks and their conditions in [verification results](docs/CONFIDENCE.md). Measure deployed CPU, duration and SQL usage using the [usage guide](FREE-TIER.md#check-your-deployment). Verify the extracted package in an independent website, then check the deployed assets and actual contribution flow after any authorized deployment. Preserve deployment bindings, platform migration history and secrets across updates.

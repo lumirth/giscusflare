@@ -8,12 +8,12 @@ export {
   mountPresentation,
   type Presentation,
   type MountedConversation,
+  type ResourceScope,
 } from "./presentation.js";
 export {
-  type ConversationState,
   type CommentOrder,
   type Transport,
-} from "../conversation/controller.js";
+} from "../conversation/page.js";
 export { ApiError } from "./session.js";
 export {
   createContentRenderer,
@@ -23,14 +23,13 @@ export {
 } from "./content.js";
 export {conversationSettings} from "./options.js";
 export type {Page,Appearance} from "./options.js";
-export type { Comment, RootComment, Discussion } from "../conversation/model.js";
+export type { Comment, Discussion, PageDocument, Window, Reactions, Reaction } from "../contracts/document.js";
 
 export {
-  bindComposer,
+  createEditor,
   bindDismissableMenu,
   InteractionRegistry,
-  type ComposerBinding,
-  type ComposerState,
+  type Editor,
 } from "./interactions.js";
 export {
   browserDraftStore,
@@ -42,4 +41,4 @@ export {
   defaultFetchPolicy,
   type FetchPolicy,
 } from "../conversation/fetch-policy.js";
-export type { Reaction, OperationState } from "../conversation/controller.js";
+export type { Draft, Failure } from "../conversation/page.js";

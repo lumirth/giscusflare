@@ -1,4 +1,4 @@
-import { mountPresentation, type Widget } from "giscusflare/headless";
+import { mountPresentation, type Page } from "giscusflare/headless";
 import { forumPresentation } from "./forum.js";
 const params = new URLSearchParams(location.search),
   repo = params.get("repo"),
@@ -8,9 +8,6 @@ if (repo && number) {
     repo,
     number,
     term: "",
-    repoId: "",
-    category: params.get("category") || "Announcements",
-    categoryId: "",
     strict: false,
     origin: location.href,
     backLink: "",

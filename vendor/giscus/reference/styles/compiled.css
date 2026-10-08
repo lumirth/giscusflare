@@ -1,0 +1,2392 @@
+/*! Generated visual reference: pinned Giscus base/globals and Tailwind 3.4.17 + vanilla-rtl 0.4.0; utility usage from Giscusflare b39375bbba0b8249c3bc661c63150b5917b31d80. Project overrides are maintained separately in src/browser/standard/styles.css. See docs/PROVENANCE.md and THIRD-PARTY-NOTICES.md. */
+*, ::before, ::after {
+  --tw-border-spacing-x: 0;
+  --tw-border-spacing-y: 0;
+  --tw-translate-x: 0;
+  --tw-translate-y: 0;
+  --tw-rotate: 0;
+  --tw-skew-x: 0;
+  --tw-skew-y: 0;
+  --tw-scale-x: 1;
+  --tw-scale-y: 1;
+  --tw-pan-x:  ;
+  --tw-pan-y:  ;
+  --tw-pinch-zoom:  ;
+  --tw-scroll-snap-strictness: proximity;
+  --tw-gradient-from-position:  ;
+  --tw-gradient-via-position:  ;
+  --tw-gradient-to-position:  ;
+  --tw-ordinal:  ;
+  --tw-slashed-zero:  ;
+  --tw-numeric-figure:  ;
+  --tw-numeric-spacing:  ;
+  --tw-numeric-fraction:  ;
+  --tw-ring-inset:  ;
+  --tw-ring-offset-width: 0px;
+  --tw-ring-offset-color: #fff;
+  --tw-ring-color: rgb(59 130 246 / 0.5);
+  --tw-ring-offset-shadow: 0 0 #0000;
+  --tw-ring-shadow: 0 0 #0000;
+  --tw-shadow: 0 0 #0000;
+  --tw-shadow-colored: 0 0 #0000;
+  --tw-blur:  ;
+  --tw-brightness:  ;
+  --tw-contrast:  ;
+  --tw-grayscale:  ;
+  --tw-hue-rotate:  ;
+  --tw-invert:  ;
+  --tw-saturate:  ;
+  --tw-sepia:  ;
+  --tw-drop-shadow:  ;
+  --tw-backdrop-blur:  ;
+  --tw-backdrop-brightness:  ;
+  --tw-backdrop-contrast:  ;
+  --tw-backdrop-grayscale:  ;
+  --tw-backdrop-hue-rotate:  ;
+  --tw-backdrop-invert:  ;
+  --tw-backdrop-opacity:  ;
+  --tw-backdrop-saturate:  ;
+  --tw-backdrop-sepia:  ;
+  --tw-contain-size:  ;
+  --tw-contain-layout:  ;
+  --tw-contain-paint:  ;
+  --tw-contain-style:  ;
+}
+
+::backdrop {
+  --tw-border-spacing-x: 0;
+  --tw-border-spacing-y: 0;
+  --tw-translate-x: 0;
+  --tw-translate-y: 0;
+  --tw-rotate: 0;
+  --tw-skew-x: 0;
+  --tw-skew-y: 0;
+  --tw-scale-x: 1;
+  --tw-scale-y: 1;
+  --tw-pan-x:  ;
+  --tw-pan-y:  ;
+  --tw-pinch-zoom:  ;
+  --tw-scroll-snap-strictness: proximity;
+  --tw-gradient-from-position:  ;
+  --tw-gradient-via-position:  ;
+  --tw-gradient-to-position:  ;
+  --tw-ordinal:  ;
+  --tw-slashed-zero:  ;
+  --tw-numeric-figure:  ;
+  --tw-numeric-spacing:  ;
+  --tw-numeric-fraction:  ;
+  --tw-ring-inset:  ;
+  --tw-ring-offset-width: 0px;
+  --tw-ring-offset-color: #fff;
+  --tw-ring-color: rgb(59 130 246 / 0.5);
+  --tw-ring-offset-shadow: 0 0 #0000;
+  --tw-ring-shadow: 0 0 #0000;
+  --tw-shadow: 0 0 #0000;
+  --tw-shadow-colored: 0 0 #0000;
+  --tw-blur:  ;
+  --tw-brightness:  ;
+  --tw-contrast:  ;
+  --tw-grayscale:  ;
+  --tw-hue-rotate:  ;
+  --tw-invert:  ;
+  --tw-saturate:  ;
+  --tw-sepia:  ;
+  --tw-drop-shadow:  ;
+  --tw-backdrop-blur:  ;
+  --tw-backdrop-brightness:  ;
+  --tw-backdrop-contrast:  ;
+  --tw-backdrop-grayscale:  ;
+  --tw-backdrop-hue-rotate:  ;
+  --tw-backdrop-invert:  ;
+  --tw-backdrop-opacity:  ;
+  --tw-backdrop-saturate:  ;
+  --tw-backdrop-sepia:  ;
+  --tw-contain-size:  ;
+  --tw-contain-layout:  ;
+  --tw-contain-paint:  ;
+  --tw-contain-style:  ;
+}/*
+! tailwindcss v3.4.17 | MIT License | https://tailwindcss.com
+*//*
+1. Prevent padding and border from affecting element width. (https://github.com/mozdevs/cssremedy/issues/4)
+2. Allow adding a border to an element by just adding a border-width. (https://github.com/tailwindcss/tailwindcss/pull/116)
+*/
+
+*,
+::before,
+::after {
+  box-sizing: border-box; /* 1 */
+  border-width: 0; /* 2 */
+  border-style: solid; /* 2 */
+  border-color: #e5e7eb; /* 2 */
+}
+
+::before,
+::after {
+  --tw-content: '';
+}
+
+/*
+1. Use a consistent sensible line-height in all browsers.
+2. Prevent adjustments of font size after orientation changes in iOS.
+3. Use a more readable tab size.
+4. Use the user's configured `sans` font-family by default.
+5. Use the user's configured `sans` font-feature-settings by default.
+6. Use the user's configured `sans` font-variation-settings by default.
+7. Disable tap highlights on iOS
+*/
+
+html,
+:host {
+  line-height: 1.5; /* 1 */
+  -webkit-text-size-adjust: 100%; /* 2 */
+  -moz-tab-size: 4; /* 3 */
+  tab-size: 4; /* 3 */
+  font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"; /* 4 */
+  font-feature-settings: normal; /* 5 */
+  font-variation-settings: normal; /* 6 */
+  -webkit-tap-highlight-color: transparent; /* 7 */
+}
+
+/*
+1. Remove the margin in all browsers.
+2. Inherit line-height from `html` so users can set them as a class directly on the `html` element.
+*/
+
+body {
+  margin: 0; /* 1 */
+  line-height: inherit; /* 2 */
+}
+
+/*
+1. Add the correct height in Firefox.
+2. Correct the inheritance of border color in Firefox. (https://bugzilla.mozilla.org/show_bug.cgi?id=190655)
+3. Ensure horizontal rules are visible by default.
+*/
+
+hr {
+  height: 0; /* 1 */
+  color: inherit; /* 2 */
+  border-top-width: 1px; /* 3 */
+}
+
+/*
+Add the correct text decoration in Chrome, Edge, and Safari.
+*/
+
+abbr:where([title]) {
+  text-decoration: underline dotted;
+}
+
+/*
+Remove the default font size and weight for headings.
+*/
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+/*
+Reset links to optimize for opt-in styling instead of opt-out.
+*/
+
+a {
+  color: inherit;
+  text-decoration: inherit;
+}
+
+/*
+Add the correct font weight in Edge and Safari.
+*/
+
+b,
+strong {
+  font-weight: bolder;
+}
+
+/*
+1. Use the user's configured `mono` font-family by default.
+2. Use the user's configured `mono` font-feature-settings by default.
+3. Use the user's configured `mono` font-variation-settings by default.
+4. Correct the odd `em` font sizing in all browsers.
+*/
+
+code,
+kbd,
+samp,
+pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; /* 1 */
+  font-feature-settings: normal; /* 2 */
+  font-variation-settings: normal; /* 3 */
+  font-size: 1em; /* 4 */
+}
+
+/*
+Add the correct font size in all browsers.
+*/
+
+small {
+  font-size: 80%;
+}
+
+/*
+Prevent `sub` and `sup` elements from affecting the line height in all browsers.
+*/
+
+sub,
+sup {
+  font-size: 75%;
+  line-height: 0;
+  position: relative;
+  vertical-align: baseline;
+}
+
+sub {
+  bottom: -0.25em;
+}
+
+sup {
+  top: -0.5em;
+}
+
+/*
+1. Remove text indentation from table contents in Chrome and Safari. (https://bugs.chromium.org/p/chromium/issues/detail?id=999088, https://bugs.webkit.org/show_bug.cgi?id=201297)
+2. Correct table border color inheritance in all Chrome and Safari. (https://bugs.chromium.org/p/chromium/issues/detail?id=935729, https://bugs.webkit.org/show_bug.cgi?id=195016)
+3. Remove gaps between table borders by default.
+*/
+
+table {
+  text-indent: 0; /* 1 */
+  border-color: inherit; /* 2 */
+  border-collapse: collapse; /* 3 */
+}
+
+/*
+1. Change the font styles in all browsers.
+2. Remove the margin in Firefox and Safari.
+3. Remove default padding in all browsers.
+*/
+
+button,
+input,
+optgroup,
+select,
+textarea {
+  font-family: inherit; /* 1 */
+  font-feature-settings: inherit; /* 1 */
+  font-variation-settings: inherit; /* 1 */
+  font-size: 100%; /* 1 */
+  font-weight: inherit; /* 1 */
+  line-height: inherit; /* 1 */
+  letter-spacing: inherit; /* 1 */
+  color: inherit; /* 1 */
+  margin: 0; /* 2 */
+  padding: 0; /* 3 */
+}
+
+/*
+Remove the inheritance of text transform in Edge and Firefox.
+*/
+
+button,
+select {
+  text-transform: none;
+}
+
+/*
+1. Correct the inability to style clickable types in iOS and Safari.
+2. Remove default button styles.
+*/
+
+button,
+input:where([type='button']),
+input:where([type='reset']),
+input:where([type='submit']) {
+  -webkit-appearance: button; /* 1 */
+  background-color: transparent; /* 2 */
+  background-image: none; /* 2 */
+}
+
+/*
+Use the modern Firefox focus style for all focusable elements.
+*/
+
+:-moz-focusring {
+  outline: auto;
+}
+
+/*
+Remove the additional `:invalid` styles in Firefox. (https://github.com/mozilla/gecko-dev/blob/2f9eacd9d3d995c937b4251a5557d95d494c9be1/layout/style/res/forms.css#L728-L737)
+*/
+
+:-moz-ui-invalid {
+  box-shadow: none;
+}
+
+/*
+Add the correct vertical alignment in Chrome and Firefox.
+*/
+
+progress {
+  vertical-align: baseline;
+}
+
+/*
+Correct the cursor style of increment and decrement buttons in Safari.
+*/
+
+::-webkit-inner-spin-button,
+::-webkit-outer-spin-button {
+  height: auto;
+}
+
+/*
+1. Correct the odd appearance in Chrome and Safari.
+2. Correct the outline style in Safari.
+*/
+
+[type='search'] {
+  -webkit-appearance: textfield; /* 1 */
+  outline-offset: -2px; /* 2 */
+}
+
+/*
+Remove the inner padding in Chrome and Safari on macOS.
+*/
+
+::-webkit-search-decoration {
+  -webkit-appearance: none;
+}
+
+/*
+1. Correct the inability to style clickable types in iOS and Safari.
+2. Change font properties to `inherit` in Safari.
+*/
+
+::-webkit-file-upload-button {
+  -webkit-appearance: button; /* 1 */
+  font: inherit; /* 2 */
+}
+
+/*
+Add the correct display in Chrome and Safari.
+*/
+
+summary {
+  display: list-item;
+}
+
+/*
+Removes the default spacing and border for appropriate elements.
+*/
+
+blockquote,
+dl,
+dd,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+hr,
+figure,
+p,
+pre {
+  margin: 0;
+}
+
+fieldset {
+  margin: 0;
+  padding: 0;
+}
+
+legend {
+  padding: 0;
+}
+
+ol,
+ul,
+menu {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/*
+Reset default styling for dialogs.
+*/
+dialog {
+  padding: 0;
+}
+
+/*
+Prevent resizing textareas horizontally by default.
+*/
+
+textarea {
+  resize: vertical;
+}
+
+/*
+1. Reset the default placeholder opacity in Firefox. (https://github.com/tailwindlabs/tailwindcss/issues/3300)
+2. Set the default placeholder color to the user's configured gray 400 color.
+*/
+
+input::placeholder,
+textarea::placeholder {
+  opacity: 1; /* 1 */
+  color: #9ca3af; /* 2 */
+}
+
+/*
+Set the default cursor for buttons.
+*/
+
+button,
+[role="button"] {
+  cursor: pointer;
+}
+
+/*
+Make sure disabled buttons don't get the pointer cursor.
+*/
+:disabled {
+  cursor: default;
+}
+
+/*
+1. Make replaced elements `display: block` by default. (https://github.com/mozdevs/cssremedy/issues/14)
+2. Add `vertical-align: middle` to align replaced elements more sensibly by default. (https://github.com/jensimmons/cssremedy/issues/14#issuecomment-634934210)
+   This can trigger a poorly considered lint error in some tools but is included by design.
+*/
+
+img,
+svg,
+video,
+canvas,
+audio,
+iframe,
+embed,
+object {
+  display: block; /* 1 */
+  vertical-align: middle; /* 2 */
+}
+
+/*
+Constrain images and videos to the parent width and preserve their intrinsic aspect ratio. (https://github.com/mozdevs/cssremedy/issues/14)
+*/
+
+img,
+video {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Make elements with the HTML hidden attribute stay hidden by default */
+[hidden]:where(:not([hidden="until-found"])) {
+  display: none;
+}
+/*! This file contains adapted styles from the Primer CSS
+ * design system, original styles licensed under:
+ * MIT License
+ * Copyright (c) 2021 GitHub Inc.
+ * https://github.com/primer/css/blob/main/LICENSE
+ */
+
+* {
+  scroll-margin-top: 6rem;
+
+  border-color: var(--color-border-default, var(--color-border-primary));
+}
+
+:host, html {
+  --font-family-sans: -apple-system, "BlinkMacSystemFont", "Segoe UI", "Helvetica", "Arial", sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  --font-family-monospace: ui-monospace, "SFMono-Regular", "Menlo", "Monaco", "Consolas", "Liberation Mono", "Courier New", monospace;
+  --font-family-default: var(--font-family-sans);
+
+  font-family: var(--font-family-default);
+}
+
+code, kbd, pre, samp, .gsc-is-fixed-width, .commit-tease-sha, .blob-code-inner, .blob-num {
+  font-family: var(--font-family-monospace);
+}
+
+a {
+  color: var(--color-accent-fg, var(--color-text-link));
+}
+
+a:focus-visible,
+button:focus-visible,
+[role="button"]:focus-visible,
+input[type="radio"]:focus-visible,
+input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--color-accent-fg, var(--color-text-link));
+  outline-offset: -2px;
+  box-shadow: none;
+}
+
+details summary {
+  cursor: pointer;
+}
+
+@media screen and (width <= 320px) {
+  html {
+    font-size: 5vw;
+  }
+}
+
+.link-secondary {
+  text-decoration-line: underline;
+}
+
+.color-bg-primary,
+.color-bg-default {
+  background-color: var(--color-canvas-default, var(--color-bg-primary));
+}
+
+.color-bg-secondary,
+.color-bg-subtle {
+  background-color: var(--color-canvas-subtle, var(--color-bg-secondary));
+}
+
+.color-bg-tertiary {
+  background-color: var(--color-canvas-subtle, var(--color-bg-tertiary));
+}
+
+.color-bg-canvas {
+  background-color: var(--color-canvas-default, var(--color-bg-canvas));
+}
+
+.color-bg-inset {
+  background-color: var(--color-canvas-inset, var(--color-bg-canvas-inset));
+}
+
+.color-bg-overlay {
+  background-color: var(--color-canvas-overlay, var(--color-bg-overlay));
+}
+
+.color-bg-info {
+  background-color: var(--color-accent-subtle, var(--color-bg-info));
+}
+
+.color-fg-default,
+.color-text-primary,
+.link-primary {
+  color: var(--color-fg-default, var(--color-text-primary));
+}
+
+.color-fg-muted,
+.color-text-secondary,
+.link-secondary {
+  color: var(--color-fg-muted, var(--color-text-secondary));
+}
+
+.color-fg-subtle {
+  color: var(--color-fg-subtle, var(--color-diff-blob-num-text));
+}
+
+.color-text-tertiary {
+  color: var(--color-fg-muted, var(--color-text-tertiary));
+}
+
+.color-text-link,
+.color-fg-accent,
+.link-primary:hover,
+.link-secondary:hover {
+  color: var(--color-accent-fg, var(--color-text-link));
+}
+
+.color-text-success {
+  color: var(--color-success-fg, var(--color-text-success));
+}
+
+.color-fg-attention {
+  color: var(--color-attention-fg);
+}
+
+.color-text-danger {
+  color: var(--color-danger-fg, var(--color-text-danger));
+}
+
+.color-border-primary {
+  border-color: var(--color-border-default, var(--color-border-primary));
+}
+
+.color-border-tertiary {
+  border-color: var(--color-border-default, var(--color-border-tertiary));
+}
+
+.color-border-info {
+  border-color: var(--color-accent-emphasis, var(--color-border-info));
+}
+
+.form-control {
+  vertical-align: middle;
+
+  background-color: var(--color-canvas-default, var(--color-input-bg));
+  border-color: var(--color-border-default, var(--color-input-border));
+}
+
+.form-control:focus {
+  border-color: var(--color-accent-fg, var(--color-text-link));
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-accent-fg, var(--color-text-link));
+}
+
+@supports (-webkit-touch-callout: none) {
+  .form-control,
+  .form-select {
+    /* Ensures inputs don't zoom on mobile iPhone but are normal on iPad */
+    font-size: 1rem;
+    line-height: 1.5rem;
+  }
+  @media (min-width: 768px) {
+
+    .form-control,
+  .form-select {
+      font-size: 0.875rem;
+      line-height: 1.25rem;
+    }
+  }
+}
+
+.input-contrast {
+  background-color: var(--color-canvas-inset, var(--color-input-contrast-bg));
+}
+
+.input-contrast:focus {
+  background-color: var(--color-canvas-default, var(--color-input-bg));
+}
+
+.color-label-border {
+  border-color: var(--color-border-default, var(--color-label-border));
+}
+
+.color-box-border-info {
+  border-color: var(--color-accent-muted, var(--color-box-border-info));
+}
+
+.btn {
+  position: relative;
+  display: inline-block;
+  cursor: pointer;
+  white-space: nowrap;
+  vertical-align: middle;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  border-radius: 0.375rem;
+  border-width: 1px;
+  padding-inline-start: 1rem;
+  padding-inline-end: 1rem;
+  padding-top: 5px;
+  padding-bottom: 5px;
+
+  color: var(--color-btn-text);
+  background-color: var(--color-btn-bg);
+  border-color: var(--color-btn-border);
+  box-shadow: var(--color-btn-shadow), var(--color-btn-inset-shadow);
+  transition: 0.2s cubic-bezier(0.3, 0, 0.5, 1);
+  transition-property: color, background-color, border-color;
+  transition-delay: 0s;
+}
+
+.BtnGroup {
+  background-color: var(
+    --color-segmented-control-bg,
+    var(--color-canvas-subtle, var(--color-bg-secondary))
+  );
+  align-items: center;
+  vertical-align: middle;
+  border-radius: 0.375rem;
+  display: inline-flex;
+}
+
+.BtnGroup-item {
+  border-radius: 0.375rem;
+  border-width: 1px;
+  border-color: transparent;
+  padding-inline-start: 0.25rem;
+  padding-inline-end: 0.25rem;
+  padding-top: 0.125rem;
+  padding-bottom: 0.125rem;
+  display: inline-flex;
+}
+
+.BtnGroup-item.BtnGroup-item--selected {
+  font-weight: 600;
+
+  background-color: var(
+    --color-segmented-control-button-bg,
+    var(--color-btn-bg)
+  );
+  border-color: var(
+    --color-segmented-control-button-selected-border,
+    var(--color-border-default, var(--color-border-primary))
+  );
+}
+
+.BtnGroup-item .btn {
+  background-color: inherit;
+  --tw-shadow: 0 0 #0000;
+  --tw-shadow-colored: 0 0 #0000;
+  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
+  border-width: 0px;
+  padding-inline-start: 0.5rem;
+  padding-inline-end: 0.5rem;
+  padding-top: 0.125rem;
+  padding-bottom: 0.125rem;
+  border-style: none;
+}
+
+.btn:hover {
+  transition-duration: 100ms;
+
+  background-color: var(--color-btn-hover-bg);
+  border-color: var(--color-btn-hover-border);
+}
+
+.btn:active {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  transition-property: none;
+
+  background-color: var(--color-btn-active-bg);
+  border-color: var(--color-btn-active-border);
+}
+
+.BtnGroup-item .btn:hover {
+  border-color: transparent;
+
+  background-color: var(
+    --color-action-list-item-default-hover-bg,
+    var(--color-btn-hover-bg)
+  );
+}
+
+.BtnGroup-item.BtnGroup-item--selected .btn:hover {
+  background-color: inherit;
+}
+
+.btn-primary {
+  color: var(--color-btn-primary-text);
+  background-color: var(--color-btn-primary-bg);
+  border-color: var(--color-btn-primary-border);
+  box-shadow: var(--color-btn-primary-shadow), var(--color-btn-primary-inset-shadow);
+}
+
+.btn-primary:hover {
+  background-color: var(--color-btn-primary-hover-bg);
+  border-color: var(--color-btn-primary-hover-border);
+}
+
+.btn-primary:active {
+  background-color: var(--color-btn-primary-selected-bg);
+  box-shadow: var(--color-btn-primary-selected-shadow);
+}
+
+.btn-primary:disabled {
+  color: var(--color-btn-primary-disabled-text);
+  background-color: var(--color-btn-primary-disabled-bg);
+  border-color: var(--color-btn-primary-disabled-border);
+}
+
+.octicon {
+  display: inline-block;
+  overflow: visible;
+  fill: currentColor;
+  vertical-align: text-bottom;
+}
+
+/*! Compatibility shim for @primer/css to style GitHub-generated HTML */
+
+.border-0 {
+  border-style: none;
+}
+
+.team-mention,
+.user-mention {
+  white-space: nowrap;
+  font-weight: 600;
+
+  color: var(--color-fg-default, var(--color-text-primary));
+}
+
+.position-relative {
+  position: relative;
+}
+
+.position-absolute {
+  position: absolute;
+}
+
+.d-none {
+  display: none !important;
+}
+
+.btn .octicon {
+  vertical-align: bottom;
+}
+
+.btn:not(.btn-primary) .octicon:not(.color-text-success) {
+  color: var(--color-fg-muted, var(--color-text-tertiary));
+}
+
+.rounded-1 {
+  border-radius: 0.375rem;
+}
+
+.border-bottom {
+  border-bottom-width: 1px;
+}
+
+.f6 {
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.lh-condensed {
+  line-height: 1.25;
+}
+
+.text-bold {
+  font-weight: 600;
+}
+
+.commit-tease-sha {
+  font-size: 90%;
+  color: var(--color-fg-default, var(--color-text-primary));
+}
+
+.rounded-2 {
+  border-radius: 0.375rem;
+}
+
+.task-list-item {
+  list-style-type: none;
+}
+
+.task-list-item-checkbox {
+  vertical-align: middle;
+
+  margin: 0 0.2em 0.25em -1.6em;
+}
+
+.Box {
+  border-radius: 0.375rem;
+  border-width: 1px;
+
+  background-color: var(--color-canvas-default, var(--color-bg-canvas));
+  border-color: var(--color-border-default, var(--color-border-primary));
+}
+
+.Box--condensed {
+  line-height: 1.25;
+}
+
+.Box-header {
+  margin: -1px;
+  margin-bottom: 0px;
+  border-start-start-radius: 0.375rem;
+  border-start-end-radius: 0.375rem;
+  border-width: 1px;
+  padding: 1rem;
+
+  background-color: var(--color-canvas-subtle, var(--color-bg-secondary));
+  border-color: var(--color-border-default, var(--color-border-primary));
+}
+
+.Box--condensed .Box-header {
+  padding-inline-start: 1rem;
+  padding-inline-end: 1rem;
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+
+.blob-wrapper {
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-end-end-radius: 0.375rem;
+  border-end-start-radius: 0.375rem;
+}
+
+.blob-wrapper-embedded {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.blob-num {
+  /* stylelint-disable-next-line max-line-length */
+  width: 1%;
+  min-width: 50px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  vertical-align: top;
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  padding-inline-start: 10px;
+  padding-inline-end: 10px;
+  text-align: end;
+
+  color: var(--color-fg-subtle, var(--color-diff-blob-num-text));
+}
+
+.blob-num:hover {
+  color: var(--color-fg-default, var(--color-diff-blob-num-hover-text));
+}
+
+.blob-num::before {
+  content: attr(data-line-number);
+}
+
+.blob-code-inner {
+  overflow: visible;
+  white-space: pre;
+  font-size: 0.75rem;
+  line-height: 1rem;
+
+  word-wrap: normal;
+}
+
+.blob-wrapper.blob-wrapper-embedded table tr:nth-child(2n) {
+  background-color: transparent;
+}
+
+.email-hidden-toggle a {
+  display: inline-block;
+  height: 0.75rem;
+  vertical-align: middle;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 600;
+  line-height: 6px;
+  text-decoration-line: none;
+  border-width: 1px;
+  padding-inline-start: 0.5rem;
+  padding-inline-end: 0.5rem;
+
+  color: var(--color-fg-default, var(--color-text-primary));
+  background-color: var(--color-neutral-muted, var(--color-hidden-text-expander-bg));
+}
+
+.email-quoted-reply,
+.email-signature-reply {
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+  border-inline-start-width: 4px;
+  padding-inline-start: 1rem;
+  padding-inline-end: 1rem;
+
+  color: var(--color-fg-muted, var(--color-text-secondary));
+  border-left-color: var(--color-border-default, var(--color-border-primary));
+}
+
+.email-hidden-reply {
+  display: none;
+  white-space: pre-wrap;
+}
+
+.email-hidden-reply.expanded {
+  display: block;
+}
+
+.ClipboardButton {
+  margin: 0.5rem;
+  padding: 0px;
+}
+
+.snippet-clipboard-content .ClipboardButton,
+.highlight .ClipboardButton {
+  opacity: 0;
+
+  animation: fade-out 0.2s both;
+}
+
+.ClipboardButton:focus,
+.snippet-clipboard-content:hover .ClipboardButton,
+.highlight:hover .ClipboardButton, {
+  opacity: 1;
+
+  animation: fade-in 0.2s both;
+}
+
+img.emoji {
+  display: inline;
+  max-width: none;
+  vertical-align: top;
+
+  background-color: initial;
+}
+
+.form-select {
+  max-width: 100%;
+  white-space: normal;
+
+  background-image: url("data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIGZpbGw9IiM1ODYwNjkiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZD0iTTQuNDI3IDkuNDI3bDMuMzk2IDMuMzk2YS4yNTEuMjUxIDAgMDAuMzU0IDBsMy4zOTYtMy4zOTZBLjI1LjI1IDAgMDAxMS4zOTYgOUg0LjYwNGEuMjUuMjUgMCAwMC0uMTc3LjQyN3pNNC40MjMgNi40N0w3LjgyIDMuMDcyYS4yNS4yNSAwIDAxLjM1NCAwTDExLjU3IDYuNDdhLjI1LjI1IDAgMDEtLjE3Ny40MjdINC42YS4yNS4yNSAwIDAxLS4xNzctLjQyN3oiLz48L3N2Zz4=");
+  background-position: right 4px center;
+}
+
+[dir="rtl"] .form-select {
+  background-position: left 4px center;
+}
+
+.form-checkbox {
+  vertical-align: middle;
+  margin-top: 15px;
+  margin-bottom: 15px;
+  padding-inline-start: 1.25rem;
+}
+
+.form-checkbox input[type="checkbox"],
+.form-checkbox input[type="radio"] {
+  vertical-align: top;
+  margin-top: 0.25rem;
+  margin-inline-start: -1.25rem;
+  margin-inline-end: 0.5rem;
+}
+
+.flash {
+  position: relative;
+  border-radius: 0.375rem;
+  border-width: 1px;
+  padding-inline-start: 1rem;
+  padding-inline-end: 1rem;
+  padding-top: 1.25rem;
+  padding-bottom: 1.25rem;
+
+  color: var(--color-fg-default, var(--color-text-primary));
+  background-color: var(--color-accent-subtle, var(--color-bg-info));
+  border-color: var(--color-accent-muted, var(--color-box-border-info));
+}
+
+.flash-error {
+  background-image: linear-gradient(var(--color-danger-subtle), var(--color-danger-subtle));
+  border-color: var(--color-danger-muted);
+}
+
+.flash-warn {
+  background-image: linear-gradient(var(--color-attention-subtle), var(--color-attention-subtle));
+  border-color: var(--color-attention-muted);
+}
+
+/*! giscus-specific styles */
+
+.gsc-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.gsc-loading-image {
+  height: 3rem;
+  width: 3rem;
+  background-size: contain;
+  background-repeat: no-repeat;
+
+  background-image: url("https://github.githubassets.com/images/mona-loading-default.gif");
+}
+
+.gsc-loading-text {
+  width: 100%;
+  white-space: nowrap;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  text-align: center;
+}
+
+.gsc-tl-line {
+  position: absolute;
+  height: 100%;
+  width: 2px;
+  flex-shrink: 0;
+  inset-inline-start: 30px;
+  top: 0px;
+
+  background-color: var(--color-border-muted, var(--color-border-secondary));
+}
+
+.gsc-emoji-button:focus .gsc-emoji,
+.gsc-emoji-button:hover .gsc-emoji {
+  display: inline-block;
+  transition-property: transform;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+
+  transform: scaleX(1.5) scaleY(1.5);
+}
+
+.gsc-reply:first-child > .gsc-tl-line {
+  top: 16px;
+  height: calc(100% - 16px);
+}
+
+.gsc-homepage-bg {
+  background-color: var(--color-canvas-default, var(--color-bg-canvas));
+}
+
+.gsc-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.gsc-comment {
+  display: flex;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.gsc-main {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.gsc-reactions {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.gsc-reactions-count {
+  font-weight: 600;
+  text-align: center;
+}
+
+.gsc-comments {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.gsc-header {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.gsc-left-header {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+}
+
+.gsc-comments-count,
+.gsc-comments-count-separator {
+  font-weight: 600;
+}
+
+.gsc-pagination {
+  display: flex;
+  justify-content: center;
+  background-position: center;
+  background-repeat: repeat-x;
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+
+.gsc-pagination-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  border-radius: 0.25rem;
+  border-width: 1px;
+  padding-inline-start: 1.5rem;
+  padding-inline-end: 1.5rem;
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+
+  background-color: var(--color-canvas-default, var(--color-bg-primary));
+}
+
+.gsc-comment-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-inline-start: 1rem;
+  padding-inline-end: 1rem;
+  padding-top: 0.5rem;
+}
+
+.gsc-comment-author {
+  display: flex;
+  min-width: 0px;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.gsc-comment-author-avatar {
+  display: flex;
+  min-width: 0px;
+  align-items: center;
+}
+
+.gsc-comment-content {
+  border-start-start-radius: 0.25rem;
+  border-start-end-radius: 0.25rem;
+  padding: 1rem;
+}
+
+.gsc-comment-content.minimized {
+  border-bottom-width: 1px;
+  padding-inline-start: 1rem;
+  padding-inline-end: 1rem;
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+
+.gsc-comment-footer, .gsc-reply-footer {
+  display: flex;
+  align-content: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.gsc-comment-reactions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-inline-start: 1rem;
+}
+
+.gsc-comment-replies-count {
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  margin-inline-end: 1rem;
+}
+
+.gsc-replies {
+  border-end-end-radius: 0.375rem;
+  border-end-start-radius: 0.375rem;
+  border-top-width: 1px;
+  padding-top: 0.5rem;
+}
+
+.gsc-comment-box {
+  width: 100%;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.gsc-comment-box:not(.gsc-comment-box-is-reply) {
+  border-radius: 0.25rem;
+  border-width: 1px;
+}
+
+.gsc-comment-box-tabs {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-start-start-radius: 0.25rem;
+  border-start-end-radius: 0.25rem;
+  border-bottom-width: 1px;
+}
+
+.gsc-comment .gsc-comment-box-tabs {
+  border-radius: 0px;
+  border-top-width: 1px;
+}
+
+.gsc-comment-box-md-toolbar {
+  align-items: center;
+  margin-inline-start: 0.5rem;
+  margin-inline-end: 0.5rem;
+  margin-top: 0.5rem;
+  display: inline-flex;
+}
+
+.gsc-toolbar-item {
+  padding: 0.25rem;
+
+  color: var(--color-fg-muted, var(--color-text-secondary));
+}
+
+.gsc-toolbar-item:hover,
+.gsc-toolbar-item:focus {
+  color: var(--color-accent-fg, var(--color-text-link));
+}
+
+.gsc-comment-box-main {
+  margin: 0.5rem;
+}
+
+.gsc-comment-box-preview {
+  min-height: 131px;
+  border-bottom-width: 2px;
+  padding-inline-start: 0.5rem;
+  padding-inline-end: 0.5rem;
+  padding-top: 0.5rem;
+  padding-bottom: 1rem;
+}
+
+.gsc-comment-box-write {
+  border-radius: 0.25rem;
+}
+
+.gsc-comment-box-write:focus-within {
+  border-color: var(--color-accent-fg, var(--color-text-link));
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-accent-fg, var(--color-text-link));
+}
+
+.gsc-comment-box-textarea {
+  max-height: 500px;
+  min-height: 100px;
+  width: 100%;
+  border-radius: 0.25rem;
+  border-width: 1px;
+  padding: 0.5rem;
+}
+
+.gsc-comment-box-textarea:disabled {
+  cursor: not-allowed;
+}
+
+.gsc-comment-box-textarea {
+
+  border-bottom-style: dashed;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.gsc-comment-box-textarea:focus {
+  --tw-shadow: 0 0 #0000;
+  --tw-shadow-colored: 0 0 #0000;
+  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
+
+  border-color: var(--color-border-default, var(--color-input-border));
+}
+
+.gsc-comment-box-textarea-extras {
+  display: flex;
+  justify-content: flex-end;
+  border-end-end-radius: 0.25rem;
+  border-end-start-radius: 0.25rem;
+  border-width: 1px;
+  border-top-width: 0px;
+  padding-inline-start: 0.625rem;
+  padding-inline-end: 0.625rem;
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+
+.gsc-comment-box-bottom {
+  display: flex;
+  align-items: center;
+  margin: 0.5rem;
+}
+
+.gsc-comment-box-markdown-hint {
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.gsc-comment-box-markdown-hint:hover {
+  text-decoration-line: none;
+}
+
+.gsc-comment-box-buttons {
+  flex-shrink: 0;
+  margin-inline-start: auto;
+  display: inline-flex;
+}
+
+.gsc-reply-box {
+  display: flex;
+  border-end-end-radius: 0.375rem;
+  border-end-start-radius: 0.375rem;
+  border-top-width: 1px;
+  padding-inline-start: 1rem;
+  padding-inline-end: 1rem;
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+
+.gsc-social-reaction-summary-item {
+  display: flex;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  line-height: 24px;
+  border-radius: 9999px;
+  border-width: 1px;
+  padding-inline-start: 4px;
+  padding-inline-end: 4px;
+
+  background-color: transparent;
+  border-color: var(--color-border-default, var(--color-border-primary));
+  color: var(--color-fg-muted, var(--color-text-secondary));
+}
+
+.gsc-social-reaction-summary-item:disabled {
+  cursor: not-allowed;
+}
+
+.gsc-social-reaction-summary-item:hover:enabled {
+  background-color: var(--color-social-reaction-bg-hover);
+}
+
+.gsc-social-reaction-summary-item.has-reacted {
+  background-color: var(--color-accent-subtle, var(--color-bg-info));
+  border-color: var(--color-accent-emphasis, --color-social-reaction-border);
+  color: var(--color-accent-fg, var(--color-text-link));
+}
+
+.gsc-social-reaction-summary-item.has-reacted:hover:enabled {
+  background-color: var(--color-social-reaction-bg-reacted-hover);
+}
+
+.gsc-social-reaction-summary-item-count {
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-inline-start: 2px;
+  padding-inline-start: 0.25rem;
+  padding-inline-end: 0.25rem;
+}
+
+.gsc-direct-reaction-button-emoji {
+  display: inline-block;
+  height: 1rem;
+  width: 1rem;
+  line-height: 1.25;
+}
+
+.gsc-upvotes {
+  width: 3.5rem;
+  flex-shrink: 0;
+  margin-inline-end: 0.5rem;
+  text-align: center;
+}
+
+.gsc-upvote-button {
+  font-weight: 500;
+}
+
+/*
+  TODO: Remove when GitHub allows upvote with app-issued user tokens
+  https://github.com/orgs/community/discussions/3968
+  */
+.gsc-upvote-button:disabled {
+  cursor: auto;
+  border-style: none;
+  background-color: transparent;
+  padding: 0px;
+}
+
+.gsc-reactions-menu {
+  position: relative;
+}
+
+.gsc-reactions-button {
+  display: flex;
+  height: 26px;
+  width: 26px;
+  cursor: pointer;
+  list-style-type: none;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  line-height: 1.25;
+  padding-inline-start: 0px;
+  padding-inline-end: 0px;
+
+  background-color: var(--color-canvas-subtle, var(--color-bg-secondary));
+}
+
+.gsc-reactions-button::before,
+.gsc-reactions-button::-webkit-details-marker {
+  display: none;
+}
+
+.gsc-reactions-button::marker {
+  content: "";
+}
+
+.gsc-reactions-button:hover {
+  color: var(--color-fg-muted, var(--color-text-tertiary));
+}
+
+.gsc-reactions-button.popover-only {
+  border-style: none;
+  background-color: transparent;
+  border-width: 1px;
+}
+
+.gsc-reactions-button.popover-only:hover {
+  color: var(--color-accent-fg, var(--color-text-link));
+}
+
+.gsc-reactions-popover.open::before {
+  position: absolute;
+  border-style: solid;
+  border-width: 8px;
+  border-color: transparent;
+
+  content: "";
+}
+
+.gsc-reactions-popover.open::after {
+  position: absolute;
+  border-style: solid;
+  border-width: 7px;
+  border-color: transparent;
+
+  content: "";
+}
+
+.gsc-reactions-popover.open.bottom::before {
+  top: -16px;
+
+  border-bottom-color: var(--color-border-default, var(--color-border-primary));
+}
+
+.gsc-reactions-popover.open.bottom::after {
+  top: -15px;
+
+  border-bottom: 8px solid var(--color-canvas-overlay, var(--color-bg-overlay));
+}
+
+.gsc-reactions-popover.open.top::before {
+  bottom: -16px;
+
+  border-top-color: var(--color-border-default, var(--color-border-primary));
+}
+
+.gsc-reactions-popover.open.top::after {
+  bottom: -15px;
+
+  border-top: 8px solid var(--color-canvas-overlay, var(--color-bg-overlay));
+}
+
+.gsc-reactions-popover.open.left::before {
+  inset-inline-start: 9px;
+}
+
+.gsc-reactions-popover.open.left::after {
+  inset-inline-start: 10px;
+}
+
+.gsc-reactions-popover.open.right::before {
+  inset-inline-end: 9px;
+}
+
+.gsc-reactions-popover.open.right::after {
+  inset-inline-end: 10px;
+}
+
+.gsc-reactions-popover {
+  /* stylelint-disable-next-line max-line-length */
+  visibility: hidden;
+  position: absolute;
+  z-index: 20;
+  width: 146px;
+  transform-origin: center;
+  --tw-scale-x: .5;
+  --tw-scale-y: .5;
+  transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
+  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter;
+  transition-duration: 100ms;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  margin-top: 2px;
+  border-radius: 0.25rem;
+  border-width: 1px;
+}
+
+.gsc-reactions-popover.open {
+  visibility: visible;
+  --tw-scale-x: 1;
+  --tw-scale-y: 1;
+  transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
+}
+
+.gsc-reactions-popover.right {
+  inset-inline-end: 0px;
+}
+
+.gsc-reactions-popover.top {
+  bottom: 2.25rem;
+  inset-inline-start: -0.375rem;
+}
+
+.gsc-reactions-popover.bottom {
+  top: 2.25rem;
+  inset-inline-start: -0.375rem;
+}
+
+.gsc-emoji-button {
+  height: 2rem;
+  width: 2rem;
+  margin-inline-end: -1px;
+  margin-top: -1px;
+  border-radius: 0px;
+}
+
+.gsc-emoji-button.has-reacted {
+  border-width: 1px;
+}
+
+.gsc-emoji-button.no-token {
+  cursor: not-allowed;
+}
+
+.gsc-direct-reaction-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.gsc-direct-reaction-button {
+  align-items: baseline;
+  border-width: 1px;
+}
+
+.gsc-reply {
+  position: relative;
+  padding: 1rem;
+  padding-bottom: 0.5rem;
+}
+
+.gsc-reply-author-avatar {
+  z-index: 10;
+  flex-shrink: 0;
+}
+
+.gsc-reply-header {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+}
+
+.gsc-reply-author {
+  display: flex;
+  min-width: 0px;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.gsc-reply-content {
+  width: 100%;
+  padding-bottom: 0.5rem;
+}
+
+.gsc-reply-content.markdown pre,
+.gsc-reply-content.markdown .highlight pre {
+  background-color: var(--color-neutral-muted, var(--color-hidden-text-expander-bg));
+}
+
+.gsc-reply-content.not-shown {
+  padding-bottom: 0px;
+}
+
+.gsc-reply-footer {
+  margin-bottom: 0px;
+}
+
+.gsc-reply-reactions {
+  display: flex;
+  align-content: center;
+  gap: 0.5rem;
+  margin-inline-end: 1rem;
+  margin-inline-start: -0.25rem;
+}
+
+/* Re-apply overridden tailwind */
+
+.inline-flex {
+  display: inline-flex;
+}
+
+/*!
+ * GitHub Light v0.5.0
+ * Copyright (c) 2012 - 2017 GitHub, Inc.
+ * Licensed under MIT (https://github.com/primer/github-syntax-theme-generator/blob/master/LICENSE)
+ */
+
+.pl-c {
+  color: var(--color-prettylights-syntax-comment);
+}
+
+.pl-v,
+.pl-smw {
+  color: var(--color-prettylights-syntax-variable);
+}
+
+.pl-c1,
+.pl-s .pl-v {
+  color: var(--color-prettylights-syntax-constant);
+}
+
+.pl-e,
+.pl-en {
+  color: var(--color-prettylights-syntax-entity);
+}
+
+.pl-smi,
+.pl-s .pl-s1 {
+  color: var(--color-prettylights-syntax-storage-modifier-import);
+}
+
+.pl-ent {
+  color: var(--color-prettylights-syntax-entity-tag);
+}
+
+.pl-k {
+  color: var(--color-prettylights-syntax-keyword);
+}
+
+.pl-s,
+.pl-pds,
+.pl-s .pl-pse .pl-s1,
+.pl-sr,
+.pl-sr .pl-cce,
+.pl-sr .pl-sre,
+.pl-sr .pl-sra {
+  color: var(--color-prettylights-syntax-string);
+}
+
+.pl-bu {
+  color: var(--color-prettylights-syntax-brackethighlighter-unmatched);
+}
+
+.pl-ii {
+  color: var(--color-prettylights-syntax-invalid-illegal-text);
+  background-color: var(--color-prettylights-syntax-invalid-illegal-bg);
+}
+
+.pl-c2 {
+  color: var(--color-prettylights-syntax-carriage-return-text);
+  background-color: var(--color-prettylights-syntax-carriage-return-bg);
+}
+
+.pl-c2::before {
+  content: "^M";
+}
+
+.pl-sr .pl-cce {
+  font-weight: bold;
+  color: var(--color-prettylights-syntax-string-regexp);
+}
+
+.pl-ml {
+  color: var(--color-prettylights-syntax-markup-list);
+}
+
+.pl-mh,
+.pl-mh .pl-en,
+.pl-ms {
+  font-weight: bold;
+  color: var(--color-prettylights-syntax-markup-heading);
+}
+
+.pl-mi {
+  font-style: italic;
+  color: var(--color-prettylights-syntax-markup-italic);
+}
+
+.pl-mb {
+  font-weight: bold;
+  color: var(--color-prettylights-syntax-markup-bold);
+}
+
+.pl-md {
+  color: var(--color-prettylights-syntax-markup-deleted-text);
+  background-color: var(--color-prettylights-syntax-markup-deleted-bg);
+}
+
+.pl-mi1 {
+  color: var(--color-prettylights-syntax-markup-inserted-text);
+  background-color: var(--color-prettylights-syntax-markup-inserted-bg);
+}
+
+.pl-mc {
+  color: var(--color-prettylights-syntax-markup-changed-text);
+  background-color: var(--color-prettylights-syntax-markup-changed-bg);
+}
+
+.pl-mi2 {
+  color: var(--color-prettylights-syntax-markup-ignored-text);
+  background-color: var(--color-prettylights-syntax-markup-ignored-bg);
+}
+
+.pl-mdr {
+  font-weight: bold;
+  color: var(--color-prettylights-syntax-meta-diff-range);
+}
+
+.pl-ba {
+  color: var(--color-prettylights-syntax-brackethighlighter-angle);
+}
+
+.pl-sg {
+  color: var(--color-prettylights-syntax-sublimelinter-gutter-mark);
+}
+
+.pl-corl {
+  text-decoration: underline;
+  color: var(--color-prettylights-syntax-constant-other-reference-link);
+}
+
+body * {
+  border-color: var(--color-border-default, var(--color-border-primary));
+}
+
+a:hover {
+  text-decoration-line: underline;
+}
+
+.markdown {
+  overflow-wrap: break-word;
+}
+
+.markdown a {
+  text-decoration-line: underline;
+}
+
+.markdown strong {
+  font-weight: 600;
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  font-weight: 600;
+  margin-top: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.markdown h1,
+.markdown h2 {
+  border-bottom-width: 1px;
+  padding-bottom: 0.5rem;
+}
+
+.markdown h1 {
+  font-size: 1.875rem;
+  line-height: 2.25rem;
+}
+
+.markdown h2 {
+  font-size: 1.5rem;
+  line-height: 2rem;
+}
+
+.markdown h3 {
+  font-size: 1.25rem;
+  line-height: 1.75rem;
+}
+
+.markdown h4 {
+  font-size: 1rem;
+  line-height: 1.5rem;
+}
+
+.markdown h5 {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.markdown h6 {
+  font-size: 0.75rem;
+  line-height: 1rem;
+
+  color: var(--color-fg-muted, var(--color-text-secondary));
+}
+
+.markdown .g-emoji {
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif;
+  font-weight: 400;
+}
+
+.markdown .highlight {
+  margin-bottom: 1rem;
+}
+
+.markdown blockquote,
+.markdown details,
+.markdown dl,
+.markdown ol,
+.markdown p,
+.markdown pre,
+.markdown table,
+.markdown ul {
+  margin-bottom: 1rem;
+}
+
+.markdown pre,
+.markdown .highlight pre, {
+  overflow: auto;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  border-radius: 0.375rem;
+  padding: 1rem;
+
+  line-height: 1.45;
+  background-color: var(--color-canvas-subtle, var(--color-bg-tertiary));
+}
+
+.markdown .highlight pre {
+  overflow-wrap: normal;
+  word-break: normal;
+  margin-bottom: 0px;
+}
+
+.markdown pre > code {
+  background: transparent;
+}
+
+.markdown code:not(pre>code),
+.markdown tt {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  border-radius: 0.375rem;
+  padding-inline-start: 0.25rem;
+  padding-inline-end: 0.25rem;
+  padding-top: 2px;
+  padding-bottom: 2px;
+
+  background-color: var(--color-neutral-muted);
+}
+
+.markdown table {
+  background-color: var(--color-canvas-default, var(--color-bg-primary));
+}
+
+.markdown table th,
+.markdown table td {
+  border-width: 1px;
+  padding-inline-start: 0.75rem;
+  padding-inline-end: 0.75rem;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.markdown table th {
+  font-weight: 600;
+}
+
+.markdown table tr:nth-child(2n) {
+  background-color: var(--color-canvas-subtle, var(--color-bg-tertiary));
+}
+
+.markdown blockquote {
+  border-inline-start-width: 3px;
+  padding-inline-start: 1rem;
+  padding-inline-end: 1rem;
+
+  color: var(--color-fg-muted, var(--color-text-tertiary));
+}
+
+.markdown ul,
+.markdown ol {
+  padding-inline-start: 2em;
+}
+
+.markdown ul {
+  list-style-type: disc;
+}
+
+.markdown ol {
+  list-style-type: decimal;
+}
+
+.markdown li + li {
+  margin-top: 0.25rem;
+}
+
+.markdown li > p {
+  margin-top: 1rem;
+}
+
+.markdown ol ol,
+.markdown ol ul,
+.markdown ul ol,
+.markdown ul ul {
+  margin-top: 0px;
+  margin-bottom: 0px;
+}
+
+.markdown ul ul {
+  list-style-type: circle;
+}
+
+.markdown ul ul ul {
+  list-style-type: square;
+}
+
+.markdown kbd {
+  vertical-align: middle;
+  font-size: 11px;
+  border-radius: 0.375rem;
+  border-width: 1px;
+  padding-inline-start: 5px;
+  padding-inline-end: 5px;
+  padding-top: 3px;
+  padding-bottom: 3px;
+
+  color: var(--color-fg-default, var(--color-auto-gray-7));
+  background-color: var(--color-canvas-subtle, var(--color-bg-secondary));
+  border: 1px solid var(--color-border-default, var(--color-border-tertiary));
+  box-shadow: inset 0 -1px 0 var(--color-border-default, var(--color-border-tertiary));
+}
+
+.markdown hr {
+  height: 0.25em;
+  margin-top: 1.5rem;
+  margin-bottom: 1.5rem;
+
+  background-color: var(--color-border-default, var(--color-border-primary));
+}
+
+.markdown .footnotes {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  border-top-width: 1px;
+
+  color: var(--color-fg-muted, var(--color-text-tertiary));
+}
+
+.markdown .footnotes ol {
+  padding-inline-start: 1rem;
+}
+
+.markdown .footnotes .data-footnote-backref .g-emoji {
+  font-family: monospace;
+}
+
+.markdown sup > a::before {
+  content: "[";
+}
+
+.markdown sup > a::after {
+  content: "]";
+}
+
+.markdown > :last-child {
+  margin-bottom: 0px;
+}
+
+.markdown > :first-child {
+  margin-top: 0px;
+}
+
+.visible {
+  visibility: visible;
+}
+
+.block {
+  display: block;
+}
+
+.inline {
+  display: inline;
+}
+
+.flex {
+  display: flex;
+}
+
+.inline-flex {
+  display: inline-flex;
+}
+
+.table {
+  display: table;
+}
+
+.\!hidden {
+  display: none !important;
+}
+
+.hidden {
+  display: none;
+}
+
+.h-8 {
+  height: 2rem;
+}
+
+.w-\[29px\] {
+  width: 29px;
+}
+
+.w-full {
+  width: 100%;
+}
+
+.min-w-0 {
+  min-width: 0px;
+}
+
+.shrink-0 {
+  flex-shrink: 0;
+}
+
+.rotate-90 {
+  --tw-rotate: 90deg;
+  transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
+}
+
+.cursor-not-allowed {
+  cursor: not-allowed;
+}
+
+.cursor-text {
+  cursor: text;
+}
+
+.resize {
+  resize: both;
+}
+
+.content-center {
+  align-content: center;
+}
+
+.items-center {
+  align-items: center;
+}
+
+.gap-2 {
+  gap: 0.5rem;
+}
+
+.overflow-hidden {
+  overflow: hidden;
+}
+
+.text-ellipsis {
+  text-overflow: ellipsis;
+}
+
+.whitespace-nowrap {
+  white-space: nowrap;
+}
+
+.fill-\[var\(--color-border-muted\)\] {
+  fill: var(--color-border-muted);
+}
+
+.text-sm {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.text-xs {
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.font-medium {
+  font-weight: 500;
+}
+
+.font-semibold {
+  font-weight: 600;
+}
+
+.capitalize {
+  text-transform: capitalize;
+}
+
+.leading-\[18px\] {
+  line-height: 18px;
+}
+
+.underline {
+  text-decoration-line: underline;
+}
+
+.filter {
+  filter: var(--tw-blur) var(--tw-brightness) var(--tw-contrast) var(--tw-grayscale) var(--tw-hue-rotate) var(--tw-invert) var(--tw-saturate) var(--tw-sepia) var(--tw-drop-shadow);
+}
+
+.m-2 {
+  margin: 0.5rem;
+}
+
+.mx-2 {
+  margin-inline-start: 0.5rem;
+  margin-inline-end: 0.5rem;
+}
+
+.my-2 {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.mb-0 {
+  margin-bottom: 0px;
+}
+
+.mb-2 {
+  margin-bottom: 0.5rem;
+}
+
+.mb-\[-1px\] {
+  margin-bottom: -1px;
+}
+
+.ml-1 {
+  margin-inline-start: 0.25rem;
+}
+
+.ml-2 {
+  margin-inline-start: 0.5rem;
+}
+
+.mr-1 {
+  margin-inline-end: 0.25rem;
+}
+
+.mr-2 {
+  margin-inline-end: 0.5rem;
+}
+
+.mr-\[9px\] {
+  margin-inline-end: 9px;
+}
+
+.mt-2 {
+  margin-top: 0.5rem;
+}
+
+.rounded {
+  border-radius: 0.25rem;
+}
+
+.rounded-full {
+  border-radius: 9999px;
+}
+
+.rounded-md {
+  border-radius: 0.375rem;
+}
+
+.rounded-xl {
+  border-radius: 0.75rem;
+}
+
+.rounded-b-md {
+  border-end-end-radius: 0.375rem;
+  border-end-start-radius: 0.375rem;
+}
+
+.rounded-t {
+  border-start-start-radius: 0.25rem;
+  border-start-end-radius: 0.25rem;
+}
+
+.border {
+  border-width: 1px;
+}
+
+.border-0 {
+  border-width: 0px;
+}
+
+.border-b-0 {
+  border-bottom-width: 0px;
+}
+
+.border-t {
+  border-top-width: 1px;
+}
+
+.border-transparent {
+  border-color: transparent;
+}
+
+.p-0 {
+  padding: 0px;
+}
+
+.px-2 {
+  padding-inline-start: 0.5rem;
+  padding-inline-end: 0.5rem;
+}
+
+.px-4 {
+  padding-inline-start: 1rem;
+  padding-inline-end: 1rem;
+}
+
+.px-\[7px\] {
+  padding-inline-start: 7px;
+  padding-inline-end: 7px;
+}
+
+.py-0 {
+  padding-top: 0px;
+  padding-bottom: 0px;
+}
+
+.py-1 {
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+}
+
+.py-2 {
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+
+.pl-4 {
+  padding-inline-start: 1rem;
+}
+
+.text-left {
+  text-align: start;
+}
+
+.hover\:underline:hover {
+  text-decoration-line: underline;
+}
+
+.hover\:no-underline:hover {
+  text-decoration-line: none;
+}
+
+.focus\:border-transparent:focus {
+  border-color: transparent;
+}
+
+@media (min-width: 640px) {
+
+  .sm\:inline-flex {
+    display: inline-flex;
+  }
+}

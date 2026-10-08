@@ -2,20 +2,20 @@ import * as v from 'valibot';
 import { parse, parseJSON, type Schema } from '../contracts/parse.js';
 import { EncryptedRecord, RateWindow } from '../contracts/storage.js';
 import { decrypt, encrypt } from './crypto.js';
-import { AppError } from './errors.js';
+import { AppError, requireCondition } from './errors.js';
 import type { DurableState, SqlStorage } from './platform.js';
+const Expiry = v.strictObject({ expiry: v.nullable(v.number()) });
 const Row = v.strictObject({ value: v.string(), expires: v.pipe(v.number(), v.safeInteger(), v.minValue(0)) });
 export class Store {
   #expiryRevision = 1;
-  #scheduledRevision = 0;
+  #scheduled?: { revision: number; additional: number | null; expiry: number | null };
   #locks = new Map<string, Promise<unknown>>();
-  constructor(readonly sql: SqlStorage, readonly now: () => number = Date.now) {
-    sql.exec('CREATE TABLE IF NOT EXISTS records_v2 (key TEXT PRIMARY KEY, value TEXT NOT NULL, expires INTEGER NOT NULL)');
-    sql.exec('CREATE INDEX IF NOT EXISTS records_expiring ON records_v2(expires) WHERE expires > 0');
-    sql.exec('DROP INDEX IF EXISTS records_v2_expiry');
+  constructor(readonly sql: SqlStorage, readonly now: () => number = Date.now, readonly transactionSync?: <T>(run: () => T) => T) {
+    sql.exec('CREATE TABLE IF NOT EXISTS records (key TEXT PRIMARY KEY, value TEXT NOT NULL, expires INTEGER NOT NULL)');
+    sql.exec('CREATE INDEX IF NOT EXISTS records_expiring ON records(expires) WHERE expires > 0');
   }
   get<S extends Schema>(key: string, schema: S): v.InferOutput<S> | null {
-    const raw = [...this.sql.exec('SELECT value, expires FROM records_v2 WHERE key = ?', key)][0];
+    const raw = [...this.sql.exec('SELECT value, expires FROM records WHERE key = ?', key)][0];
     if (!raw) return null;
     const row = parse(Row, raw, 'storage');
     if (row.expires > 0 && row.expires <= this.now()) { this.delete(key); return null; }
@@ -24,17 +24,27 @@ export class Store {
   put<S extends Schema>(key: string, schema: S, value: v.InferInput<S>, expires = 0): void {
     const validated = parse(schema, value, 'storage');
     if (expires > 0) this.#expiryRevision++;
-    this.sql.exec('INSERT INTO records_v2(key,value,expires) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,expires=excluded.expires WHERE records_v2.value != excluded.value OR records_v2.expires != excluded.expires', key, JSON.stringify(validated), expires);
+    this.sql.exec('INSERT INTO records(key,value,expires) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,expires=excluded.expires WHERE records.value != excluded.value OR records.expires != excluded.expires', key, JSON.stringify(validated), expires);
   }
   async secret<S extends Schema>(key: string, schema: S, secret: string, context: string): Promise<v.InferOutput<S> | null> {
     const record = this.get(key, EncryptedRecord);
-    return record ? decrypt(schema, record.ciphertext, secret, context + ':' + key) : null;
+    return record ? decrypt(schema, record, secret, context + ':' + key) : null;
   }
   async putSecret<S extends Schema>(key: string, schema: S, value: v.InferInput<S>, secret: string, context: string, expires: number): Promise<void> {
     const normalized = parse(schema, value, 'storage');
-    this.put(key, EncryptedRecord, { version: 2, ciphertext: await encrypt(normalized, secret, context + ':' + key) }, expires);
+    this.put(key,EncryptedRecord,await encrypt(normalized,secret,context+':'+key),expires);
   }
-  delete(key: string): void { this.#expiryRevision++; this.sql.exec('DELETE FROM records_v2 WHERE key = ?', key); }
+  async consumeSecret<S extends Schema>(source: string, key: string, schema: S, value: v.InferInput<S>, secret: string, context: string, expires: number): Promise<void> {
+    const transaction = this.transactionSync;
+    requireCondition(transaction, 503, 'STORAGE', 'Atomic credential storage is unavailable.');
+    const record=await encrypt(parse(schema,value,'storage'),secret,context+':'+key);
+    transaction(() => {
+      requireCondition(this.get(source,EncryptedRecord),401,'OAUTH','The credential exchange has expired. Start sign-in again.');
+      this.put(key, EncryptedRecord, record, expires);
+      this.delete(source);
+    });
+  }
+  delete(key: string): void { this.#expiryRevision++; this.sql.exec('DELETE FROM records WHERE key = ?', key); }
   limit(key: string, maximum: number, milliseconds: number): void {
     const rowKey = 'rate:' + key;
     const value = this.get(rowKey, RateWindow) || { count: 0, resets: this.now() + milliseconds };
@@ -48,19 +58,21 @@ export class Store {
     try { return await current; }
     finally { if (this.#locks.get(key) === current) this.#locks.delete(key); }
   }
-  prune(): void { this.#expiryRevision++; this.sql.exec('DELETE FROM records_v2 WHERE expires > 0 AND expires <= ?', this.now()); }
-  async schedule(state: DurableState): Promise<void> {
-    if (this.#scheduledRevision === this.#expiryRevision) return;
+  prune(): void { this.#expiryRevision++; this.sql.exec('DELETE FROM records WHERE expires > 0 AND expires <= ?', this.now()); }
+  /** Calls bring work forward; a naturally fired alarm decides whether to rearm. */
+  async schedule(state: DurableState, additional: number | null): Promise<void> {
+    if (this.#scheduled?.revision === this.#expiryRevision && this.#scheduled.additional === additional) return;
     await this.lock('alarm', async () => {
-      if (this.#scheduledRevision === this.#expiryRevision) return;
+      if (this.#scheduled?.revision === this.#expiryRevision && this.#scheduled.additional === additional) return;
       const revision = this.#expiryRevision;
-      const schema = v.strictObject({ expiry: v.nullable(v.number()) });
-      const row = parse(schema, [...this.sql.exec('SELECT MIN(expires) AS expiry FROM records_v2 WHERE expires > 0')][0], 'storage');
-      if (row.expiry === null) { await state.storage.deleteAlarm(); this.#scheduledRevision = revision; return; }
-      const existing = await state.storage.getAlarm();
-      const next = Math.max(this.now() + 1000, row.expiry);
-      if (!existing || existing > next) await state.storage.setAlarm(next);
-      this.#scheduledRevision = revision;
+      const expiry = this.#scheduled?.revision === revision ? this.#scheduled.expiry
+        : parse(Expiry, [...this.sql.exec('SELECT MIN(expires) AS expiry FROM records WHERE expires > 0')][0], 'storage').expiry;
+      const next = Math.min(expiry === null ? Infinity : Math.max(this.now() + 1000, expiry), additional ?? Infinity);
+      if (next !== Infinity) {
+        const existing = await state.storage.getAlarm();
+        if (existing === null || existing > next) await state.storage.setAlarm(next);
+      }
+      this.#scheduled = { revision, additional, expiry };
     });
   }
 }

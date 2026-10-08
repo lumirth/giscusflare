@@ -1,32 +1,27 @@
 import type { Conversation } from "../headless.js";
-import type { Comment, Discussion } from "../../conversation/model.js";
-
-export interface Part<T> {
-  element: HTMLElement;
-  update(value: T): void;
-  dispose(): void;
-}
+import type { ResourceScope } from '../presentation.js';
+import type { Comment, Discussion } from "../../contracts/document.js";
+import type { TemplateResult } from 'lit-html';
+import type { DirectiveResult } from 'lit-html/directive.js';
+export type StandardValue = TemplateResult | DirectiveResult | Node | string | number | null | undefined;
 export interface StandardContext {
   runtime: Conversation;
+  scope: ResourceScope;
   report(error: unknown): void;
 }
-export type ComposerFactory = (
+export type ComposerSlot = (
   context: StandardContext,
   name: string,
-) => Part<void>;
+) => StandardValue;
 export interface ReactionInput {
   subject: Comment | Discussion | null;
   position: "top" | "bottom";
 }
-export type ReactionFactory = (context: StandardContext) => Part<ReactionInput>;
-export interface HeaderInput {
-  comment: Comment;
-  reply: boolean;
-}
-export type HeaderFactory = (context: StandardContext) => Part<HeaderInput>;
+export type ReactionSlot = (context: StandardContext, input: ReactionInput) => StandardValue;
+export type HeaderSlot = (context: StandardContext, comment: Comment) => StandardValue;
 /** Optional component replacements. Full presentation replacement uses headless. */
 export interface StandardParts {
-  composer?: ComposerFactory;
-  reactions?: ReactionFactory;
-  header?: HeaderFactory;
+  composer?: ComposerSlot;
+  reactions?: ReactionSlot;
+  header?: HeaderSlot;
 }

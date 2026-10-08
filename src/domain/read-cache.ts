@@ -1,43 +1,47 @@
-interface Entry { text: string; expires: number; bytes: number; group: string }
-/** Repository-owned, byte-bounded LRU. Pending work is shared, never persisted. */
+import type { ReadValue } from '../contracts/results.js';
+interface Read { group: string; alias?: string; bytes: number; promise: Promise<ReadValue<unknown>>; result?: ReadValue<unknown> }
+/** Completed-value reuse and overlapping reads share one owner. */
 export class ReadCache {
-  #entries = new Map<string, Entry>();
-  #pending = new Map<string, { group: string; promise: Promise<Entry> }>();
+  #reads = new Map<string, Read>();
   #bytes = 0;
-  constructor(readonly now:()=>number=Date.now,readonly maximumBytes=8*1024*1024){}
-  invalidate(matches: (group:string)=>boolean): void {
-    for(const [key,entry] of this.#entries) if(matches(entry.group)){this.#entries.delete(key);this.#bytes-=entry.bytes;}
-    for(const [key,entry] of this.#pending) if(matches(entry.group)) this.#pending.delete(key);
+  constructor(readonly now: () => number = Date.now, readonly maximumBytes = 8 * 1024 * 1024) {}
+  #remove(key: string): void {
+    this.#bytes -= this.#reads.get(key)?.bytes ?? 0;
+    this.#reads.delete(key);
   }
-  async read(key:string,group:string,ttl:number,read:()=>Promise<unknown>):Promise<Entry>{
-    const cached=this.#entries.get(key);
-    if(cached&&cached.expires>this.now()){
-      this.#entries.delete(key);this.#entries.set(key,cached);return cached;
+  identify(group: string, alias: string): void {
+    for (const read of this.#reads.values()) if (read.group === group) read.alias = alias;
+  }
+  invalidate(matches: (group: string) => boolean): void {
+    for (const [key, read] of this.#reads) if (matches(read.group) || (read.alias && matches(read.alias))) this.#remove(key);
+  }
+  async read<T>(key: string, group: string, ttl: number, load: () => Promise<T>): Promise<ReadValue<T>> {
+    const cached = this.#reads.get(key);
+    if (cached && (!cached.result || cached.result.expires > this.now())) {
+      this.#reads.delete(key);
+      this.#reads.set(key, cached);
+      return cached.promise as Promise<ReadValue<T>>;
     }
-    if(cached){this.#entries.delete(key);this.#bytes-=cached.bytes;}
-    let pending=this.#pending.get(key);
-    if(!pending){
-      const expires=this.now()+ttl;
-      const promise=Promise.resolve().then(read).then(value=>{
-        const text=JSON.stringify(value),bytes=(text.length+key.length+group.length)*2+128;
-        const result={text,expires,bytes,group};
-        if(this.#pending.get(key)===entry&&ttl>0&&expires>this.now()&&bytes<=this.maximumBytes){
-          while(this.#bytes+bytes>this.maximumBytes){const oldest=this.#entries.entries().next().value!;this.#bytes-=oldest[1].bytes;this.#entries.delete(oldest[0]);}
-          this.#entries.set(key,result);this.#bytes+=bytes;
+    if (cached) this.#remove(key);
+    const expires = this.now() + ttl;
+    const read: Read = { group, bytes: 0, promise: Promise.resolve().then(load).then(value => {
+      // Retained-value weight estimate; excludes object overhead and in-flight work.
+      const bytes = (JSON.stringify(value).length + key.length + group.length) * 2 + 256;
+      const entry = { value, expires };
+      if (this.#reads.get(key) === read && ttl > 0 && expires > this.now() && bytes <= this.maximumBytes) {
+        for (const [oldest, entry] of this.#reads) {
+          if (this.#bytes + bytes <= this.maximumBytes) break;
+          if (entry.result) this.#remove(oldest);
         }
-        return result;
-      }).finally(()=>{if(this.#pending.get(key)===entry)this.#pending.delete(key);});
-      const entry={group,promise};
-      this.#pending.set(key,entry);
-      pending=entry;
-    }
-    return pending.promise;
+        read.result = entry;
+        read.bytes = bytes;
+        this.#bytes += bytes;
+        this.#reads.delete(key);
+        this.#reads.set(key, read);
+      }
+      return entry;
+    }).finally(() => { if (!read.result && this.#reads.get(key) === read) this.#remove(key); }) };
+    this.#reads.set(key, read);
+    return read.promise as Promise<ReadValue<T>>;
   }
-  async response(key:string,group:string,ttl:number,read:()=>Promise<unknown>):Promise<Response>{
-    return readResponse(await this.read(key,group,ttl,read),this.now());
-  }
-}
-export function readResponse(value:{text:string;expires:number},now=Date.now()):Response{
-  const remaining=Math.max(0,Math.floor((value.expires-now)/1000));
-  return new Response(value.text,{headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':remaining?'public, max-age='+remaining:'no-store','X-Giscusflare-Expires':String(value.expires)}});
 }

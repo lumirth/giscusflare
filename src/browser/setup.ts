@@ -47,13 +47,12 @@ form.addEventListener('submit', event => {
       const term = String(values.get('term') || '').trim();
       if (mapping === 'specific' && !term) throw new Error('Enter a search term.');
       if (mapping === 'number' && !/^[1-9]\d*$/.test(term)) throw new Error('Enter a positive discussion number.');
-      const response = await fetch('/api/v2/config?' + new URLSearchParams({ input: JSON.stringify({ repo, origin }) }), { cache: 'no-store' });
-      const data = await response.json() as { repo: string; repoId: string; category: string; categoryId: string; error?: { message: string } };
+      const response = await fetch('/api/v3/config?' + new URLSearchParams({ input: JSON.stringify({ repo, origin }) }), { cache: 'no-store' });
+      const data = await response.json() as { repo: string; error?: { message: string } };
       if (!response.ok) throw new Error(data.error?.message || 'Could not check the repository.');
       const attributes: Record<string, string> = {
         src: location.origin + '/client.js',
-        'data-repo': data.repo, 'data-repo-id': data.repoId,
-        'data-category': data.category, 'data-category-id': data.categoryId,
+        'data-repo': data.repo,
         'data-mapping': mapping,
         ...(mapping === 'specific' || mapping === 'number' ? { 'data-term': term } : {}),
         'data-strict': values.has('strict') ? '1' : '0', 'data-reactions-enabled': '1',
@@ -129,7 +128,7 @@ document.getElementById('copy-secret')!.addEventListener('click', async event =>
   try { await navigator.clipboard.writeText(document.getElementById('session-secret')!.textContent!); button.textContent = 'Copied'; }
   catch { button.textContent = 'Select the secret to copy'; }
 });
-void fetch('/api/v2/setup', { cache: 'no-store' }).then(async response => {
+void fetch('/api/v3/setup', { cache: 'no-store' }).then(async response => {
   const state = await response.json() as { configured: boolean };
   document.getElementById('deployment-status')!.textContent = state.configured ? 'Your service is configured. Check a repository below to generate its embed code.' : 'Your service is deployed. Connect GitHub and choose the websites where comments will appear.';
 }).catch(() => { document.getElementById('deployment-status')!.textContent = 'Connect GitHub and configure your service below.'; });

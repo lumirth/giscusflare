@@ -18,7 +18,7 @@ const themes = (await readdir('public/themes')).filter(name => name.endsWith('.c
 const groups = {
   auth: [...script('auth-window.js'), ...script('auth-complete.js'), 'auth.css', '_headers'],
   setup: [...script('setup.js'), 'index.html', 'setup.css', 'brand/favicon.png', 'brand/giscusflare-logo.png'],
-  iframe: [...script('widget.js'), 'client.js', 'widget.css', 'embed.css', ...themes],
+  iframe: [...script('widget.js'), 'client.js', 'widget.css', 'iframe.css', 'embed.css', ...themes],
   native: [...script('native.js'), 'native.css'],
   headless: script('headless.js'),
 };

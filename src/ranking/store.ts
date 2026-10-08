@@ -1,188 +1,125 @@
-import {LRU} from '../domain/lru.js';
-import type { Candidate, RankingOptions, Storage } from './types.js';
-export const GROUP_SIZE = 128;
-const DAY = 86_400_000, HOUR = 3_600_000;
-export interface Cost { reads: number; writes: number; requests: number }
-interface Budget { day: number; hour: number; reads: number; writes: number; requests: number; invalidatedAt: number; blockedUntil: number }
-export interface Group { number: number; generation: number; records: Candidate[] }
-export interface Dataset { groups: Map<number, Group>; locations: Map<string, number>; bytes: number }
-/** No ranking tables are created until an enabled engine is instantiated. */
+import { INPUTS, type Candidate, type Fact, type Profile, type RankingOptions, type Storage } from './types.js';
+
+const DAY = 86400000, HOUR = 3600000;
+const columns = INPUTS.map((_, index) => 'v' + index);
+const fields = ['created', 'eligible', ...columns];
+interface Meter { day: number; hour: number; reads: number; writes: number; requests: number }
+export interface Scored { id: string; score: number; created: number }
+
+/** Typed observations and one checkpoint per collection; native SQL owns row accounting. */
 export class RankingStore {
-  #cache=new LRU<Dataset>(32*1024*1024);
-  #budget: Budget | undefined;
-  #depth = 0;
+  #meter: Meter;
+  #unpersisted = 0;
+  #ready = false;
   constructor(readonly storage: Storage, readonly options: RankingOptions, readonly now: () => number) {
-    const sql = storage.sql;
-    sql.exec('CREATE TABLE IF NOT EXISTS ranking_groups (thread TEXT NOT NULL, number INTEGER NOT NULL, generation INTEGER NOT NULL, value TEXT NOT NULL, PRIMARY KEY(thread,number)) WITHOUT ROWID');
-    sql.exec('CREATE TABLE IF NOT EXISTS ranking_locations (thread TEXT NOT NULL, id TEXT NOT NULL, number INTEGER NOT NULL, PRIMARY KEY(thread,id)) WITHOUT ROWID');
-    sql.exec('CREATE TABLE IF NOT EXISTS ranking_states (thread TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID');
-    sql.exec('CREATE TABLE IF NOT EXISTS ranking_scan (thread TEXT NOT NULL, page INTEGER NOT NULL, value TEXT NOT NULL, PRIMARY KEY(thread,page)) WITHOUT ROWID');
-    sql.exec('CREATE TABLE IF NOT EXISTS ranking_jobs (thread TEXT PRIMARY KEY, wake INTEGER NOT NULL) WITHOUT ROWID');
-    sql.exec('CREATE INDEX IF NOT EXISTS ranking_jobs_wake ON ranking_jobs(wake)');
-    sql.exec('CREATE TABLE IF NOT EXISTS ranking_budget (id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL)');
+    this.#meter = { day: Math.floor(now() / DAY), hour: Math.floor(now() / HOUR), reads: 0, writes: 0, requests: 0 };
+    this.exec(`CREATE TABLE IF NOT EXISTS ranking_items(thread TEXT,id TEXT,version INTEGER NOT NULL,seen INTEGER NOT NULL,removed INTEGER NOT NULL,created INTEGER,eligible INTEGER,${columns.map(c => c + ' INTEGER').join(',')},PRIMARY KEY(thread,id)) WITHOUT ROWID`);
+    this.exec('CREATE INDEX IF NOT EXISTS ranking_members ON ranking_items(thread,seen,id)');
+    this.exec('CREATE TABLE IF NOT EXISTS ranking_state(thread TEXT PRIMARY KEY,value TEXT NOT NULL,wake INTEGER) WITHOUT ROWID');
+    this.exec('CREATE INDEX IF NOT EXISTS ranking_due ON ranking_state(wake) WHERE wake IS NOT NULL');
+    this.exec('CREATE TABLE IF NOT EXISTS ranking_meter(id INTEGER PRIMARY KEY CHECK(id=1),value TEXT NOT NULL)');
+    const row = this.exec('SELECT value FROM ranking_meter WHERE id=1')[0];
+    if (row) {
+      const previous = JSON.parse(String(row.value)) as Meter;
+      if (previous.day === this.#meter.day) { this.#meter.reads += previous.reads; this.#meter.writes += previous.writes; }
+      if (previous.hour === this.#meter.hour) this.#meter.requests = previous.requests;
+    }
+    this.#ready = true;
+    this.checkpoint();
   }
-  transaction<T>(action: () => T): T {
-    if (this.#depth) return action();
-    try { return this.storage.transactionSync(() => { this.#depth++; try { return action(); } finally { this.#depth--; } }); }
-    catch (error) { this.#cache.clear(); this.#budget = undefined; throw error; }
+  #read<T>(query: string, bindings: (string | number | null)[], read: (cursor: ReturnType<Storage['sql']['exec']>) => T): T {
+    this.usage();
+    const cursor = this.storage.sql.exec(query, ...bindings);
+    try { return read(cursor); }
+    finally {
+      this.#meter.reads += cursor.rowsRead; this.#meter.writes += cursor.rowsWritten;
+      this.#unpersisted += cursor.rowsRead + cursor.rowsWritten;
+      if (this.#ready && this.#unpersisted >= 100) this.checkpoint();
+    }
+  }
+  exec(query: string, ...bindings: (string | number | null)[]): Record<string, unknown>[] {
+    return this.#read(query, bindings, cursor => [...cursor]);
+  }
+  usage(): Meter {
+    const day = Math.floor(this.now() / DAY), hour = Math.floor(this.now() / HOUR);
+    if (this.#meter.day !== day) this.#meter = { ...this.#meter, day, reads: 0, writes: 0 };
+    if (this.#meter.hour !== hour) this.#meter = { ...this.#meter, hour, requests: 0 };
+    return this.#meter;
+  }
+  checkpoint(): void {
+    // Quiet reads flush every100 rows; scan steps and HTTP admission checkpoint explicitly.
+    // A crash may omit at most an interrupted bounded step plus the unflushed tail.
+    this.#unpersisted = 0;
+    this.exec('INSERT INTO ranking_meter VALUES(1,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value', JSON.stringify(this.usage()));
+  }
+  blocked(requests = 0): number | null {
+    const usage = this.usage();
+    return Math.max(
+      usage.reads >= this.options.maxRowsReadPerDay || usage.writes >= this.options.maxRowsWrittenPerDay ? (usage.day + 1) * DAY : 0,
+      usage.requests + requests > this.options.maxRequestsPerHour ? (usage.hour + 1) * HOUR : 0,
+    ) || null;
+  }
+  request(count = 1): number | null {
+    const blocked = this.blocked(count);
+    if (!blocked) { this.#meter.requests += count; this.checkpoint(); }
+    return blocked;
   }
   get<T>(thread: string): T | undefined {
-    const row = [...this.storage.sql.exec('SELECT value FROM ranking_states WHERE thread=?', thread)][0];
+    const row = this.exec('SELECT value FROM ranking_state WHERE thread=?', thread)[0];
     return row ? JSON.parse(String(row.value)) as T : undefined;
   }
-  save(thread: string, value: unknown): void {
-    this.storage.sql.exec('INSERT INTO ranking_states(thread,value) VALUES(?,?) ON CONFLICT(thread) DO UPDATE SET value=excluded.value', thread, JSON.stringify(value));
-    const state = value as { job?: { wakeAt: number }; pause?: { retryAt: number | null } };
-    if (state.job && state.pause?.retryAt !== null) this.storage.sql.exec('INSERT INTO ranking_jobs(thread,wake) VALUES(?,?) ON CONFLICT(thread) DO UPDATE SET wake=excluded.wake WHERE ranking_jobs.wake != excluded.wake', thread, state.job.wakeAt);
-    else this.storage.sql.exec('DELETE FROM ranking_jobs WHERE thread=?', thread);
+  save(thread: string, value: unknown, wake: number | null): void {
+    this.exec('INSERT INTO ranking_state VALUES(?,?,?) ON CONFLICT(thread) DO UPDATE SET value=excluded.value,wake=excluded.wake', thread, JSON.stringify(value), wake);
+    this.checkpoint();
   }
-  nextJob(): { thread: string; wake: number } | undefined {
-    const row = [...this.storage.sql.exec('SELECT thread,wake FROM ranking_jobs ORDER BY wake LIMIT 1')][0];
+  next(): { thread: string; wake: number } | undefined {
+    const row = this.exec('SELECT thread,wake FROM ranking_state WHERE wake IS NOT NULL ORDER BY wake LIMIT 1')[0];
     return row ? { thread: String(row.thread), wake: Number(row.wake) } : undefined;
   }
-  budget(): Budget {
-    if (!this.#budget) {
-      const row = [...this.storage.sql.exec('SELECT value FROM ranking_budget WHERE id=1')][0];
-      this.#budget = row ? JSON.parse(String(row.value)) as Budget : { day: 0, hour: 0, reads: 0, writes: 0, requests: 0, invalidatedAt: 0, blockedUntil: 0 };
-    }
-    const day = Math.floor(this.now() / DAY), hour = Math.floor(this.now() / HOUR);
-    if (this.#budget.day !== day) this.#budget = { ...this.#budget, day, reads: 0, writes: 0 };
-    if (this.#budget.hour !== hour) this.#budget = { ...this.#budget, hour, requests: 0 };
-    return this.#budget;
+  ids(thread: string, after: string, limit: number): string[] {
+    return this.exec('SELECT id FROM ranking_items WHERE thread=? AND id>? AND removed=0 ORDER BY id LIMIT ?', thread, after, limit).map(row => String(row.id));
   }
-  #saveBudget(): void {
-    this.storage.sql.exec('INSERT INTO ranking_budget(id,value) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value', JSON.stringify(this.#budget));
-  }
-  /** Charges conservative bounds before doing work. Unused reservations stay charged. */
-  reserve(cost: Cost, control = false): { accepted: true } | { accepted: false; retryAt: number } {
-    for (const n of Object.values(cost)) if (!Number.isSafeInteger(n) || n < 0) throw new Error('Invalid ranking reservation.');
-    const budget = this.budget(), reserve = control ? 0 : 32;
-    const written = budget.writes + cost.writes + 1;
-    // Existing-row UPSERTs and job-index maintenance can also read rows.
-    const reads = budget.reads + cost.reads + cost.writes + 4;
-    const daily = written > this.options.maxRowsWrittenPerDay - reserve || reads > this.options.maxRowsReadPerDay - reserve;
-    const hourly = budget.requests + cost.requests > this.options.maxRequestsPerHour;
-    if (daily || hourly) return { accepted: false, retryAt: Math.max(daily ? (budget.day + 1) * DAY : 0, hourly ? (budget.hour + 1) * HOUR : 0) };
-    this.transaction(() => {
-      this.#budget = { ...budget, writes: written, reads, requests: budget.requests + cost.requests };
-      this.#saveBudget();
-    });
-    return { accepted: true };
-  }
-  /** One durable global fence covers further writes after the control reserve is spent. */
-  invalidateAll(): void {
-    const budget = this.budget();
-    if (budget.blockedUntil > this.now()) return;
-    this.#budget = { ...budget, invalidatedAt: this.now(), blockedUntil: (budget.day + 1) * DAY, writes: budget.writes + 1 };
-    this.#saveBudget();
-  }
-  load(thread: string): Dataset {
-    const cached=this.cached(thread);if(cached)return cached;
-    const data: Dataset = { groups: new Map(), locations: new Map(), bytes: 0 };
-    for (const row of this.storage.sql.exec('SELECT number,generation,value FROM ranking_groups WHERE thread=? ORDER BY number', thread)) {
-      const value = String(row.value); data.bytes += value.length * 2;
-      if (data.bytes > 32 * 1024 * 1024) throw new Error('RANKING_SIZE');
-      const group: Group = { number: Number(row.number), generation: Number(row.generation), records: JSON.parse(value) as Candidate[] };
-      data.groups.set(group.number, group);
-      for (const record of group.records) data.locations.set(record.id, group.number);
-    }
-    if(data.bytes+data.locations.size*160+256>32*1024*1024)throw new Error('RANKING_SIZE');
-    this.#cache.set(thread,data,data.bytes+data.locations.size*160+256);
-    return data;
-  }
-  cached(thread: string): Dataset | undefined { return this.#cache.get(thread); }
-  #writeGroup(thread: string, group: Group, previous?: Group): void {
-    const value = JSON.stringify(group.records);
-    this.storage.sql.exec('INSERT INTO ranking_groups(thread,number,generation,value) VALUES(?,?,?,?) ON CONFLICT(thread,number) DO UPDATE SET generation=excluded.generation,value=excluded.value', thread, group.number, group.generation, value);
-    const data = this.cached(thread);
-    if (data) { data.bytes += (value.length - (previous ? JSON.stringify(previous.records).length : 0)) * 2; data.groups.set(group.number, group); }
-  }
-  estimate(thread: string, incoming: readonly Candidate[], deleted: readonly string[], startedRevision: number): Cost {
-    const data = this.load(thread), groups = new Set<number>();
-    let inserted = 0, removed = 0;
-    for (const candidate of incoming) {
-      const number = data.locations.get(candidate.id);
-      if (number === undefined) { inserted++; continue; }
-      const group = data.groups.get(number)!;
-      if (group.generation <= startedRevision && JSON.stringify(group.records.find(record => record.id === candidate.id)) !== JSON.stringify(candidate)) groups.add(number);
-    }
-    for (const id of deleted) {
-      const number = data.locations.get(id);
-      if (number !== undefined && data.groups.get(number)!.generation <= startedRevision) { removed++; groups.add(number); }
-    }
-    return { reads: 0, writes: inserted + removed + groups.size + (inserted ? Math.ceil(inserted / GROUP_SIZE) + 1 : 0), requests: 0 };
-  }
-  candidate(thread: string, id: string): Candidate | undefined {
-    const cached = this.cached(thread);
-    if (cached) { const number = cached.locations.get(id); return number === undefined ? undefined : cached.groups.get(number)?.records.find(record => record.id === id); }
-    const location = [...this.storage.sql.exec('SELECT number FROM ranking_locations WHERE thread=? AND id=?', thread, id)][0];
-    if (!location) return;
-    const row = [...this.storage.sql.exec('SELECT value FROM ranking_groups WHERE thread=? AND number=?', thread, Number(location.number))][0]!;
-    return (JSON.parse(String(row.value)) as Candidate[]).find(record => record.id === id);
-  }
-  /** Caller reserves first. A read started before a local write cannot replace its group. */
-  apply(thread: string, incoming: readonly Candidate[], deleted: readonly string[], startedRevision: number, mutationRevision?: number): { changed: boolean; conflicts: string[] } {
-    const data = this.load(thread), changes = new Map<number, Group>(), conflicts: string[] = [];
-    let last = -1; for (const number of data.groups.keys()) last = Math.max(last, number);
-    const edit = (number: number) => {
-      let group = changes.get(number);
-      if (!group) { const current = data.groups.get(number); group = { number, generation: current?.generation ?? 0, records: current ? [...current.records] : [] }; changes.set(number, group); }
-      return group;
-    };
-    this.transaction(() => {
-      for (const candidate of incoming) {
-        let number = data.locations.get(candidate.id);
-        if (number !== undefined && data.groups.get(number)!.generation > startedRevision && mutationRevision === undefined) { conflicts.push(candidate.id); continue; }
-        if (number === undefined) {
-          if (last < 0 || (changes.get(last) ?? data.groups.get(last))!.records.length >= GROUP_SIZE) last++;
-          number = last;
-          const group = edit(number); group.records.push(candidate);
-          data.locations.set(candidate.id, number);
-          this.storage.sql.exec('INSERT INTO ranking_locations(thread,id,number) VALUES(?,?,?)', thread, candidate.id, number);
-        } else {
-          const current = changes.get(number) ?? data.groups.get(number)!;
-          const index = current.records.findIndex(record => record.id === candidate.id);
-          if (JSON.stringify(current.records[index]) === JSON.stringify(candidate) && mutationRevision === undefined) continue;
-          edit(number).records[index] = candidate;
-        }
-        if (mutationRevision !== undefined) edit(number).generation = mutationRevision;
+  /** Local fact versions protect returning remote responses; unchanged inputs write no row. */
+  apply(thread: string, candidates: readonly (Candidate | null)[], ids: readonly string[], version: number, seen?: number): boolean {
+    let changed = false;
+    for (let index = 0; index < candidates.length; index++) {
+      const candidate = candidates[index];
+      if (!candidate) {
+        changed = this.exec('UPDATE ranking_items SET removed=1,seen=0 WHERE thread=? AND id=? AND version<=? AND removed=0 RETURNING id', thread, ids[index]!, version).length > 0 || changed;
+        continue;
       }
-      for (const id of deleted) {
-        const number = data.locations.get(id);
-        if (number === undefined) continue;
-        if (data.groups.get(number)!.generation > startedRevision && mutationRevision === undefined) { conflicts.push(id); continue; }
-        const group = edit(number); group.records = group.records.filter(record => record.id !== id);
-        if (mutationRevision !== undefined) group.generation = mutationRevision;
-        data.locations.delete(id);
-        this.storage.sql.exec('DELETE FROM ranking_locations WHERE thread=? AND id=?', thread, id);
+      const values = [candidate.created, Number(candidate.eligible), ...INPUTS.map(input => candidate.values[input] ?? null)];
+      const updates = fields.map(field => `${field}=CASE WHEN ranking_items.version<=? THEN COALESCE(excluded.${field},ranking_items.${field}) ELSE ranking_items.${field} END`).join(',');
+      const difference = fields.map(field => `(excluded.${field} IS NOT NULL AND ranking_items.${field} IS NOT excluded.${field})`).join(' OR ');
+      const result = this.exec(`INSERT INTO ranking_items(thread,id,version,seen,removed,${fields.join(',')}) VALUES(${Array(fields.length + 5).fill('?').join(',')}) ON CONFLICT(thread,id) DO UPDATE SET seen=${seen === undefined ? 'ranking_items.seen' : 'excluded.seen'},removed=CASE WHEN ranking_items.version<=? THEN 0 ELSE ranking_items.removed END,${updates} WHERE ${seen === undefined ? '' : 'ranking_items.seen!=excluded.seen OR '}(ranking_items.version<=? AND (ranking_items.removed=1 OR ${difference})) RETURNING id`, thread, candidate.id, 0, seen ?? 0, 0, ...values, version, ...fields.map(() => version), version);
+      changed = result.length > 0 || changed;
+    }
+    return changed;
+  }
+  prune(thread: string, seen: number, limit: number): number {
+    return this.exec('DELETE FROM ranking_items WHERE (thread,id) IN (SELECT thread,id FROM ranking_items WHERE thread=? AND seen<? ORDER BY seen LIMIT ?) RETURNING id', thread, seen, limit).length;
+  }
+  correct(thread: string, fact: Fact, version: number, seen: number): void {
+    if ('removed' in fact) {
+      this.exec('INSERT INTO ranking_items(thread,id,version,seen,removed) VALUES(?,?,?,0,1) ON CONFLICT(thread,id) DO UPDATE SET version=excluded.version,seen=0,removed=1', thread, fact.id, version);
+      return;
+    }
+    this.exec(`INSERT INTO ranking_items(thread,id,version,seen,removed,${fields.join(',')}) VALUES(${Array(fields.length + 5).fill('?').join(',')}) ON CONFLICT(thread,id) DO UPDATE SET version=excluded.version,seen=excluded.seen,removed=0,${fields.map(field => `${field}=excluded.${field}`).join(',')}`, thread, fact.id, version, seen, 0, fact.created, Number(fact.eligible), ...INPUTS.map(input => fact.values[input] ?? null));
+  }
+  order(thread: string, profile: Profile, id?: string): Scored[] {
+    const weights = Object.entries(profile.weights).filter(([, weight]) => weight !== 0);
+    const score = weights.map(([input]) => `CAST(${columns[INPUTS.indexOf(input as typeof INPUTS[number])]} AS REAL)*?`).join('+');
+    return this.#read(`SELECT id,created,(${score}) AS score FROM ranking_items WHERE thread=? AND removed=0 AND eligible=1 ${id ? 'AND id=?' : ''} ORDER BY score DESC,created ${profile.tieBreak === 'oldest' ? 'ASC' : 'DESC'},id`, [...weights.map(([, weight]) => weight), thread, ...(id ? [id] : [])], cursor => {
+      const result: Scored[] = [];
+      let bytes = 2, retained = 0;
+      for (const row of cursor) {
+        const item = { id: String(row.id), created: Number(row.created), score: Number(row.score) };
+        bytes += item.id.length + 2 + (result.length ? 1 : 0);
+        retained += item.id.length * 2 + 88;
+        if (!id && (bytes > this.options.maxOrderBytes || retained > 32 * 1024 * 1024)) throw Error('RANKING_SIZE');
+        result.push(item);
       }
-      for (const group of changes.values()) this.#writeGroup(thread, group, data.groups.get(group.number));
+      return result;
     });
-    this.#cache.set(thread,data,data.bytes+data.locations.size*160+256);
-    return { changed: changes.size > 0, conflicts };
   }
-  /** Targeted own-write update does not restore a large dataset on a cold object. */
-  mutate(thread: string, candidate: Candidate | { id: string; deleted: true }, revision: number): boolean {
-    if (this.cached(thread)) return this.apply(thread, 'deleted' in candidate ? [] : [candidate], 'deleted' in candidate ? [candidate.id] : [], revision, revision).changed;
-    const location = [...this.storage.sql.exec('SELECT number FROM ranking_locations WHERE thread=? AND id=?', thread, candidate.id)][0];
-    if (!location) return false;
-    const row = [...this.storage.sql.exec('SELECT generation,value FROM ranking_groups WHERE thread=? AND number=?', thread, Number(location.number))][0]!;
-    const previous: Group = { number: Number(location.number), generation: Number(row.generation), records: JSON.parse(String(row.value)) as Candidate[] };
-    const records = 'deleted' in candidate ? previous.records.filter(item => item.id !== candidate.id) : previous.records.map(item => item.id === candidate.id ? candidate : item);
-    
-    this.transaction(() => {
-      this.#writeGroup(thread, { ...previous, generation: revision, records }, previous);
-      if ('deleted' in candidate) this.storage.sql.exec('DELETE FROM ranking_locations WHERE thread=? AND id=?', thread, candidate.id);
-    });
-    return true;
-  }
-  appendScan(thread: string, page: number, ids: readonly string[]): void {
-    this.storage.sql.exec('INSERT INTO ranking_scan(thread,page,value) VALUES(?,?,?) ON CONFLICT(thread,page) DO UPDATE SET value=excluded.value', thread, page, JSON.stringify(ids));
-  }
-  scanIds(thread: string): Set<string> {
-    const ids = new Set<string>();
-    for (const row of this.storage.sql.exec('SELECT value FROM ranking_scan WHERE thread=? ORDER BY page', thread)) for (const id of JSON.parse(String(row.value)) as string[]) ids.add(id);
-    return ids;
-  }
-  clearScan(thread: string): void { this.storage.sql.exec('DELETE FROM ranking_scan WHERE thread=?', thread); }
 }

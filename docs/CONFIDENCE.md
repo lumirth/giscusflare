@@ -1,55 +1,34 @@
 # Verification results
 
-These records cover the initial release, rendering updates and the 2.0 shared-read changes. To repeat them, follow [testing](../TESTING.md) and the [release procedure](IMPLEMENTATION.md). For capacity planning, start with [Cloudflare usage](../FREE-TIER.md).
+Version 3.0 replaces browser ownership, internal service transport and ranking persistence. Earlier release results establish historical behavior and workloads; they do not qualify this replacement. Follow [verification](https://github.com/lumirth/giscusflare/blob/main/TESTING.md) to reproduce the current checks.
 
-## Automated and package checks
+## Current verification
 
-The September 27, 2026 release pass ran 155 core tests, 14 native workerd tests and 17 tests of the independent Kukas presentation. They covered origin policy, authorization, interrupted writes, session rotation, caching, ranking budgets and browser state.
+The release commands produce receipts identifying the source commit/content hash, runtime, conditions and result. Inspect each receipt’s status rather than treating the presence of a file as a passing check:
 
-Package checks extracted the release archive outside the workspace and built both browser and Worker consumers. The independent presentation also built against that archive. The checks verified public imports, selected static assets and the exclusion of development files.
+| Receipt | Evidence |
+| --- | --- |
+| `docs/evidence/native-runtime.json` | Actual workerd/SQLite, RPC, encrypted-session restart and an independent simulated remote effect |
+| `docs/evidence/browser-acceptance.json` | Chromium/WebKit native/iframe and custom-view workflows against the actual local Worker/DO service |
+| `docs/evidence/visual-parity.json` | Paired pre-PR/current renders with complete RGBA comparison under equivalent presentation inputs |
+| `docs/evidence/ranking-service-runtime.json` | Actual repository, credentials, provider transport and due native alarms for the warm full-day workload and divided allowance pause |
 
-A native workerd test transferred a 294 KB Unicode response through the production RPC format and checked its body, status, expiry and cache headers.
+GitHub is explicitly simulated in the native/browser receipts. Both use the production Worker and SQLite Durable Object in local workerd; the browser loads production built modules and actual browser resources. Provider effects remain outside workerd across restart. The resource receipt records complete-service native SQL and due alarms under its declared clock and workload. Package checks build consumers from an extracted archive. [Verification](https://github.com/lumirth/giscusflare/blob/main/TESTING.md) defines the full gate and separately required deployed checks.
 
-## Real GitHub queries
+The replacement removed DOM-identity and mutation-count proxies for native undo. Actual typing exposed failures despite stable editor nodes, and typing/undo/redo remains the oracle. Retiring a page, view or authentication flow must prevent late publication even when already-issued remote work completes. Check each receipt for the interleavings actually exercised; passing a happy-path journey alone does not establish those obligations.
 
-Seven query paths passed with a GitHub App installation token: discussion/page access, minimal discussion access, selected comment hydration, comment permissions, fresh comment detail, replies and counts. Each consumed one GraphQL point in that run.
+Local evidence does not establish production latency, CPU distributions, real GitHub permissions, fresh-account deployment, Firefox, Safari or physical iOS behavior. These local receipts do not establish a deployed service.
 
-Separate queries against public discussions returned 800 reaction candidates in 560,897 bytes and 500 candidates with all supported ranking inputs in 380,564 bytes. The service uses these compact selections for ranking and fetches comment bodies separately. [GitHub API use](GITHUB-API.md) explains the query constraints.
+## Historical observations
 
-## Browser checks
+A September 27, 2026 deployed workload sent 12,100 requests across 100 discussions with simulated 80 ms upstream latency. It recorded 6.85 ms p99 Worker CPU, 20.57 GB-s object duration and 3,071 SQLite writes. That workload preceded both the v2 cache changes and v3 typed ranking storage.
 
-Desktop WebKit checks exercised sign-in, return to the website, writing, Preview/Write, posting, author editing and native undo/redo. Local checks covered draft preservation across design changes, focus and selection through refresh, reply expansion and posting, and the first-page iframe response.
+Earlier real GitHub query checks exercised discussion access, comment hydration, permissions, replies and counts. Desktop Chromium/WebKit checks covered native and iframe presentation, editor undo and OAuth flows. These observations guide acceptance coverage but must be repeated when their boundary changes.
 
-The deployed demo passed same-window GitHub sign-in, draft preservation between designs, preview, posting, editing, reactions and replies. GitHub readback confirmed the saved comment and reaction. Both native and iframe requests accepted the project website and rejected an unrelated origin.
+The giscus presentation reference remains pinned at `3d6430237108ca4ee3eb6a1a20595201c09c72d5`; [source provenance](PROVENANCE.md) identifies its attribution. Measure actual behavior instead of requiring the replacement to reproduce historical DOM structure or storage groups.
 
-The September 28 rich-content pass compared the full giscus example comment in the default and forum presentations. It checked headings, tables, code, GitHub code previews, images, malformed TeX and four valid math expressions. Mobile light and dark checks at 390 CSS pixels found no page overflow. [Presentation](PRESENTATION.md) links the earlier theme comparisons.
+## Capacity evidence
 
-The recorded checks used desktop WebKit and Chromium. Physical iOS, Firefox and a complete locale/theme matrix remain useful additions to release coverage.
+Use actual SQL cursor counters for rows, platform metrics for CPU and object duration, and independent request/remote-effect observations. Record cold restoration, unchanged refresh, changed observations, correction during acquisition, multiple active discussions, every configured profile and membership reconciliation. [Cloudflare usage](../FREE-TIER.md) explains the constraints.
 
-## Storage and recovery
-
-A production state export restored all 143 operational records into native workerd SQLite with identical contents. The export included mappings, sessions and 129 completed operation receipts. The check also restored the previous deployed code.
-
-Ranking tests exercised object restarts, interrupted jobs, partial GitHub failures, permission changes and daily budget pauses. Restoring a 10,000-candidate collection read 79 rows; restoring 100,000 candidates read 782 rows.
-
-## Deployment and resource checks
-
-The Deploy to Cloudflare button reached the source-import screen with the expected build and deploy commands. The deployed setup page generated GitHub App settings and checked repository policy before producing an embed. The demo service used Wrangler for deployment; a complete fresh account setup through the button remains on the [release checklist](IMPLEMENTATION.md#deployment-and-setup).
-
-A concurrent deployed test completed 12,100 HTTP requests across 100 discussions, with 6.85 ms p99 Worker CPU, 20.57 GB-s of object duration and 3,071 SQLite writes. [Cloudflare usage](../FREE-TIER.md#measurements-from-a-deployed-service) records its traffic mix, simulated upstream timing, CPU tail and comparison with separate real GitHub queries.
-
-## Shared reads in 2.0
-
-The repository tests exercise overlapping count batches from different website pages, cached missing discussions, a write that preserves unrelated discussion reads, and access expiry after a repository becomes private. Alternating ready rankings for two discussions makes no further GitHub calls or candidate-table reads while access verification remains fresh. Count misses combine verification and summaries in one GraphQL request.
-
-The native workerd suite checks the v2 protocol, response transfer, SQLite and encrypted-session survival across process restarts. Package checks build isolated browser and Worker consumers from the release archive. These checks complement the earlier deployed traffic measurements above.
-
-## Ranking resource measurements
-
-To measure this extra work, we ran a local workerd SQLite test with a 10,000-root discussion. It simulated a day with 10,080 ranking reads, 144 refresh cycles at ten-minute intervals, a daily membership audit and 200 confirmed reaction changes. It used 12,315 SQLite writes. An unchanged refresh used 75 writes and 14 GitHub requests. Restoring the collection after an object restart read 79 rows.
-
-The budget charged 25,237 reserved writes against the default 32,000-write allocation. Reservations cover possible work before it starts, so they can exceed actual writes. The service divides the configured allowance among ranking-enabled repositories; discussions within a repository share its allocation.
-
-For a site with several active ranked discussions, each discussion needs its own metadata refresh. Version 2.0 retains multiple discussions and orders in memory, so switching between cached rankings can reuse that work. Evicted data is restored from SQLite when requested again. See [architecture](DESIGN.md#optional-ranking) for the cache sizes.
-
-The default `maxOrderBytes` caps the returned ID list at 512 KiB. In a separate deployed test, a 100,000-ID order occupied 2.7 MB and reached 18 ms p99 Worker CPU. Measure CPU before raising that cap for very large discussions.
+Old grouped-JSON row counts, earlier freshness-fenced proofs and warm-cache limits are not current v3 capacity claims. The replacement exposes refresh cadence and acquisition intervals; a ready traversal does not promise an atomic remote snapshot or that every observation is younger than one age cutoff. Qualify the current representation and configured budgets directly.

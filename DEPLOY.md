@@ -2,6 +2,12 @@
 
 Deploy the comments service to your Cloudflare account, connect GitHub, then add the embed code to your website. You need a Cloudflare account and a public GitHub repository with Discussions enabled.
 
+## Build and deploy from source
+
+Install the locked dependencies with `npm ci`, configure `wrangler.jsonc`, then run `npm run deploy:check`. Deploy with `npm run deploy`. The public deploy button uses the source revision available on GitHub.
+
+For an existing service, preserve its Worker identity, Durable Object binding, platform migration history and secrets. Update the service and website package together when their public protocol changes.
+
 ## Deploy to Cloudflare
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/lumirth/giscusflare)

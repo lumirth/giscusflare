@@ -1,10 +1,9 @@
 /** Shared host storage mechanics for native and iframe embeddings. */
+const failedWrites = new WeakMap<Window, Map<string, unknown>>();
 export function storageNamespace(service: string, repo: string): string {
-  return `giscusflare:1:${service}:${repo}:`;
+  return `giscusflare:3:${service}:${repo}:`;
 }
 export function draftIdentity(config: {
-  category?: unknown;
-  categoryId?: unknown;
   strict?: unknown;
   number?: unknown;
   term?: unknown;
@@ -12,7 +11,6 @@ export function draftIdentity(config: {
   return (
     "draft:" +
     JSON.stringify([
-      config.categoryId || config.category || "",
       Boolean(config.strict),
       Number(config.number) || 0,
       config.term || "",
@@ -20,28 +18,30 @@ export function draftIdentity(config: {
   );
 }
 export function scopedStorage(prefix: string) {
-  const memory = new Map<string, unknown>();
+  let memory = failedWrites.get(window);
+  if (!memory) failedWrites.set(window, memory = new Map());
   return {
+    forget(key: string) { memory.delete(prefix + key); },
     read(key: string, persistent = false): unknown {
+      if (memory.has(prefix + key)) return memory.get(prefix + key);
       try {
         return JSON.parse(
           (persistent ? localStorage : sessionStorage).getItem(prefix + key) ||
             "null",
         );
       } catch {
-        return memory.get(key) || null;
+        return null;
       }
     },
-    write(key: string, value: unknown, persistent = false): boolean {
-      memory.set(key, value);
+    write(key: string, value: unknown, persistent = false): void {
       try {
         const store = persistent ? localStorage : sessionStorage;
         value === null
           ? store.removeItem(prefix + key)
           : store.setItem(prefix + key, JSON.stringify(value));
-        return true;
+        memory.delete(prefix + key);
       } catch {
-        return false;
+        memory.set(prefix + key, value);
       }
     },
   };

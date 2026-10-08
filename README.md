@@ -1,4 +1,4 @@
-<img src="public/brand/giscusflare-logo.png" alt="giscusflare" width="96" height="96">
+<img src="https://raw.githubusercontent.com/lumirth/giscusflare/main/public/brand/giscusflare-logo.png" alt="giscusflare" width="96" height="96">
 
 # giscusflare
 
@@ -21,11 +21,13 @@ Deploy to your Cloudflare account, then open your new service's address. Its set
 
 Choose a public GitHub repository for your comments. giscusflare finds the discussion for each page and creates one when someone first comments or reacts. Visitors use their GitHub accounts to participate, and you can read and manage the discussions on GitHub too.
 
+Optional [named weighted sorts](docs/CONFIGURATION.md#sort-by-reactions-or-reply-counts) return a complete captured traversal and report the interval used to acquire its inputs. `refreshSeconds` controls acquisition cadence; it does not promise that every source value is younger than that interval.
+
 Already using giscus? You can [keep your existing discussions](docs/COMPARISON.md#reuse-existing-discussions).
 
 ## Customize your comments
 
-Use an iframe embed or [mount comments directly in your page](docs/INTEGRATION.md#native-rendering). The [customization guide](docs/EXTENDING.md) covers themes, component replacements and building a custom interface. The demo's [forum design](examples/forum.ts) is a complete example you can adapt.
+Use an iframe embed or [mount comments directly in your page](docs/INTEGRATION.md#native-rendering). The [customization guide](docs/EXTENDING.md) covers themes, component replacements and building a custom interface. The demo's [forum design](https://github.com/lumirth/giscusflare/blob/main/examples/forum.ts) is a complete example you can adapt.
 
 ## Documentation
 
@@ -33,6 +35,6 @@ Use an iframe embed or [mount comments directly in your page](docs/INTEGRATION.m
 - [Configuration](docs/CONFIGURATION.md)
 - [JavaScript API](docs/API.md)
 - [Updates and troubleshooting](docs/OPERATIONS.md)
-- [Contributing](CONTRIBUTING.md) and [testing](TESTING.md)
+- [Contributing](https://github.com/lumirth/giscusflare/blob/main/CONTRIBUTING.md) and [testing](https://github.com/lumirth/giscusflare/blob/main/TESTING.md)
 
 MIT licensed. See [credits and licenses](THIRD-PARTY-NOTICES.md).

@@ -1,71 +1,91 @@
-import { INPUTS, validCandidate, type Candidate, type DiscoveryPage, type Input, type ObservationBatch } from './types.js';
-export interface RankingScope { repositoryId: string; discussionId: string; categoryId?: string }
+import { AppError } from '../domain/errors.js';
+import { INPUTS, validCandidate, type Candidate, type DiscoveryPage, type Input, type Signature } from './types.js';
+
+export interface RankingScope { repositoryId: string; discussionId: string; categoryId?: string; repo: string; category: string }
 export interface Query { query: string; variables: Record<string, unknown> }
 type ObjectValue = Record<string, unknown>;
-const object = (value: unknown): ObjectValue | undefined => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as ObjectValue : undefined;
-function inputsSelection(inputs: readonly Input[]): string {
-  const reactions = inputs.some(input => INPUTS.slice(0, 8).includes(input));
-  return [reactions ? 'reactionGroups { content reactors { totalCount } }' : '', inputs.includes('replies') ? 'replies { totalCount }' : '', inputs.includes('upvotes') ? 'upvoteCount' : '', inputs.includes('answer') ? 'isAnswer' : ''].filter(Boolean).join(' ');
+const object = (value: unknown): ObjectValue => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error('Incomplete ranking response.');
+  return value as ObjectValue;
+};
+const scopeSelection = 'id repository{id nameWithOwner isPrivate} category{id name}';
+function selection(inputs: readonly Input[]): string {
+  return [
+    inputs.some(input => INPUTS.slice(0, 8).includes(input)) ? 'reactionGroups{content reactors(first:1){totalCount}}' : '',
+    inputs.includes('replies') ? 'replies(first:1){totalCount}' : '',
+    inputs.includes('upvotes') ? 'upvoteCount' : '',
+    inputs.includes('answer') ? 'isAnswer' : '',
+  ].join(' ');
 }
-const scopeSelection = 'id repository { id isPrivate } category { id }';
-/** Metadata only: no comment bodies, author profiles or reply content. */
+export function headQuery(scope: RankingScope): Query {
+  return { query: `query RankHead($discussion:ID!){node(id:$discussion){... on Discussion{${scopeSelection} comments(last:1){totalCount nodes{id}}}}}`, variables: { discussion: scope.discussionId } };
+}
 export function discoveryQuery(scope: RankingScope, cursor: string | null, inputs: readonly Input[]): Query {
-  return { query: `query($discussion:ID!,$cursor:String){node(id:$discussion){... on Discussion{${scopeSelection} comments(last:100,before:$cursor){nodes{id createdAt isMinimized ${inputsSelection(inputs)}} pageInfo{hasPreviousPage startCursor}}}}}`, variables: { discussion: scope.discussionId, cursor } };
+  return { query: `query RankDiscovery($discussion:ID!,$cursor:String){node(id:$discussion){... on Discussion{${scopeSelection} comments(last:100,before:$cursor){nodes{id createdAt isMinimized ${selection(inputs)}} pageInfo{hasPreviousPage startCursor}}}}}`, variables: { discussion: scope.discussionId, cursor } };
 }
-/** Grouped reactions are cheaper than separate filtered count connections. */
 export function observationQuery(ids: readonly string[], inputs: readonly Input[]): Query {
-  if (!ids.length || ids.length > (inputs.includes('replies') ? 500 : 800) || new Set(ids).size !== ids.length) throw new Error('Invalid ranking batch.');
   const variables: Record<string, unknown> = {}, declarations: string[] = [], fields: string[] = [];
   for (let offset = 0, part = 0; offset < ids.length; offset += 100, part++) {
-    variables['ids' + part] = ids.slice(offset, offset + 100); declarations.push(`$ids${part}:[ID!]!`);
-    fields.push(`batch${part}:nodes(ids:$ids${part}){... on DiscussionComment{id createdAt isMinimized replyTo{id} discussion{${scopeSelection}} ${inputsSelection(inputs)}}}`);
+    variables['ids' + part] = ids.slice(offset, offset + 100);
+    declarations.push(`$ids${part}:[ID!]!`);
+    fields.push(`batch${part}:nodes(ids:$ids${part}){... on DiscussionComment{id createdAt isMinimized replyTo{id} discussion{${scopeSelection}} ${selection(inputs)}}}`);
   }
-  return { query: `query(${declarations.join(',')}){${fields.join(' ')}}`, variables };
+  return { query: `query RankObservation(${declarations.join(',')}){${fields.join(' ')}}`, variables };
 }
-function sameScope(value: unknown, scope: RankingScope): boolean {
-  const discussion = object(value), repository = object(discussion?.repository), category = object(discussion?.category);
-  return discussion?.id === scope.discussionId && repository?.id === scope.repositoryId && repository.isPrivate === false && (!scope.categoryId || category?.id === scope.categoryId);
+function data(payload: unknown): ObjectValue {
+  const envelope = object(payload);
+  if (Array.isArray(envelope.errors) && envelope.errors.length) throw Error('Incomplete ranking query.');
+  return object(envelope.data);
 }
-function candidate(value: unknown, inputs: readonly Input[]): Candidate | undefined {
-  const node = object(value);
-  if (!node || typeof node.id !== 'string' || typeof node.createdAt !== 'string' || typeof node.isMinimized !== 'boolean') return;
-  const values: Candidate['values'] = {};
+function scoped(value: unknown, scope: RankingScope): ObjectValue {
+  const discussion = object(value), repository = object(discussion.repository), category = object(discussion.category);
+  if (discussion.id !== scope.discussionId || repository.id !== scope.repositoryId || repository.isPrivate !== false || String(repository.nameWithOwner).toLowerCase() !== scope.repo.toLowerCase() || (scope.categoryId && category.id !== scope.categoryId) || category.name !== scope.category) throw new AppError(403, 'PERMISSION', 'Ranking response is outside its public page.');
+  return discussion;
+}
+function candidate(value: unknown, inputs: readonly Input[]): Candidate {
+  const node = object(value), values: Candidate['values'] = {};
   for (const input of inputs) {
-    if (input === 'replies') values.replies = object(node.replies)?.totalCount as number;
+    if (input === 'replies') values.replies = object(node.replies).totalCount as number;
     else if (input === 'upvotes') values.upvotes = node.upvoteCount as number;
-    else if (input === 'answer') { if (typeof node.isAnswer === 'boolean') values.answer = node.isAnswer ? 1 : 0; }
+    else if (input === 'answer') { if (typeof node.isAnswer === 'boolean') values.answer = Number(node.isAnswer); }
     else {
-      if (!Array.isArray(node.reactionGroups)) return;
-      const group = node.reactionGroups.map(object).find(group => group?.content === input);
-      values[input] = object(group?.reactors)?.totalCount as number;
+      if (!Array.isArray(node.reactionGroups)) throw Error('Incomplete reaction counts.');
+      const groups = node.reactionGroups.map(object).filter(item => item.content === input);
+      if (groups.length !== 1) throw Error('Ambiguous reaction count.');
+      values[input] = object(groups[0]!.reactors).totalCount as number;
     }
   }
-  const result: Candidate = { id: node.id, created: Date.parse(node.createdAt), eligible: !node.isMinimized, values };
-  return validCandidate(result, inputs) ? result : undefined;
+  const result = { id: node.id as string, created: typeof node.createdAt === 'string' ? Date.parse(node.createdAt) : NaN, eligible: !node.isMinimized, values };
+  if (typeof node.isMinimized !== 'boolean' || !validCandidate(result, inputs)) throw Error('Incomplete ranking inputs.');
+  return result;
+}
+export function parseHead(payload: unknown, scope: RankingScope): Signature {
+  const connection = object(scoped(data(payload).node, scope).comments);
+  if (!Number.isSafeInteger(connection.totalCount) || Number(connection.totalCount) < 0 || !Array.isArray(connection.nodes) || connection.nodes.length > 1) throw Error('Incomplete ranking head.');
+  const newestRootID = connection.nodes.length ? object(connection.nodes[0]).id : null;
+  if ((connection.totalCount === 0) !== (newestRootID === null) || (newestRootID !== null && typeof newestRootID !== 'string')) throw Error('Incomplete ranking head.');
+  return { rootCount: Number(connection.totalCount), newestRootID: newestRootID as string | null };
 }
 export function parseDiscovery(payload: unknown, scope: RankingScope, inputs: readonly Input[]): DiscoveryPage {
-  const root = object(payload), node = object(object(root?.data)?.node), connection = object(node?.comments), page = object(connection?.pageInfo);
-  if (!sameScope(node, scope)) throw new Error('Ranking discussion is outside its public repository scope.');
-  if (Array.isArray(root?.errors) && root.errors.length) return { candidates: [], cursor: null, complete: false };
-  if (!Array.isArray(connection?.nodes) || typeof page?.hasPreviousPage !== 'boolean' || (page.hasPreviousPage && typeof page.startCursor !== 'string')) return { candidates: [], cursor: null, complete: false };
-  const candidates = connection.nodes.map(value => candidate(value, inputs));
-  if (candidates.some(item => !item)) return { candidates: [], cursor: null, complete: false };
-  return { candidates: (candidates as Candidate[]).reverse(), cursor: page.hasPreviousPage ? page.startCursor as string : null, complete: true };
+  const connection = object(scoped(data(payload).node, scope).comments), page = object(connection.pageInfo);
+  if (!Array.isArray(connection.nodes) || connection.nodes.length > 100 || typeof page.hasPreviousPage !== 'boolean' || (page.hasPreviousPage && (!connection.nodes.length || typeof page.startCursor !== 'string'))) throw Error('Incomplete ranking page.');
+  const candidates = connection.nodes.map(node => candidate(node, inputs));
+  if (new Set(candidates.map(item => item.id)).size !== candidates.length) throw Error('Duplicate ranking roots.');
+  return { candidates, cursor: page.hasPreviousPage ? page.startCursor as string : null };
 }
-export function parseObservation(payload: unknown, ids: readonly string[], scope: RankingScope, inputs: readonly Input[]): ObservationBatch {
-  const root = object(payload), data = object(root?.data), errors = Array.isArray(root?.errors) ? root.errors.map(object) : [];
-  const candidates: Candidate[] = [], deleted: string[] = [], unresolved: string[] = [];
-  for (let index = 0; index < ids.length; index++) {
-    const id = ids[index]!, alias = 'batch' + Math.floor(index / 100), offset = index % 100;
-    const affected = errors.some(error => !Array.isArray(error?.path) || !error.path.length || (error.path[0] === alias && (typeof error.path[1] !== 'number' || error.path[1] === offset)));
-    const nodes = data?.[alias];
-    if (affected || !Array.isArray(nodes) || offset >= nodes.length) { unresolved.push(id); continue; }
-    const value = nodes[offset];
-    if (value === null) { deleted.push(id); continue; }
-    const node = object(value);
-    if (node?.id !== id || node.replyTo !== null || !sameScope(node.discussion, scope)) throw new Error('Ranking observation is outside its requested public discussion.');
-    const parsed = candidate(node, inputs);
-    if (parsed) candidates.push(parsed); else unresolved.push(id);
-  }
-  return { candidates, deleted, unresolved };
+export function parseObservation(payload: unknown, ids: readonly string[], scope: RankingScope, inputs: readonly Input[]): (Candidate | null)[] {
+  const result = data(payload);
+  return ids.map((id, index) => {
+    const nodes = result['batch' + Math.floor(index / 100)], offset = index % 100;
+    if (!Array.isArray(nodes) || nodes.length !== Math.min(100, ids.length - Math.floor(index / 100) * 100)) throw Error('Incomplete ranking batch.');
+    if (nodes[offset] === null) return null;
+    const node = object(nodes[offset]);
+    if (node.id !== id) throw Error('Ranking root does not match its requested ID.');
+    if (!Object.hasOwn(node, 'replyTo') || (node.replyTo !== null && typeof object(node.replyTo).id !== 'string')) throw Error('Incomplete ranking root relationship.');
+    const discussion = object(node.discussion);
+    if (typeof discussion.id !== 'string') throw Error('Incomplete ranking discussion relationship.');
+    if (node.replyTo !== null || discussion.id !== scope.discussionId) return null;
+    scoped(discussion, scope);
+    return candidate(node, inputs);
+  });
 }

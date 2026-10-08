@@ -22,7 +22,7 @@ export const NodeID = v.pipe(v.string(), v.minLength(1), v.maxLength(256), v.reg
 export const EmptyNodeID = v.union([v.literal(''), NodeID]);
 export const Capability = v.pipe(v.string(), v.regex(/^[A-Za-z0-9_-]{43}$/));
 export const EmptyCapability = v.union([v.literal(''), Capability]);
-export const IdempotencyKey = v.pipe(v.string(), v.regex(/^\d{13}\.[A-Za-z0-9_-]{16,86}$/));
+export const IdempotencyKey = v.pipe(v.string(), v.regex(/^3\.\d{13}\.[A-Za-z0-9_-]{16,86}$/));
 export const Digest = v.pipe(v.string(), v.regex(/^[A-Za-z0-9_-]{43}$/));
 export const Timestamp = v.pipe(v.number(), v.safeInteger(), v.minValue(0));
 export const PositiveInteger = v.pipe(v.number(), v.safeInteger(), v.minValue(1));
@@ -34,6 +34,7 @@ export const Markdown = v.pipe(v.string(), v.minLength(1), v.maxLength(60000),
   v.check(s => s.trim().length > 0), v.check(s => new TextEncoder().encode(s).length <= 60000));
 export const Order = v.picklist(['oldest', 'newest']);
 export const Reaction = v.picklist(['THUMBS_UP', 'THUMBS_DOWN', 'LAUGH', 'HOORAY', 'CONFUSED', 'HEART', 'ROCKET', 'EYES']);
+export type Reaction = v.InferOutput<typeof Reaction>;
 export const Language = v.pipe(v.string(), v.regex(/^[a-z]{2,3}(?:-[A-Za-z]{2,8})?$/), v.maxLength(20));
 export const Theme = v.pipe(v.string(), v.minLength(1), v.maxLength(2048),
   v.check(s => isNamedTheme(s) || isWebURL(s)));

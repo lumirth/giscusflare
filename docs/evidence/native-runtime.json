@@ -1,64 +1,32 @@
 {
-  "name": "native-workerd",
-  "status": "passed",
+  "name": "native-service-workflows",
+  "source": {
+    "commit": "ae6e72fdf93a976f6fa2908a04631934dd71e47d",
+    "sha256": "16148c0d86fe881b9b8ecb249cc0fdf6f3645fbd36251da681d47d0657c4ab95"
+  },
+  "startedAt": "2026-10-08T18:06:51.155Z",
+  "node": "v22.23.2",
   "github": "local test-only simulation",
+  "status": "passed",
   "checks": [
     {
-      "name": "Hono handles requests in workerd",
+      "workflow": "read useful root/reply windows through native RPC, frame/cache and origin boundaries",
       "status": "passed"
     },
     {
-      "name": "ASSETS serves static files",
+      "workflow": "authorize a future capability, contribute/replay, edit, reply, react, moderate and remove with independent provider effects",
       "status": "passed"
     },
     {
-      "name": "widget HTML has the configured frame boundary",
-      "status": "passed"
-    },
-    {
-      "name": "widget cache hits retain frame policy and no-store with immutable Cache API headers",
-      "status": "passed"
-    },
-    {
-      "name": "Valibot rejects malformed JSON before a repository operation",
-      "status": "passed"
-    },
-    {
-      "name": "named Repository RPC reads a validated GitHub thread",
-      "status": "passed"
-    },
-    {
-      "name": "batch counts cross the native RPC boundary",
-      "status": "passed"
-    },
-    {
-      "name": "serialized RPC preserves a large Unicode body, status and expiry headers",
-      "status": "passed"
-    },
-    {
-      "name": "SQLite-backed RPC probe writes its first durable counter",
-      "status": "passed"
-    },
-    {
-      "name": "first-party preparation creates cookie-bound OAuth state through RPC",
-      "status": "passed"
-    },
-    {
-      "name": "proof-authenticated polling and one-use handoff yield only an opaque session",
-      "status": "passed"
-    },
-    {
-      "name": "SQLite counter survives a workerd restart",
-      "status": "passed"
-    },
-    {
-      "name": "encrypted repository session survives that process restart",
-      "status": "passed"
-    },
-    {
-      "name": "native rate limiting binding enforces its configured threshold",
+      "workflow": "ambiguous remote commit survives native restart and account rename without replay or ownership transfer; logout revokes",
       "status": "passed"
     }
   ],
-  "details": ""
+  "details": "",
+  "runtime": {
+    "miniflare": "5.20261006.0-alpha",
+    "workerd": "1.20261006.1",
+    "compatibilityDate": "2026-09-25"
+  },
+  "completedAt": "2026-10-08T18:06:51.923Z"
 }
