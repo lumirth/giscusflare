@@ -15,13 +15,19 @@ Use this reference when changing GitHub queries or investigating API usage. Gisc
 
 The App needs Discussions read/write permission and the included Metadata read permission. GitHub also checks the acting user's permissions. Locking, closing, answer assignment and account blocking remain GitHub administration actions.
 
+Tests validate produced query documents and variables against the recorded official GitHub GraphQL schema. The local provider then supplies controlled permissions and failures. Record the schema version separately from a live App acceptance result.
+
 Read [GitHub's Discussions guide](https://docs.github.com/en/graphql/guides/using-the-graphql-api-for-discussions) and [App permission guidance](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/choosing-permissions-for-a-github-app#choosing-permissions-for-graphql-api-access) for the upstream contract.
 
 ## Display and ranking queries
 
 Display queries fetch a bounded page of comment content and a small reply preview. Ranking fetches score inputs separately, then loads comment content for the selected IDs. Profiles reuse inputs they have in common.
 
-GitHub's point cost, returned nodes, resource limits and response bytes are different constraints. A query with a low point cost can still exceed resource limits. Grouped reaction totals avoid fetching individual reactors; selecting fewer fields reduces response parsing and serialization work.
+The page acquisition query combines repository validation, current metadata and the requested root, reply or ID window. Signed acquisition also observes the current viewer profile. Contributions validate the selected page and target before their effect; subsequent optional observations produce canonical patches. Markdown preview checks public repository identity and archive state before rendering. Token renewal, page discovery, first discussion creation and post-effect observations add calls; there is no universal one-call or two-call cost promise.
+
+GitHub's point cost, returned nodes, resource limits and response bytes are different constraints. A query with a low point cost can still exceed resource limits. Grouped reaction totals use `ReactionGroup.reactors`; the deprecated `users` field omits additional reactor types such as bots, mannequins and organizations. Reading totals does not select individual reactor nodes. See GitHub's [reaction reference](https://docs.github.com/en/graphql/reference/reactions).
+
+GitHub connections require `first` or `last` between 1 and 100. Count-only connections request one without selecting member nodes. Zero reply prefetch likewise suppresses child nodes while observing the actual total; a nonempty unobserved window has an empty cursor, and an empty window has no cursor. An explicit reply read fetches its own last-50 window; its reply cursor is never applied to the root connection. See [pagination requirements](https://docs.github.com/en/graphql/guides/using-pagination-in-the-graphql-api).
 
 Treat partial GraphQL errors as incomplete reads. Keep known comments until a complete discovery pass confirms membership changes. When GitHub throttles a request, wait until its retry time before continuing.
 

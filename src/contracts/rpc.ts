@@ -1,37 +1,29 @@
 import * as v from 'valibot';
 import * as R from './requests.js';
 import { Capability, EmptyCapability, RepositoryName } from './primitives.js';
-export const ThreadCall = v.strictObject({ request: R.ThreadRequest, session: v.optional(EmptyCapability, '') });
-export const RepliesCall = v.strictObject({ request: R.RepliesRequest, session: v.optional(EmptyCapability, '') });
-export const CommentCall = v.strictObject({ request: R.CommentRequest, session: Capability });
-export const EditCall = v.strictObject({ request: R.EditRequest, session: Capability });
-export const DeleteCall = v.strictObject({ request: R.DeleteRequest, session: Capability });
-export const ReactionCall = v.strictObject({ request: R.ReactionRequest, session: Capability });
-export const ModerateCall = v.strictObject({ request: R.ModerateRequest, session: Capability });
-export const PreviewCall = v.strictObject({ request: R.PreviewRequest, session: Capability });
-export const InfoCall = R.InfoRequest;
-export const PrepareCall = v.strictObject({ request: R.AuthPrepare, browserCookie: Capability });
-export const CallbackCall = v.strictObject({ repo: RepositoryName, attempt: Capability, browserCookie: EmptyCapability, code: v.optional(v.pipe(v.string(), v.maxLength(1024)), ''), denied: v.boolean() });
-export const PollCall = R.AuthProof;
-export const ConsumeCall = R.AuthConsume;
-export const LogoutCall = v.strictObject({ request: R.LogoutRequest, session: Capability });
-export type ThreadCall = v.InferOutput<typeof ThreadCall>;
-export type RepliesCall = v.InferOutput<typeof RepliesCall>;
-export type CommentCall = v.InferOutput<typeof CommentCall>;
-export type EditCall = v.InferOutput<typeof EditCall>;
-export type DeleteCall = v.InferOutput<typeof DeleteCall>;
-export type ReactionCall = v.InferOutput<typeof ReactionCall>;
-export type ModerateCall = v.InferOutput<typeof ModerateCall>;
-export type PreviewCall = v.InferOutput<typeof PreviewCall>;
-export type PrepareCall = v.InferOutput<typeof PrepareCall>;
-export type CallbackCall = v.InferOutput<typeof CallbackCall>;
-export type LogoutCall = v.InferOutput<typeof LogoutCall>;
+import type { Schema } from './parse.js';
 
-
-export const RankingCall=v.strictObject({request:R.RankingRequest,session:EmptyCapability});
-export const HydrateCall=v.strictObject({request:R.HydrateRequest,session:EmptyCapability});
-export type RankingCall=v.InferOutput<typeof RankingCall>;
-export type HydrateCall=v.InferOutput<typeof HydrateCall>;
-
-/** Completed HTTP payload passed from the repository object to the Worker. */
-export interface SerializedRead { status: number; headers: Record<string, string>; body: string }
+type Method = 'get' | 'post';
+type Options = { cache?: boolean; authenticated?: boolean; rate?: 'read' | 'write' | 'auth' };
+function operation<S extends Schema, C extends Schema, M extends Method>(path: string, request: S, call: C, method: M, options: Options = {}) {
+  return { path: path.startsWith('/') ? path : '/api/v3/' + path, request, call, cache: options.cache ?? false, authenticated: options.authenticated ?? false, rate: options.rate ?? (method === 'get' ? 'read' : 'write'), envelope: 'direct' as const, method };
+}
+function read<S extends Schema>(path: string, request: S) {
+  return { ...operation(path, request, v.strictObject({ request, session: v.optional(EmptyCapability, '') }), 'get', { cache: true }), envelope: 'session' as const };
+}
+function write<S extends Schema>(path: string, request: S) {
+  return { ...operation(path, request, v.strictObject({ request, session: Capability }), 'post', { authenticated: true }), envelope: 'session' as const };
+}
+export const operations = {
+  info: operation('config', R.InfoRequest, R.InfoRequest, 'get', { cache: true }),
+  counts: operation('counts', R.CountsRequest, R.CountsRequest, 'get', { cache: true }),
+  page: read('page', R.PageRequest),
+  ranking: { ...operation('ranking', R.RankingRequest, v.strictObject({ request: R.RankingRequest, session: EmptyCapability }), 'get'), envelope: 'session' as const },
+  contribute: write('contribute', R.ContributionRequest),
+  preview: write('preview', R.PreviewRequest),
+  authPrepare: operation('auth/prepare', R.AuthPrepare, v.strictObject({ request: R.AuthPrepare, browserCookie: Capability }), 'post', { rate: 'auth' }),
+  authCallback: operation('/auth/callback', R.AuthCallbackQuery, v.strictObject({ repo: RepositoryName, attempt: Capability, browserCookie: EmptyCapability, code: v.optional(v.pipe(v.string(), v.maxLength(1024)), ''), denied: v.boolean() }), 'get', { rate: 'auth' }),
+  logout: write('logout', R.LogoutRequest),
+};
+export type Operation = keyof typeof operations;
+export type Input<K extends Operation> = v.InferOutput<(typeof operations)[K]['call']>;

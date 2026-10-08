@@ -1,5 +1,5 @@
 import * as v from 'valibot';
-import { Capability, CategoryName, Cursor, DiscussionNumber, EmptyCapability, EmptyNodeID, IdempotencyKey, Language, Markdown, NodeID, Order, Origin, PageURL, Reaction, RepositoryName, SafeLine, Theme } from './primitives.js';
+import { Capability, Cursor, DiscussionNumber, EmptyNodeID, IdempotencyKey, Language, Markdown, NodeID, Order, Origin, PageURL, Reaction, RepositoryName, SafeLine, Theme } from './primitives.js';
 import { parse } from './parse.js';
 import { AppError } from '../domain/errors.js';
 
@@ -7,8 +7,7 @@ const Term = v.pipe(v.string(), v.maxLength(256), v.check(s => !/[\u0000-\u001f\
 const Description = v.pipe(v.string(), v.maxLength(2000), v.check(s => !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(s)));
 /** Discussion identity and authorization context, independent of presentation. */
 export const Selection = v.pipe(v.strictObject({
-  repo: RepositoryName, repoId: v.optional(EmptyNodeID, ''), category: v.optional(v.union([v.literal(''), CategoryName]), ''),
-  categoryId: v.optional(EmptyNodeID, ''), term: v.optional(Term, ''), number: v.optional(DiscussionNumber, 0),
+  repo: RepositoryName, term: v.optional(Term, ''), number: v.optional(DiscussionNumber, 0),
   strict: v.optional(v.boolean(), false), origin: PageURL,
 }), v.check(c => c.number > 0 || c.term.trim().length > 0));
 export type Selection = v.InferOutput<typeof Selection>;
@@ -26,12 +25,9 @@ export {selection} from './selection.js';
 const QueryBoolean = v.pipe(v.picklist(['0', '1', 'false', 'true']), v.transform(x => x === '1' || x === 'true'));
 const QueryNumber = v.pipe(v.string(), v.regex(/^(?:0|[1-9]\d{0,9})$/), v.transform(Number), DiscussionNumber);
 export const WidgetQuery = v.pipe(v.strictObject({
-  repo: RepositoryName, repoId: v.optional(EmptyNodeID, ''), category: v.optional(v.union([v.literal(''), CategoryName]), ''), categoryId: v.optional(EmptyNodeID, ''),
-  term: v.optional(Term, ''), number: v.optional(QueryNumber, '0'), strict: v.optional(QueryBoolean, '0'), origin: PageURL,
-  backLink: v.optional(v.union([v.literal(''), PageURL]), ''), description: v.optional(Description, ''),
-  theme: v.optional(Theme, 'preferred_color_scheme'), lang: v.optional(Language, 'en'),
+  ...Widget.pipe[0].entries,
+  number: v.optional(QueryNumber, '0'), strict: v.optional(QueryBoolean, '0'),
   reactionsEnabled: v.optional(QueryBoolean, '1'), emitMetadata: v.optional(QueryBoolean, '0'),
-  inputPosition: v.optional(v.picklist(['top', 'bottom']), 'bottom'),
 }), v.transform(value => parse(Widget, value)));
 export function queryObject(url: URL): Record<string, string> {
   const result: Record<string, string> = Object.create(null);
@@ -41,41 +37,41 @@ export function queryObject(url: URL): Record<string, string> {
   }
   return result;
 }
-export const ThreadRequest = v.strictObject({ includeComments:v.optional(v.boolean(),true),replyPrefetch:v.optional(v.pipe(v.number(),v.integer(),v.minValue(0),v.maxValue(100)),5), config: Selection, order: v.optional(Order, 'oldest'), cursor: v.optional(Cursor, '') });
-export const RepliesRequest = v.strictObject({ config: Selection, parentId: NodeID, cursor: v.optional(Cursor, '') });
-export const CommentRequest = v.pipe(v.strictObject({ config: Selection,
-  creation:v.optional(Creation,{}),
-  body: Markdown, replyToId: v.optional(EmptyNodeID, ''), key: IdempotencyKey }),
-  v.check(c=>!c.creation.backLink||new URL(c.creation.backLink).origin===new URL(c.config.origin).origin));
-export const EditRequest = v.strictObject({ config: Selection, id: NodeID, body: Markdown, key: IdempotencyKey });
-export const DeleteRequest = v.strictObject({ config: Selection, id: NodeID, key: IdempotencyKey });
-export const ReactionRequest = v.strictObject({ config: Selection, id: v.union([NodeID, v.literal('discussion')]), reaction: Reaction, add: v.boolean(), key: IdempotencyKey });
+/** One canonical window acquisition; the selector chooses roots, replies or IDs. */
+export const PageRequest = v.pipe(v.strictObject({
+  config: Selection, order: v.optional(Order, 'oldest'), cursor: v.optional(Cursor, ''),
+  parentId: v.optional(NodeID), ids: v.optional(v.pipe(v.array(NodeID), v.maxLength(100))),
+  replyPrefetch: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(100)), 5),
+}), v.check(p => p.parentId === undefined || p.ids === undefined));
 export const ModerationReason = v.picklist(['ABUSE', 'DUPLICATE', 'OFF_TOPIC', 'OUTDATED', 'RESOLVED', 'SPAM']);
 export type ModerationReason = v.InferOutput<typeof ModerationReason>;
-export const ModerateRequest = v.strictObject({ config: Selection, id: NodeID, minimized: v.boolean(), reason: v.optional(ModerationReason, 'OFF_TOPIC'), key: IdempotencyKey });
+/** Commands describe user intent; all effects use the same contribution protocol. */
+export const Action = v.variant('type', [
+  v.strictObject({ type: v.literal('comment'), body: Markdown, replyToId: v.optional(EmptyNodeID, '') }),
+  v.strictObject({ type: v.literal('edit'), id: NodeID, body: Markdown }),
+  v.strictObject({ type: v.literal('delete'), id: NodeID }),
+  v.strictObject({ type: v.literal('reaction'), id: v.union([NodeID, v.literal('discussion')]), reaction: Reaction, add: v.boolean() }),
+  v.strictObject({ type: v.literal('moderate'), id: NodeID, minimized: v.boolean(), reason: v.optional(ModerationReason, 'OFF_TOPIC') }),
+]);
+export const ContributionRequest = v.pipe(v.strictObject({
+  config: Selection, key: IdempotencyKey, action: Action, creation: v.optional(Creation, {}),
+}), v.check(c => !c.creation.backLink || new URL(c.creation.backLink).origin === new URL(c.config.origin).origin));
+export type PageRequest = v.InferOutput<typeof PageRequest>;
+export type Action = v.InferOutput<typeof Action>;
+export type ContributionRequest = v.InferOutput<typeof ContributionRequest>;
 export const PreviewRequest = v.strictObject({ config: Selection, body: Markdown });
 export const InfoRequest = v.strictObject({ repo: RepositoryName, origin: PageURL });
-export const AuthPrepare = v.strictObject({ repo: RepositoryName, origin: PageURL, challenge: Capability, mode: v.picklist(['popup', 'redirect']), openerOrigin: v.optional(Origin) });
-export const AuthProof = v.strictObject({ repo: RepositoryName, origin: PageURL, attempt: Capability, verifier: Capability });
-export const AuthConsume = v.strictObject({ ...AuthProof.entries, ticket: Capability });
+const AuthContext = { repo: RepositoryName, origin: PageURL, mode: v.picklist(['popup', 'redirect']), openerOrigin: v.optional(Origin) };
+export const AuthWindow = v.strictObject({ ...AuthContext, attempt: Capability });
+export const AuthPrepare = v.strictObject({ ...AuthContext, proof: Capability });
 export const LogoutRequest = InfoRequest;
 export const AuthStartQuery = v.strictObject({ repo: RepositoryName, attempt: Capability });
 export const AuthCallbackQuery = v.strictObject({ iss:v.optional(v.literal('https://github.com/login/oauth')), state: v.pipe(SafeLine, v.maxLength(512)), code: v.optional(v.pipe(v.string(), v.maxLength(1024))), error: v.optional(v.pipe(v.string(), v.maxLength(256))), error_description: v.optional(SafeLine), error_uri: v.optional(PageURL) });
-export const Caller = v.strictObject({ repo: RepositoryName, origin: PageURL, session: v.optional(EmptyCapability, '') });
-export type Caller = v.InferOutput<typeof Caller>;
-export type ThreadRequest = v.InferOutput<typeof ThreadRequest>;
-export type RepliesRequest = v.InferOutput<typeof RepliesRequest>;
-export type CommentRequest = v.InferOutput<typeof CommentRequest>;
-export type EditRequest = v.InferOutput<typeof EditRequest>;
-export type DeleteRequest = v.InferOutput<typeof DeleteRequest>;
-export type ReactionRequest = v.InferOutput<typeof ReactionRequest>;
-export type ModerateRequest = v.InferOutput<typeof ModerateRequest>;
 export type PreviewRequest = v.InferOutput<typeof PreviewRequest>;
 export type InfoRequest = v.InferOutput<typeof InfoRequest>;
 export type AuthPrepare = v.InferOutput<typeof AuthPrepare>;
-export type AuthProof = v.InferOutput<typeof AuthProof>;
+export type AuthWindow = v.InferOutput<typeof AuthWindow>;
 
-export type AuthConsume = v.InferOutput<typeof AuthConsume>;
 
 /** Public root-comment counts for lists; no session or conversation bodies. */
 export const CountsRequest = v.strictObject({
@@ -85,6 +81,4 @@ export const CountsRequest = v.strictObject({
 export type CountsRequest = v.InferOutput<typeof CountsRequest>;
 
 export const RankingRequest=v.strictObject({config:Selection,profile:v.pipe(v.string(),v.regex(/^[a-z][a-z0-9_-]{0,31}$/))});
-export const HydrateRequest=v.strictObject({config:Selection,ids:v.pipe(v.array(NodeID),v.minLength(1),v.maxLength(50),v.check(ids=>new Set(ids).size===ids.length)),replyPrefetch:v.optional(v.pipe(v.number(),v.integer(),v.minValue(0),v.maxValue(100)),5)});
 export type RankingRequest=v.InferOutput<typeof RankingRequest>;
-export type HydrateRequest=v.InferOutput<typeof HydrateRequest>;

@@ -1,5 +1,3 @@
-import type { StandardSchemaV1 } from '@standard-schema/spec';
-import { validator } from 'hono/validator';
 import type { MiddlewareHandler } from 'hono';
 import * as v from 'valibot';
 import { AppError, requireCondition } from '../domain/errors.js';
@@ -7,13 +5,14 @@ import { hash } from '../domain/crypto.js';
 import { parse } from '../contracts/parse.js';
 import { Capability } from '../contracts/primitives.js';
 import type { AppEnv } from './types.js';
+import { bodyBytes } from '../domain/body.js';
 
-/** Reuse the bounded JSON read in Hono's validator. */
+/** Read untrusted transport input once, before scope and schema validation. */
 export const boundedJSON: MiddlewareHandler<AppEnv> = async (c, next) => {
   requireCondition(['GET','POST'].includes(c.req.method),405,'METHOD','Use GET to read or POST to write.');
   const origin = c.req.header('Origin') || (c.req.method==='GET'?new URL(c.req.url).origin:undefined);
   const native = origin !== c.get('config').origin;
-  requireCondition(origin && (!native || c.req.path !== '/api/v2/auth/prepare'), 403, 'ORIGIN', 'This operation must originate at the comments service.');
+  requireCondition(origin && (!native || c.req.path !== '/api/v3/auth/prepare'), 403, 'ORIGIN', 'This operation must originate at the comments service.');
   const site = c.req.header('Sec-Fetch-Site');
   requireCondition(native || !site || site === 'same-origin', 403, 'ORIGIN', 'Invalid service request origin.');
   let value:unknown;
@@ -26,17 +25,7 @@ export const boundedJSON: MiddlewareHandler<AppEnv> = async (c, next) => {
   requireCondition(type === 'application/json', 415, 'MEDIA_TYPE', 'Use application/json.');
   const max = 96 * 1024, declared = c.req.header('Content-Length');
   if (declared) requireCondition(/^\d+$/.test(declared) && Number(declared) <= max, 413, 'BODY_TOO_LARGE', 'Request body is too large.');
-  const reader = c.req.raw.body?.getReader();
-  requireCondition(reader, 400, 'BAD_INPUT', 'A JSON body is required.');
-  const chunks: Uint8Array[] = []; let count = 0;
-  try {
-    for (;;) {
-      const { done, value } = await reader.read(); if (done) break;
-      count += value.length; requireCondition(count <= max, 413, 'BODY_TOO_LARGE', 'Request body is too large.'); chunks.push(value);
-    }
-  } finally { await reader.cancel().catch(() => undefined); }
-  const bytes = new Uint8Array(count); let offset = 0;
-  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+  const bytes = await bodyBytes(c.req.raw.body, max, new AppError(400, 'BAD_INPUT', 'A JSON body is required.'), new AppError(413, 'BODY_TOO_LARGE', 'Request body is too large.'));
   try { value = JSON.parse(new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes)) as unknown; }
   catch { throw new AppError(400, 'BAD_INPUT', 'The request body is not valid JSON.'); }
   }
@@ -51,7 +40,7 @@ export const boundedJSON: MiddlewareHandler<AppEnv> = async (c, next) => {
     let pageOrigin = ''; try { pageOrigin = new URL(raw.origin).origin; } catch { /* rejected below */ }
     requireCondition((repoPolicy?.origins==='*'||repoPolicy?.origins.includes(origin)) && pageOrigin === origin, 403, 'ORIGIN', 'This page is not allowed to use this repository.');
   }
-  c.req.bodyCache.json = Promise.resolve(value);
+  c.set('input', value);
   const header = c.req.header('Authorization');
   if (header) {
     const match = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(header);
@@ -61,15 +50,6 @@ export const boundedJSON: MiddlewareHandler<AppEnv> = async (c, next) => {
   await next();
 };
 
-/** Validate route input through Standard Schema v1. */
-export function contract<S extends StandardSchemaV1>(schema: S) {
-  return validator('json', async (input: unknown,c) => {
-    if(c.req.method==='GET')input=await c.req.json();
-    const result = await schema['~standard'].validate(input);
-    if (result.issues !== undefined) throw new AppError(400, 'BAD_INPUT', 'The request contains missing or invalid fields.');
-    return result.value as StandardSchemaV1.InferOutput<S>;
-  });
-}
 const LimitResult = v.object({ success: v.boolean() });
 export function rateLimit(kind: 'read' | 'write' | 'auth'): MiddlewareHandler<AppEnv> {
   return async (c, next) => {

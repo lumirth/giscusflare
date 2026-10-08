@@ -1,48 +1,18 @@
-import { html, render, nothing } from "lit-html";
+import { html, nothing } from "lit-html";
 import { strings, relativeDate, message } from "../i18n.js";
-import type { HeaderFactory } from "./contracts.js";
-export const createHeader: HeaderFactory = ({ runtime }) => {
-  const element = document.createElement("div");
-  return {
-    element,
-    update({ comment: c, reply }) {
-      const t = strings(runtime.appearance.lang),
-        date = new Date(c.createdAt);
-      element.className = reply ? "gsc-reply-header" : "gsc-comment-header";
-      render(
-        html`<div class=${reply ? "gsc-reply-author" : "gsc-comment-author"}>
-            <a
-              href=${c.author?.url || c.url}
-              class="gsc-comment-author-avatar"
-              target="_blank"
-              rel="nofollow noopener noreferrer"
-            >
-              ${!reply && c.author ? html`<img class="rounded-full mr-2" src=${c.author.avatarUrl} width="30" height="30" alt=${"@" + c.author.login} loading="lazy" />` : nothing}
-              <span
-                class="link-primary overflow-hidden text-ellipsis font-semibold"
-                >${c.author?.login || t.deletedAuthor}</span
-              >
-            </a>
-            <a
-              class="link-secondary overflow-hidden text-ellipsis"
-              href=${c.url}
-              target="_blank"
-              rel="nofollow noopener noreferrer"
-              ><time
-                class="whitespace-nowrap"
-                datetime=${c.createdAt}
-                title=${date.toLocaleString(runtime.appearance.lang)}
-                >${relativeDate(date, runtime.appearance.lang)}</time
-              ></a
-            >
-            ${c.authorAssociation && c.authorAssociation !== "NONE" ? html`<div class="hidden text-xs leading-[18px] sm:inline-flex"><span class="color-box-border-info font-medium capitalize rounded-xl border px-[7px]">${message(runtime.appearance.lang, c.authorAssociation)}</span></div>` : nothing}
-          </div>
-          ${c.lastEditedAt ? html`<span class="color-text-secondary" title=${new Date(c.lastEditedAt).toLocaleString(runtime.appearance.lang)}>${t.edited}</span>` : nothing}`,
-        element,
-      );
-    },
-    dispose() {
-      render(nothing, element);
-    },
-  };
+import type { HeaderSlot } from "./contracts.js";
+
+export const header: HeaderSlot = ({ runtime }, comment) => {
+  const lang = runtime.appearance.lang, t = strings(lang), date = new Date(comment.createdAt);
+  return html`<div class="gsc-comment-header">
+    <a class="gsc-author" href=${comment.author?.url || comment.url} target="_blank" rel="nofollow noopener noreferrer">
+      ${comment.author ? html`<img src=${comment.author.avatarUrl} width="30" height="30" loading="lazy" alt="">` : nothing}
+      <span>${comment.author?.login || t.deletedAuthor}</span>
+    </a>
+    <a class="gsc-time" href=${comment.url} target="_blank" rel="nofollow noopener noreferrer">
+      <time datetime=${comment.createdAt} title=${date.toLocaleString(lang)}>${relativeDate(date, lang)}</time>
+    </a>
+    ${comment.authorAssociation && comment.authorAssociation !== 'NONE' ? html`<span class="gsc-association">${message(lang, comment.authorAssociation)}</span>` : nothing}
+    ${comment.lastEditedAt ? html`<span class="gsc-edited" title=${new Date(comment.lastEditedAt).toLocaleString(lang)}>${t.edited}</span>` : nothing}
+  </div>`;
 };

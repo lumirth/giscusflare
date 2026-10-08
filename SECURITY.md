@@ -20,19 +20,23 @@ The service exposes specific discussion operations, not a general GitHub proxy. 
 
 ## GitHub sign-in
 
-Sign-in begins on the comments service in a popup or full page. That page creates a random authorization attempt and an HttpOnly cookie. The GitHub callback must return the same cookie. GitHub authorization uses PKCE.
+The browser creates its future opaque session capability before sign-in and retains it in the embedding page's memory or session storage. Its SHA-256 hash is a transient proof; hashing that proof produces the public attempt identity. The trusted `/auth/window` receives public context and attempt in the query, with only the proof in its fragment. Its script removes the fragment synchronously before asynchronous work and sends the proof in the `auth/prepare` POST body. Preparation claims one pending attempt bound to an HttpOnly cookie and refuses a proof belonging to an existing session. GitHub's callback must return that cookie; its separate authorization exchange uses PKCE.
 
-The browser has a separate verifier for the final handoff. It must present that verifier, the attempt ID, and a one-use ticket to receive a service session. An abandoned attempt expires without creating a long-lived session.
+HTTP request targets and referrers exclude fragments. The proof remains visible to the trusted auth page's JavaScript before removal, so that document is served directly and strips it before navigating elsewhere. The raw capability never enters an auth URL, callback document or provider exchange. Proofs, session credentials and callback query strings must stay out of logs and analytics. See [HTTP target URI rules](https://www.rfc-editor.org/rfc/rfc9110.html#section-7.1) and [Referrer Policy](https://w3c.github.io/webappsec-referrer-policy/#strip-url).
 
-Full-page sign-in returns only to an approved website and requires the saved browser proof. Popup sign-in can poll for completion if it loses its opener. If neither the required storage nor popup flow is available, the application reports a sign-in failure.
+After GitHub authorizes, the callback creates the encrypted session at its capability-hash key and removes the pending attempt in one SQLite transaction. The callback is one-use. There is no subsequent credential handoff or completion endpoint. The browser adopts its own saved capability after a matching return. Pending server attempts and browser return acceptance expire after ten minutes.
+
+Popup and full-page sign-in use the same saved capability. Popup notifications require the trusted service origin, the actual popup window and the current attempt. Return fragments contain only public attempt identity/status; a forged status cannot create server authority. A full-page return requires the saved capability to survive session storage. There is no completion polling: a lost callback return requires a fresh sign-in. An unsuccessful sign-in leaves an unrelated existing session intact; explicit sign-out retires pending capabilities.
 
 ## Sessions and encryption
 
-The browser receives an opaque service session. GitHub access and refresh tokens stay encrypted on the server with AES-GCM. Encryption authenticates the record's purpose and identity. Web Crypto signs GitHub App JWTs with RSA.
+The browser owns an opaque service capability. Its durable session holds the immutable GitHub principal, credentials, website origin and expiry. It does not retain a mutable display profile or duplicate repository name. Signed page reads obtain the current viewer profile alongside scoped discussion metadata. GitHub access and refresh tokens stay encrypted on the server with AES-GCM; authenticated encryption binds them to the App, client, canonical GitHub repository ID and record key. Repository aliases therefore share the same physical authority without making another repository's capability usable. Web Crypto signs GitHub App JWTs with RSA.
 
 The service session is a bearer credential. JavaScript injected into a trusted site could steal or use it. Native embedding shares the site's JavaScript and storage context.
 
 Sessions expire and can be revoked locally. Token refresh runs under a lock. A lost response after GitHub rotates a refresh token can require a new sign-in. Changing `SESSION_SECRET` makes existing encrypted sessions unreadable.
+
+Version 3 sessions require the immutable GitHub user ID; 2.x capabilities require a new sign-in. Receipts bind to that ID rather than a mutable login or a particular service session. A login rename retains ownership; another account acquiring that name does not. Passive account expiry clears the browser capability while preserving saved writing and retry identity. Explicit sign-out separately removes saved writing.
 
 ## Comment rendering
 
@@ -44,7 +48,9 @@ Custom CSS comes from approved origins. Custom code, math, and full-content rend
 
 ## Interrupted writes
 
-Before sending a write, the service stores a receipt with an idempotency key and content fingerprint. An incomplete response leaves an uncertain receipt. It does not trigger a new write automatically.
+Before sending a write, the service stores a receipt with a `3.<13-digit timestamp>.<nonce>` idempotency key, immutable account identity and content fingerprint. An incomplete response leaves an uncertain receipt. It does not trigger a new write automatically. Pending and completed receipts expire 24 hours after the later of the key's creation time and receipt write. A separate `OPERATION_EXPIRED` check rejects expired keys without receipts before remote dispatch, preserving replay safety after pruning. Earlier-protocol keys fail closed before authentication refresh or provider dispatch; they are not promoted into new receipts.
+
+A completed receipt stores the confirmed effect. Fresh discussion and reply counts are observed separately on each comment/delete response, including replay, and validated against the same repository, discussion and affected root. Failure to obtain those observations cannot relabel a confirmed write as uncertain. Clients retain previously observed totals until another observation succeeds rather than deriving global counts from loaded comments.
 
 Inspect GitHub before resubmitting an uncertain comment. Keep the existing retry identity. An unresolved discussion-creation record remains until recovery finds the discussion, so a retry does not create a second one.
 

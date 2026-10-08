@@ -21,5 +21,6 @@ public/themes/
 public/chunks/
 
 /public/widget.css
+/public/iframe.css
 
 .DS_Store

@@ -1,3 +1,4 @@
+import { message } from "./i18n.js";
 import type { Conversation } from "./runtime.js";
 
 export interface FocusHandle {
@@ -23,19 +24,16 @@ export class InteractionRegistry {
     this.#handles.clear();
   }
 }
-export interface ComposerState {
-  mode: "write" | "preview";
-  previewPending: boolean;
-  previewHTML: string;
-  previewBody: string;
-  pending: boolean;
-  submission: "idle" | "pending" | "succeeded" | "failed" | "uncertain";
-  fixedWidth: boolean;
-  error: string;
-}
-export interface ComposerBinding {
-  readonly state: Readonly<ComposerState>;
-  subscribe(listener: () => void): () => void;
+export interface Editor {
+  readonly form: HTMLFormElement;
+  readonly textarea: HTMLTextAreaElement;
+  readonly previewElement: HTMLElement;
+  readonly signal: AbortSignal;
+  readonly mode: "write" | "preview";
+  readonly fixedWidth: boolean;
+  readonly pending: boolean;
+  readonly previewPending: boolean;
+  readonly error: string;
   write(): void;
   preview(): Promise<void>;
   toggleFixedWidth(): void;
@@ -43,169 +41,95 @@ export interface ComposerBinding {
   cancel(): void;
   dispose(): void;
 }
-/** Behavior for consumer-owned DOM. Keep the supplied textarea mounted when previewing. */
-export function bindComposer(
-  runtime: Conversation,
-  name: string,
-  elements: { form: HTMLFormElement; textarea: HTMLTextAreaElement },
-  options: { draftWhileSignedOut?: boolean } = {},
-): ComposerBinding {
-  const { form, textarea } = elements,
-    controller = runtime;
-  let state: ComposerState = {
-    mode: "write",
-    previewPending: false,
-    previewHTML: "",
-    previewBody: "",
-    pending: false,
-    submission: "idle",
-    fixedWidth: false,
-    error: "",
-  };
-  let disposed = false,
-    version = 0;
-  const listeners = new Set<() => void>();
-  const emit = () => {
-    if (!disposed) for (const listener of listeners) listener();
-  };
-  const sync = () => {
-    // Assign only when the model actually changed the text. Normal input,
-    // previews, reactions and refreshes leave the native editing history alone.
-    const value = controller.draft(name);
-    if (textarea.value !== value) textarea.value = value;
-    textarea.disabled = (!runtime.signedIn && !options.draftWhileSignedOut) || !runtime.state.canCompose;
-    state = {
-      ...state,
-      pending: controller.operationFor("composer", name)?.status === "pending",
-    };
-    textarea.readOnly = state.pending;
-    emit();
-  };
-  const input = () => {
-    state = {...state, submission:"idle"};
-    controller.setDraft(name, textarea.value);
-    runtime.saveDrafts();
-    emit();
-  };
-  const submit = async () => {
-    if (state.pending) return;
-    if (!runtime.signedIn) {
-      try {
-        await runtime.signIn();
-      } catch (error) {
-        state = {
-          ...state,
-          error: error instanceof Error ? error.message : "Unable to sign in.",
-        };
-        emit();
-      }
-      return;
-    }
-    controller.setDraft(name, textarea.value);
-    state = { ...state, error: "", submission: "pending" };
-    try {
-      await controller.submit(name);
-      state = { ...state, mode: "write", previewHTML: "", previewBody: "", submission: "succeeded" };
-    } catch (error) {
-      state = {
-        ...state,
-        error: error instanceof Error ? error.message : "Unable to submit.",
-        submission: controller.operationFor("composer", name)?.status === "uncertain" ? "uncertain" : "failed",
-      };
-    } finally {
-      sync();
-      runtime.saveDrafts();
-    }
-  };
-  const onSubmit = (event: SubmitEvent) => {
-    event.preventDefault();
-    void submit();
-  };
-  const keydown = (event: KeyboardEvent) => {
-    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
-      event.preventDefault();
-      form.requestSubmit();
-    }
-  };
-  textarea.addEventListener("input", input);
-  textarea.addEventListener("keydown", keydown);
-  form.addEventListener("submit", onSubmit);
-  const unregister = runtime.interactions.register(name, {
-    focus: () => textarea.focus({ preventScroll: true }),
-    active: () => form.contains(document.activeElement),
+/** One editor owns its DOM, projection, preview and native interaction lifetime. */
+export function createEditor(runtime: Conversation, name: string, options: {
+  render(editor: Editor): void;
+  signal?: AbortSignal;
+  draftWhileSignedOut?: boolean;
+}): Editor {
+  runtime.signal.throwIfAborted();
+  options.signal?.throwIfAborted();
+  const form = document.createElement('form'), textarea = document.createElement('textarea'),
+    previewElement = document.createElement('div'), events = new window.AbortController();
+  form.dataset.composer = name;
+  textarea.rows = 4;textarea.maxLength = 60000;textarea.dir = 'auto';
+  let mode: 'write' | 'preview' = 'write', fixedWidth = false, error = '', previewPending = false,
+    preview: AbortController | undefined, stop: (() => void) | undefined, unregister: (() => void) | undefined;
+  const disposed = () => events.signal.aborted;
+  const dispose = runtime.own(() => {
+    options.signal?.removeEventListener('abort', dispose);
+    events.abort();preview?.abort();stop?.();unregister?.();form.remove();form.replaceChildren();
   });
-  const drafts = controller.subscribeDrafts(sync);
-  const unsubscribe = controller.subscribe(sync);
-  sync();
-  return {
-    get state() {
-      return state;
-    },
-    subscribe(listener) {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-    write() {
-      version++;
-      state = { ...state, mode: "write", previewPending: false };
-      emit();
-      textarea.focus({ preventScroll: true });
+  options.signal?.addEventListener('abort', dispose, { once: true });
+  const pending = () => Boolean(runtime.drafts.get(name)?.pending);
+  const focus = () => textarea.focus({ preventScroll: true });
+  const draw = () => { if (!disposed()) options.render(editor); };
+  const sync = () => {
+    if (disposed()) return;
+    const text = runtime.draft(name);
+    if (textarea.value !== text) textarea.value = text;
+    const disabled = (!runtime.session.signedIn && !options.draftWhileSignedOut) || !runtime.canCompose;
+    if (textarea.disabled !== disabled) textarea.disabled = disabled;
+    if (textarea.readOnly !== pending()) textarea.readOnly = pending();
+    draw();
+  };
+  const errorText = (cause: unknown, fallback: string) => cause instanceof Error ? cause.message : fallback;
+  const editor: Editor = {
+    form, textarea, previewElement, signal: events.signal,
+    get mode() { return mode; }, get fixedWidth() { return fixedWidth; },
+    get error() { return error || runtime.drafts.get(name)?.error?.message || runtime.session.error; }, get previewPending() { return previewPending; },
+    get pending() { return pending(); },
+    write() { if (!disposed()) { preview?.abort();mode = 'write';previewPending = false;draw();focus(); } },
+    toggleFixedWidth() { if (!disposed()) { fixedWidth = !fixedWidth;draw();focus(); } },
+    cancel() { if (!disposed()) runtime.closeEditor(name); },
+    async submit() {
+      if (disposed() || pending()) return;
+      error = '';
+      try {
+        if (!runtime.session.signedIn) { await runtime.session.signIn();return; }
+        runtime.setDraft(name, textarea.value);
+        await runtime.submit(name);
+        if (disposed()) return;
+        preview?.abort();mode = 'write';previewPending = false;previewElement.replaceChildren();
+      } catch { /* The draft or session owns contribution and authentication failures. */ }
+      finally { sync(); }
     },
     async preview() {
-      const current = ++version,
-        body = textarea.value;
-      state = {
-        ...state,
-        mode: "preview",
-        previewBody: body,
-        previewHTML: "",
-        previewPending: Boolean(body.trim()),
-        error: "",
-      };
-      emit();
-      if (!body.trim()) return;
+      if (disposed()) return;
+      preview?.abort();const current = preview = new window.AbortController(), body = textarea.value;
+      mode = 'preview';error = '';previewPending = Boolean(body.trim());
+      previewElement.replaceChildren(message(runtime.appearance.lang, previewPending ? 'loadingPreview' : 'nothingToPreview'));
+      draw();
+      if (!previewPending) return;
+      const active = () => !disposed() && !current.signal.aborted;
       try {
-        const html = await controller.preview(body);
-        if (current !== version || disposed) return;
-        state = { ...state, previewHTML: html };
-      } catch (error) {
-        if (current !== version || disposed) return;
-        state = {
-          ...state,
-          error: error instanceof Error ? error.message : "Unable to preview.",
-        };
-      } finally {
-        if (current === version && !disposed) {
-          state = { ...state, previewPending: false };
-          emit();
-        }
+        const html = await runtime.preview(body, current.signal);
+        if (active()) previewElement.replaceChildren(runtime.renderContent(html, body, current.signal));
+      } catch (cause) {
+        if (!active()) return;
+        current.abort();previewPending = false;
+        error = errorText(cause, 'Unable to preview.');previewElement.replaceChildren();draw();
       }
+      finally { if (active()) { previewPending = false;draw(); } }
     },
-    toggleFixedWidth() {
-      state = { ...state, fixedWidth: !state.fixedWidth };
-      emit();
-      textarea.focus({ preventScroll: true });
-    },
-    submit,
-    cancel() {
-      controller.closeEditor(name);
-    },
-    dispose() {
-      disposed = true;
-      version++;
-      unregister();
-      drafts();
-      unsubscribe();
-      listeners.clear();
-      textarea.removeEventListener("input", input);
-      textarea.removeEventListener("keydown", keydown);
-      form.removeEventListener("submit", onSubmit);
-    },
+    dispose,
   };
+  try {
+    textarea.addEventListener('input', () => runtime.setDraft(name, textarea.value), { signal: events.signal });
+    textarea.addEventListener('keydown', event => {
+      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault();form.requestSubmit(); }
+    }, { signal: events.signal });
+    form.addEventListener('submit', event => { event.preventDefault();void editor.submit(); }, { signal: events.signal });
+    unregister = runtime.interactions.register(name, { focus, active: () => form.contains(document.activeElement) });
+    stop = runtime.subscribe(sync);sync();
+  } catch (cause) { dispose();throw cause; }
+  return editor;
 }
 
 /** Optional details-menu ergonomics, independent of classes or presentation. */
-export function bindDismissableMenu(menu: HTMLDetailsElement): () => void {
+export function bindDismissableMenu(menu: HTMLDetailsElement, signal?: AbortSignal): () => void {
+  const events = new window.AbortController();
+  const dispose = () => { events.abort();signal?.removeEventListener('abort', dispose); };
   const pointer = (event: Event) => {
     if (!menu.contains(event.target as Node)) menu.open = false;
   };
@@ -216,10 +140,9 @@ export function bindDismissableMenu(menu: HTMLDetailsElement): () => void {
       event.stopPropagation();
     }
   };
-  document.addEventListener("pointerdown", pointer);
-  menu.addEventListener("keydown", keyboard);
-  return () => {
-    document.removeEventListener("pointerdown", pointer);
-    menu.removeEventListener("keydown", keyboard);
-  };
+  if (signal?.aborted) return dispose;
+  signal?.addEventListener('abort', dispose, { once: true });
+  document.addEventListener("pointerdown", pointer, { signal: events.signal });
+  menu.addEventListener("keydown", keyboard, { signal: events.signal });
+  return dispose;
 }

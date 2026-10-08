@@ -1,20 +1,17 @@
 import * as v from 'valibot';
-import {INPUTS,DEFAULT_RANKING_LIMITS} from '../ranking/types.js';
+import { Profile, RankingOptions, DEFAULT_RANKING_LIMITS } from '../ranking/types.js';
 import { CategoryName, EmptyNodeID, Order, Origin, RepositoryName, Token } from './primitives.js';
 import { parse, parseJSON } from './parse.js';
-const RankingProfile=v.strictObject({
-  weights:v.pipe(v.record(v.picklist(INPUTS),v.pipe(v.number(),v.finite(),v.minValue(-1000000),v.maxValue(1000000))),v.check(weights=>Object.values(weights).some(n=>n!==0))),
-  tieBreak:v.optional(v.picklist(['oldest','newest']),'oldest'),
+const RankingProfile = v.strictObject({ ...Profile.entries, tieBreak: v.optional(Profile.entries.tieBreak, 'oldest') });
+const RankingPolicy = v.strictObject({
+  profiles: v.pipe(v.record(v.pipe(v.string(), v.regex(/^[a-z][a-z0-9_-]{0,31}$/)), RankingProfile), v.check(p => Object.keys(p).length > 0 && Object.keys(p).length <= 8)),
+  refreshSeconds: v.optional(RankingOptions.entries.refreshSeconds, DEFAULT_RANKING_LIMITS.refreshSeconds),
 });
-const RankingPolicy=v.strictObject({
-  profiles:v.pipe(v.record(v.pipe(v.string(),v.regex(/^[a-z][a-z0-9_-]{0,31}$/)),RankingProfile),v.check(p=>Object.keys(p).length>0&&Object.keys(p).length<=8)),
-  maxAgeSeconds:v.optional(v.pipe(v.number(),v.integer(),v.minValue(1),v.maxValue(604800)),DEFAULT_RANKING_LIMITS.maxAgeSeconds),
-});
-const RankingBudget=v.strictObject({
-  maxRequestsPerHour:v.optional(v.pipe(v.number(),v.integer(),v.minValue(1),v.maxValue(1000000)),DEFAULT_RANKING_LIMITS.maxRequestsPerHour),
-  maxRowsWrittenPerDay:v.optional(v.pipe(v.number(),v.integer(),v.minValue(256)),DEFAULT_RANKING_LIMITS.maxRowsWrittenPerDay),
-  maxRowsReadPerDay:v.optional(v.pipe(v.number(),v.integer(),v.minValue(256)),DEFAULT_RANKING_LIMITS.maxRowsReadPerDay),
-  maxOrderBytes:v.optional(v.pipe(v.number(),v.integer(),v.minValue(1024),v.maxValue(33554432)),DEFAULT_RANKING_LIMITS.maxOrderBytes),
+const RankingBudget = v.strictObject({
+  maxRequestsPerHour: v.optional(RankingOptions.entries.maxRequestsPerHour, DEFAULT_RANKING_LIMITS.maxRequestsPerHour),
+  maxRowsWrittenPerDay: v.optional(RankingOptions.entries.maxRowsWrittenPerDay, DEFAULT_RANKING_LIMITS.maxRowsWrittenPerDay),
+  maxRowsReadPerDay: v.optional(RankingOptions.entries.maxRowsReadPerDay, DEFAULT_RANKING_LIMITS.maxRowsReadPerDay),
+  maxOrderBytes: v.optional(RankingOptions.entries.maxOrderBytes, DEFAULT_RANKING_LIMITS.maxOrderBytes),
 });
 export const RepositoryPolicy = v.strictObject({
   ranking:v.optional(RankingPolicy),

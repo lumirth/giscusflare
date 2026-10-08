@@ -1,208 +1,133 @@
-// Deliberately no imports from the standard presentation, CSS or private files.
-import {
-  bindComposer,
-  type Presentation,
-  type Page,
-} from "giscusflare/headless";
+// A framework-neutral presentation consuming the same page document as the default UI.
+import { createEditor, type Presentation, type Comment } from 'giscusflare/headless';
 const emojis = {
-  THUMBS_UP: "👍",
-  THUMBS_DOWN: "👎",
-  LAUGH: "😄",
-  HOORAY: "🎉",
-  CONFUSED: "😕",
-  HEART: "❤️",
-  ROCKET: "🚀",
-  EYES: "👀",
+  THUMBS_UP: '👍', THUMBS_DOWN: '👎', LAUGH: '😄', HOORAY: '🎉',
+  CONFUSED: '😕', HEART: '❤️', ROCKET: '🚀', EYES: '👀',
 } as const;
-const node = (tag: string, text = "") => {
-  const el = document.createElement(tag);
-  el.textContent = text;
-  return el;
+const node = (tag: string, text = '') => {
+  const element = document.createElement(tag);
+  element.textContent = text;
+  return element;
 };
-const action = (text: string, run: () => unknown) => {
-  const el = node("button", text) as HTMLButtonElement;
-  el.type = "button";
-  el.onclick = () => {
-    void run();
+
+export const forumPresentation: Presentation = (target, page, scope) => {
+  const status = node('p'), list = node('div'), editorHost = node('div'), toolbar = node('div');
+  scope.own(() => { target.classList.remove('forum'); target.replaceChildren(); });
+  target.classList.add('forum');
+  status.setAttribute('role', 'status');
+  list.className = 'forum-list'; editorHost.className = 'forum-editors'; toolbar.className = 'forum-toolbar';
+  const action = (text: string, run: () => unknown) => {
+    const button = node('button', text) as HTMLButtonElement;
+    button.type = 'button';
+    button.onclick = () => {
+      Promise.resolve().then(() => {
+        if (!scope.signal.aborted && target.contains(button)) return run();
+      }).catch(error => {
+        if (!scope.signal.aborted && error?.name !== 'AbortError') status.textContent = String(error);
+      });
+    };
+    return button;
   };
-  return el;
-};
-export const forumPresentation: Presentation = {
-  mount(target, runtime) {
-    const controller = runtime;
-    target.classList.add("forum");
-    const heading = node("h3", "Discussion"),
-      status = node("p"),
-      list = node("div"),
-      editorHost = node("div");
-    const refresh = action("Refresh", () => controller.refresh()),
-      sort = action("Reverse order", () =>
-        controller.setOrder(
-          controller.state.order === "oldest" ? "newest" : "oldest",
-        ),
-      );
-    const auth = action("Sign in", () =>
-      runtime.signedIn ? runtime.signOut() : runtime.signIn(),
-    );
-    const toolbar = node("div"); toolbar.className = "forum-toolbar";
-    toolbar.append(heading, auth, refresh, sort);
-    status.setAttribute("role", "status");
-    list.className = "forum-list"; editorHost.className = "forum-editors";
-    target.append(toolbar, status, list, editorHost);
-    const editors = new Map<
-      string,
-      { form: HTMLFormElement; dispose: () => void }
-    >();
-    const composer = (name: string) => {
-      if (editors.has(name)) return editors.get(name)!.form;
-      const form = document.createElement("form"),
-        textarea = document.createElement("textarea"),
-        preview = node("div"),
-        feedback = node("p");
-      textarea.rows = 5;
-      form.dataset.composer = name;
-      form.className = "forum-composer";
-      textarea.setAttribute("aria-label", "Your comment");
-      const binding = bindComposer(runtime, name, { form, textarea });
-      const write = action("Write", () => binding.write()),
-        show = action("Preview", () => binding.preview());
-      const submit = document.createElement("button");
-      submit.type = "submit";
-      submit.textContent = "Publish";
-      const cancel = action("Cancel", () => binding.cancel());
-      form.append(write, show, textarea, preview, feedback, submit);
-      if (name !== "main") form.append(cancel);
-      let previewKey = "";
-      const update = () => {
-        const state = binding.state;
-        textarea.hidden = state.mode === "preview";
-        preview.hidden = state.mode === "write";
-        const key = JSON.stringify([state.previewPending, state.previewHTML, state.previewBody]);
-        if (key !== previewKey) {
-          previewKey = key;
-          preview.replaceChildren(state.previewPending ? "Loading preview..." : runtime.renderContent(state.previewHTML, state.previewBody));
-        }
-        if (feedback.textContent !== state.error) feedback.textContent = state.error;
-        submit.disabled = state.pending;
-        const label = runtime.signedIn ? "Publish" : "Sign in with GitHub";
-        if (submit.textContent !== label) submit.textContent = label;
-      };
-      binding.subscribe(update);
-      update();
-      editors.set(name, { form, dispose: () => binding.dispose() });
-      return form;
-    };
-    const articles = new Map<string, HTMLElement>();
-    const render = () => {
-      auth.textContent = runtime.signedIn ? "Sign out" : "Sign in";
-      status.textContent = controller.state.error || runtime.authenticationError;
-      // Keep editorHost and its forms mounted while the surrounding data changes.
-      for (const [name, item] of editors)
-        if (name !== "main" && !controller.editors.has(name)) {
-          item.form.remove(); item.dispose(); editors.delete(name);
-        }
-      if (!editors.has("main")) editorHost.append(composer("main"));
-      for (const name of controller.editors.keys()) {
-        const form = composer(name);
-        if (form.parentElement !== editorHost) editorHost.append(form);
+  const auth = action('Sign in', () => page.session.signedIn ? page.session.signOut() : page.session.signIn());
+  toolbar.append(node('h3', 'Discussion'), auth, action('Refresh', () => page.refresh()),
+    action('Reverse order', () => page.setOrder(page.order === 'oldest' ? 'newest' : 'oldest')));
+  target.append(toolbar, status, list, editorHost);
+  const editors = new Map<string, ReturnType<typeof createEditor>>();
+  scope.own(() => { for (const editor of editors.values()) editor.dispose(); });
+  const composer = (name: string) => {
+    let editor = editors.get(name);
+    if (editor) return editor;
+    const feedback = node('p'), submit = document.createElement('button');
+    submit.type = 'submit';
+    editor = createEditor(page, name, { signal: scope.signal, render(editor) {
+      const { form, textarea, previewElement } = editor;
+      if (!form.hasChildNodes()) {
+        textarea.rows = 5; textarea.setAttribute('aria-label', 'Your comment');
+        form.className = 'forum-composer';
+        form.append(action('Write', () => editor.write()), action('Preview', () => editor.preview()),
+          textarea, previewElement, feedback, submit);
+        if (name !== 'main') form.append(action('Cancel', () => editor.cancel()));
       }
-      const live = new Set<string>();
-      const comment = (
-        c:
-          | (typeof controller.state.comments)[number]
-          | (typeof controller.state.comments)[number]["replies"]["items"][number],
-      ) => {
-        live.add(c.id);
-        let article = articles.get(c.id);
-        if (!article) {
-          article = node("article");
-          article.className = "forum-post";
-          article.dataset.comment = c.id;
-          articles.set(c.id, article);
-        }
-        const author = node("strong", c.author?.login || "Deleted"),
-          date = node(
-            "a",
-            new Date(c.createdAt).toLocaleString(),
-          ) as HTMLAnchorElement;
-        date.href = c.url;
-        const controls = node("div");
-        controls.className = "forum-actions";
-        for (const [reaction, emoji] of Object.entries(emojis)) {
-          const group = c.reactions[reaction];
-          const button = action(
-            `${emoji} ${group?.count || 0}`,
-            async () => {
-              try {
-                await controller.setReaction(
-                  c.id,
-                  reaction as keyof typeof emojis,
-                  !group?.selected,
-                );
-              } catch (error) {
-                status.textContent = String(error);
-              }
-            },
-          );
-          button.disabled = !runtime.signedIn;
-          button.setAttribute(
-            "aria-pressed",
-            String(Boolean(group?.selected)),
-          );
-          controls.append(button);
-        }
-        controls.append(
-          action("Reply", () => {
-            controller.beginReply(c.replyToId || c.id);
-            runtime.interactions.focus("reply:" + (c.replyToId || c.id));
-          }),
-        );
-        if (c.viewerCanUpdate)
-          controls.append(
-            action("Edit", () => {
-              runtime.interactions.focus(controller.beginEdit(c));
-            }),
-          );
-        const byline = node("header"); byline.className = "forum-byline";
-        const avatar = node("span", (c.author?.login || "?").slice(0, 1).toUpperCase()); avatar.className = "forum-avatar"; avatar.setAttribute("aria-hidden", "true");
-        byline.append(avatar, author, date);
-        const content = node("div"); content.className = "forum-body";
-        if (c.deletedAt) content.textContent = "Comment deleted.";
-        else if (c.isMinimized) {
-          const hidden = document.createElement("details");
-          hidden.append(node("summary", "Hidden comment"), runtime.renderContent(c.bodyHTML, c.body)); content.append(hidden);
-        } else content.append(runtime.renderContent(c.bodyHTML, c.body));
-        article.replaceChildren(byline, content, controls);
-        if ("replies" in c) {
-          const visible = controller.state.visibleReplies.get(c.id) || 5;
-          const replies = node("div");
-          replies.className = "replies";
-          if (c.replies.count > Math.min(visible, c.replies.items.length))
-            replies.append(
-              action("Earlier replies", () => controller.revealReplies(c.id)),
-            );
-          replies.append(...c.replies.items.slice(-visible).map(comment));
-          article.append(replies);
-        }
-        return article;
-      };
-      list.replaceChildren(...controller.state.comments.map(comment));
-      if (controller.state.nextCursor)
-        list.append(action("More comments", () => controller.loadMore()));
-      for (const id of articles.keys()) if (!live.has(id)) articles.delete(id);
+      const previewing = editor.mode === 'preview';
+      if (textarea.hidden !== previewing) textarea.hidden = previewing;
+      if (previewElement.hidden === previewing) previewElement.hidden = !previewing;
+      if (feedback.textContent !== editor.error) feedback.textContent = editor.error;
+      if (submit.disabled !== editor.pending) submit.disabled = editor.pending;
+      const label = page.session.signedIn ? 'Publish' : 'Sign in with GitHub';
+      if (submit.textContent !== label) submit.textContent = label;
+    } });
+    editors.set(name, editor);
+    editorHost.append(editor.form);
+    return editor;
+  };
+  const articles = new Map<string, { element: HTMLElement; body: HTMLElement; comment: Comment; release: () => void }>();
+  scope.own(() => { for (const article of articles.values()) article.release(); });
+  const draw = () => {
+    const { document: doc } = page;
+    const authLabel = page.session.signedIn ? 'Sign out' : 'Sign in', problem = page.error || page.session.error;
+    if (auth.textContent !== authLabel) auth.textContent = authLabel;
+    if (status.textContent !== problem) status.textContent = problem;
+    for (const [name, editor] of editors) if (name !== 'main' && !page.drafts.get(name)?.editor) {
+      editor.dispose(); editors.delete(name);
+    }
+    composer('main');
+    for (const [name, draft] of page.drafts) if (draft.editor) composer(name);
+    const live = new Set<string>();
+    const card = (id: string): HTMLElement[] => {
+      const comment = doc.nodes[id];
+      if (!comment) return [];
+      live.add(id);
+      let retained = articles.get(id);
+      if (!retained) {
+        const element = node('article'), body = node('div');
+        element.className = 'forum-post'; element.dataset.comment = id; body.className = 'forum-body';
+        retained = { element, body, comment, release: () => {} }; articles.set(id, retained);
+      }
+      const { element, body } = retained, previous = retained.comment;
+      if (!body.hasChildNodes() || previous.bodyHTML !== comment.bodyHTML || previous.body !== comment.body ||
+          previous.deletedAt !== comment.deletedAt || previous.isMinimized !== comment.isMinimized) {
+        retained.release();
+        const lifetime = new window.AbortController();
+        retained.release = scope.own(() => lifetime.abort());
+        const content = comment.deletedAt ? node('p', 'Comment deleted.')
+          : page.renderContent(comment.bodyHTML, comment.body, lifetime.signal);
+        if (comment.isMinimized && !comment.deletedAt) {
+          const hidden = document.createElement('details'); hidden.append(node('summary', 'Hidden comment'), content);
+          body.replaceChildren(hidden);
+        } else body.replaceChildren(content);
+      }
+      retained.comment = comment;
+      const byline = node('header'), avatar = node('span', (comment.author?.login || '?').slice(0, 1).toUpperCase());
+      byline.className = 'forum-byline'; avatar.className = 'forum-avatar'; avatar.setAttribute('aria-hidden', 'true');
+      const date = node('a', new Date(comment.createdAt).toLocaleString()) as HTMLAnchorElement;
+      date.href = comment.url; byline.append(avatar, node('strong', comment.author?.login || 'Deleted'), date);
+      const controls = node('div'), groups = page.reactions(id);
+      controls.className = 'forum-actions';
+      for (const reaction of Object.keys(emojis) as (keyof typeof emojis)[]) {
+        const group = groups[reaction], button = action(`${emojis[reaction]} ${group?.count || 0}`,
+          () => page.setReaction(id, reaction, !group?.selected));
+        button.disabled = !page.session.signedIn || !page.canCompose;
+        button.setAttribute('aria-pressed', String(Boolean(group?.selected))); controls.append(button);
+      }
+      controls.append(action('Reply', () => page.interactions.focus(page.beginReply(comment.parentId || id))));
+      if (comment.viewerCanUpdate) controls.append(action('Edit', () => page.interactions.focus(page.beginEdit(comment))));
+      element.replaceChildren(byline, body, controls);
+      const repliesWindow = doc.replies[id];
+      if (comment.parentId === null && repliesWindow) {
+        const replies = node('div'); replies.className = 'replies';
+        if (repliesWindow.cursor !== null) replies.append(action('Earlier replies', () => page.loadReplies(id)));
+        replies.append(...repliesWindow.ids.flatMap(card)); element.append(replies);
+      }
+      return [element];
     };
-    const stop = controller.subscribe(render);
-    render();
-    return {
-      update() {
-        render();
-      },
-      dispose() {
-        stop();
-        for (const item of editors.values()) item.dispose();
-        target.classList.remove("forum");
-        target.replaceChildren();
-      },
-    };
-  },
+    list.replaceChildren(...doc.roots.ids.flatMap(card));
+    if (doc.roots.cursor !== null) list.append(action('More comments', () => page.refresh(true)));
+    for (const [id, article] of articles) if (!live.has(id)) { article.release(); articles.delete(id); }
+  };
+  let renderedDocument = page.document;
+  scope.own(page.subscribe(() => {
+    if (page.document === renderedDocument) return;
+    renderedDocument = page.document; draw();
+  }));
+  draw();
 };

@@ -1,7 +1,7 @@
 import { isNamedTheme } from '../themes.js';
 import type { PublicConfig, RepositoryPolicy } from '../contracts/config.js';
 import type { Widget, Selection } from '../contracts/requests.js';
-import type { DiscussionSummary, Repository } from '../contracts/github.js';
+import type { DiscussionSummary, Repository, RepositoryHead } from '../contracts/github.js';
 import { requireCondition } from './errors.js';
 export function policy(config: PublicConfig, repo: string): RepositoryPolicy {
   if(!Object.hasOwn(config.repositories,repo)&&config.openHosting)return config.openHosting;
@@ -16,8 +16,6 @@ export function parentOrigin(p: RepositoryPolicy, page: string): string {
 export function authorizeWidget(publicConfig: PublicConfig, widget: Selection): RepositoryPolicy {
   const p = policy(publicConfig, widget.repo);
   parentOrigin(p, widget.origin);
-  requireCondition(!widget.category || widget.category === p.category, 403, 'CATEGORY', 'The selected category is not enabled.');
-  requireCondition(!widget.categoryId || !p.categoryId || widget.categoryId === p.categoryId, 403, 'CATEGORY', 'The category ID does not match the configured category.');
   return p;
 }
 export function authorizePresentation(publicConfig: PublicConfig, widget: Widget): RepositoryPolicy {
@@ -28,15 +26,13 @@ export function authorizePresentation(publicConfig: PublicConfig, widget: Widget
   }
   return p;
 }
-export function repositoryScope(meta: Repository, repo: string, p: RepositoryPolicy, widget?: Selection): string {
+export function repositoryIdentityScope(meta: RepositoryHead, category: {id:string;name:string} | undefined, repo: string, p: RepositoryPolicy): string {
   requireCondition(!meta.isPrivate && meta.nameWithOwner.toLowerCase() === repo, 403, 'PUBLIC_ONLY', 'Only the configured public repository is available.');
-  const category = meta.discussionCategories.nodes.find(x => x.name === p.category);
-  requireCondition(category && (!p.categoryId || category.id === p.categoryId), 403, 'CATEGORY', 'The configured category name or ID does not match GitHub.');
-  if (widget) {
-    requireCondition(!widget.repoId || widget.repoId === meta.id, 400, 'BAD_INPUT', 'The repository ID does not match.');
-    requireCondition(!widget.categoryId || widget.categoryId === category.id, 400, 'BAD_INPUT', 'The category ID does not match.');
-  }
+  requireCondition(category && category.name === p.category && (!p.categoryId || category.id === p.categoryId), 403, 'CATEGORY', 'The configured category name or ID does not match GitHub.');
   return category.id;
+}
+export function repositoryScope(meta: Repository, repo: string, p: RepositoryPolicy): string {
+  return repositoryIdentityScope(meta,meta.discussionCategories.nodes.find(x => x.name === p.category),repo,p);
 }
 export function discussionScope(discussion: Pick<DiscussionSummary, "repository" | "category">, repo: string, repositoryId: string, categoryId: string): void {
   requireCondition(!discussion.repository.isPrivate && discussion.repository.nameWithOwner.toLowerCase() === repo && discussion.repository.id === repositoryId,

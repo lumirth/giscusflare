@@ -1,6 +1,6 @@
 {
   "name": "giscusflare",
-  "version": "2.0.1",
+  "version": "3.0.0",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -10,24 +10,26 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.worker.json",
+    "typecheck:examples": "tsc --noEmit -p tsconfig.examples.json",
     "build": "npm run typecheck && node scripts/build.mjs && tsc -p tsconfig.types.json",
-    "test": "npm run build:test && node --test test/*.test.mjs",
+    "test": "npm run build:test && node scripts/test-runtime.mjs && node scripts/test-browser.mjs",
     "test:runtime": "npm run build:test && node scripts/test-runtime.mjs",
     "demo": "node scripts/demo.mjs",
     "dev": "wrangler dev",
     "check:config": "node scripts/check-config.mjs",
-    "check:release": "npm test && npm run test:runtime && node scripts/check-package.mjs",
+    "test:ranking": "node scripts/test-ranking-service-runtime.mjs",
+    "check:release": "npm test && npm run test:ranking && node scripts/check-package.mjs",
     "deploy:check": "npm run check:release && npm run check:config && wrangler deploy --dry-run",
     "deploy": "wrangler deploy",
     "secret": "node scripts/secret.mjs",
     "types": "wrangler types types/runtime.d.ts",
-    "build:test": "npm run build && node scripts/build-test-assets.mjs",
+    "build:test": "npm run build && npm run typecheck:examples && node scripts/build-test-assets.mjs",
     "test:package": "node scripts/check-package.mjs",
-    "build:website": "npm run build && node scripts/build-website.mjs"
+    "build:website": "npm run build && node scripts/build-website.mjs",
+    "test:browser": "npm run build:test && node scripts/test-browser.mjs"
   },
   "dependencies": {
     "@primer/octicons": "^19.27.0",
-    "@standard-schema/spec": "1.0.0",
     "dompurify": "^3.4.16",
     "hono": "4.13.9",
     "lit-html": "^3.3.1",
@@ -35,14 +37,13 @@
     "valibot": "1.5.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@types/node": "^22.20.4",
-    "esbuild": "0.25.10",
-    "jsdom": "^27.4.0",
+    "esbuild": "^0.28.1",
+    "graphql": "^16.13.1",
     "postcss": "^8.5.28",
-    "tailwindcss": "^3.4.17",
-    "tailwindcss-vanilla-rtl": "^0.4.0",
     "typescript": "5.9.3",
-    "wrangler": "4.141.0"
+    "wrangler": "^4.148.0"
   },
   "exports": {
     ".": {
@@ -82,5 +83,11 @@
     "DEPLOY.md",
     "FREE-TIER.md",
     "docs/*.md"
-  ]
+  ],
+  "overrides": {
+    "@xmldom/xmldom": "0.9.12",
+    "undici": "7.30.0",
+    "sharp": "0.35.5",
+    "source-map-js": "1.2.2"
+  }
 }

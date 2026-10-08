@@ -9,7 +9,7 @@
     "src/worker/**/*.ts",
     "src/domain/**/*.ts",
     "src/contracts/**/*.ts",
-    "src/testing.ts",
+    "test/service.ts",
     "types/runtime.d.ts"
   ],
   "exclude": [

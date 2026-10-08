@@ -1,83 +1,51 @@
-# How giscusflare works
+# System design
 
-Giscusflare connects your website to GitHub Discussions. GitHub stores the comments. A Cloudflare Worker handles requests from readers, and one SQLite Durable Object per repository coordinates GitHub access, sessions and writes. Static Assets serves the browser code, themes and setup page.
+GitHub owns discussion content and account permissions. One canonical repository actor owns credentials, selection mappings, contribution receipts and optional ranking observations. The Worker resolves a repository name to its installed GitHub identity before selecting that actor. Native and iframe consumers use the same page owner and canonical document.
 
 ```mermaid
 flowchart LR
-  Readers[Readers on different pages] --> Worker[Cloudflare Worker]
-  Readers --> Assets[Static Assets]
-  Worker --> Cache[Public response cache]
-  Worker --> Repository[Repository Durable Object]
-  Repository --> GitHub[GitHub Discussions]
-  Repository --> SQLite[Sessions and operational state]
+  Page[Page document and writing] --> Worker[HTTP and current website policy]
+  Worker --> Actor[Canonical GitHub repository actor]
+  Actor --> GitHub[Content and permissions]
+  Actor --> Records[Operational records]
+  Actor --> Ranking[SQL observations and scan]
+  Page --> View[Presentation lifetime and editors]
 ```
 
-SQLite stores page-to-discussion mappings, encrypted sessions, discussion-creation records and write receipts. If you enable ranking, it also stores the inputs needed to order comments.
+## Identity and service
 
-## Loading a conversation
+Repository names locate; immutable GitHub IDs determine Durable Object addresses. Configured and open-hosting repositories use the same addressing rule. The Worker supplies that identity as a private RPC argument. Each acquired provider result must agree with it. Clients supply a page selection, not repository/category authority hints; the operator's category policy supplies that authority.
 
-The Worker checks your repository and website policy before looking for a cached response. For anonymous readers, it can serve a public response from Cloudflare's local cache. On a miss, it calls the repository object. The object has another shared cache and combines identical reads in progress into one GitHub fetch.
+`page` acquires a root window, a reply window or a requested sequence of IDs. The provider boundary converts its response once into canonical nodes, ID windows and metadata. Nodes carry content once. Root and reply windows contain membership, pagination and observed totals. Native RPC returns values and expiry; the Worker constructs JSON or the iframe document. There is no second browser DTO or mutation-result conversion.
 
-Data caches distinguish the discussion, cursor, order and reply selection. Themes, layout and the embedding page URL do not split those entries. Each request still passes the current website and repository policy. A response keeps its original expiry as it passes between caches. Signed-in reads use the reader's GitHub token and bypass public caching so permissions and selected reactions belong to that reader.
+`contribute` accepts one tagged user intent: comment, edit, delete, reaction or moderation. One acquisition owner resolves the selection, checks scope and acquires the affected nodes. Unmapped first contributions resolve or create a discussion under the same term owner. The durable creation marker handles an uncertain external creation; it is not a second discovery pipeline.
 
-An iframe response includes the first anonymous comment page. A native presentation requests that page through the API. Further comments and replies load as the reader asks for them.
+Before dispatch, a receipt records the immutable account and intent fingerprint. Its nullable confirmation is the workflow state: no result means uncertain; a result contains only the external ID, discussion number and affected parent ID. It contains no read body, reactions or counts. Replaying a confirmed intent cannot dispatch another effect. Timestamped intent expiry remains independent of receipt pruning.
 
-The repository object serializes the response once and passes its body, status and headers to the Worker. The Worker returns that body without parsing and serializing the JSON again.
+A fresh canonical observation can accompany confirmation. Observation failure leaves the effect confirmed, with no patch. The client reports that the contribution was saved and reading needs refreshing. It does not infer global totals from the loaded window or reopen the effect because its display observation failed.
 
-## Traffic across pages
+Public edge and actor caches retain bounded completed reads until their original expiry. Current deployment website policy applies before edge reuse; authenticated reads bypass public caches. Confirmed contributions invalidate affected actor reads. One native alarm selects the next operational expiry or ranking continuation.
 
-All discussions in one GitHub repository share a Durable Object. Readers do not get their own objects, and opening another website page does not allocate one. Separate repositories use separate objects.
+## Authentication
 
-This arrangement shares installation tokens and repository checks across pages. It also coordinates discussion creation and retries so concurrent readers do not create duplicate discussions or submissions. Different requests can wait for GitHub concurrently; the object does not process an entire network round trip before accepting the next request.
+The page creates its future bearer capability before sign-in. Its hash is the private preparation proof; the proof's hash is the public attempt identity. Only the private proof enters the trusted authorization window, in a fragment removed before asynchronous work. The bearer capability stays with the page and its host persistence.
 
-For a site with readers on several pages:
+Preparation binds a browser cookie and independent GitHub PKCE. Callback exchanges credentials, obtains the immutable account ID, atomically creates the encrypted session under the already chosen capability hash, and deletes the attempt. The return carries only public attempt/status. The page adopts its own saved capability; no completion polling, staged ready credentials or second capability issuance exists. Preparation cannot replace an installed capability. A lost return requires another sign-in.
 
-- Repeated anonymous reads of the same page can share cached content. Readers visiting different discussions need different responses.
-- The repository's in-memory response cache has an 8 MiB limit. Least recently used entries are evicted when new responses need room. Keys and entry overhead count toward the bound.
-- A comment, edit, deletion, moderation action or reaction invalidates reads for its discussion. Unrelated discussions retain their entries. Existing edge responses retain their original expiry.
-- All signed-in reads, writes and cache misses for the repository reach the same object. Their CPU and GitHub work accumulate there.
-- Count requests batch up to 20 page identifiers. Individual counts and missing-discussion results are shared across batches and website pages. Only misses reach GitHub, in one query that also verifies repository access.
+## Reading and writing
 
-[Cloudflare usage](../FREE-TIER.md) explains how these traffic patterns affect the account allowance.
+The page owns one normalized document, explicit reading windows and contribution records. Refresh replaces reading windows; it does not reconstruct prior expansion depth. Draft records own text, retry key and editor identity together. One contribution queue orders dispatch and canonical patch adoption. Reaction intent concerns issued and desired commands rather than deriving another write from a possibly stale read.
 
-## Writing and retrying
+Read signals belong to their acquisition. Replacing the root document retires child acquisitions. Changing identity retires prior acquisitions and queued contributions; issued remote effects can finish but cannot publish into the replacement. The page can join its issued work. There is no mixed registry combining drafts, reaction intent, reply loading and arbitrary operation status.
 
-A write returns GitHub's confirmed result to the reader. The conversation updates immediately. Other readers receive it through subsequent reads.
+The mount owns page and presentation replacement. Consumers observe the actual current page directly. Presentations receive an abortable view lifetime; renderer-owned descendants register cleanup when acquired. An editor owns its actual form, textarea, preview and native interactions. Active editors occupy a permanent region independent of read-window membership. The main editor also has one insertion point; visual position uses CSS. Native history does not depend on moving textareas during render.
 
-Before sending a mutation, the service records its operation ID and content fingerprint. If a response is lost, that record lets a retry recover the original operation instead of blindly submitting again. Completed receipts return the saved result. Pending receipts preserve the uncertain outcome. An expired operation ID without a receipt cannot start a new write.
+## Ranking
 
-Invalidation removes both retained entries and pending-work registrations for the discussion. A read that started before the write may finish for its original caller, but cannot refill the cache afterward.
+An operator names weighted root-comment profiles. SQL holds typed observations. One collection checkpoint owns a two-mode scan: enumerate membership after the count/newest-ID signature changes, otherwise renew known IDs. Completed scans report an acquisition interval and next refresh time. This is a refresh cadence and a scoped traversal, not an atomic remote snapshot or a uniform bound on every field's age.
 
-## Optional ranking
+Returning source observations cannot overwrite a newer complete local fact. Canonical contribution observations supply complete facts, so ranking has no partial-fact merger or missing-input repair protocol. SQL computes scores; a bounded cache holds completed scored orders. A reader receives a copied ID sequence and hydrates explicit windows without reordering that traversal halfway through reading.
 
-Chronological reading needs only the requested comment page. Ranking needs each root comment's selected score inputs. The profiles in your repository configuration choose those inputs and their weights.
+Native SQL cursor counters meter actual row work. HTTP calls are admitted against the configured allowance; SQL scheduling stops between bounded steps when its threshold is reached. Thresholds can overshoot by the final bounded step. The implementation has no prepaid per-operation row reservations, emergency global invalidation or legacy ranking migration. [Capacity](../FREE-TIER.md) records the measured workload and its limits.
 
-Ranking starts when a reader requests a profile. Readers of the same discussion share the collection work. The service advances it in bounded steps, reserves API and storage allowances before each step, and uses alarms to finish pending work. Completed jobs stop scheduling alarms. Another visit starts a refresh when the observations are too old.
-
-The stored candidates contain ranking metadata rather than full comment bodies. Once an order is ready, the browser retains its ID list and fetches content for the visible pages. Reaction changes do not move comments across pages during that reading session.
-
-Ranking state persists separately for each discussion. Byte-bounded caches retain candidates for multiple discussions and orders for multiple profiles. Candidates have a 32 MiB retained-memory estimate, including ID lookup overhead; orders share a 4 MiB limit. Discussions in the same repository share its ranking budget.
-
-Ready rankings reuse public access verification for the display-cache lifetime. Preliminary GitHub calls and installation-token renewal are included in the ranking request allowance. Local website policy is checked on every request.
-
-If collection is incomplete or reaches its budget, the API reports `preparing` or `paused`. A presentation can keep chronological reading available while the ranked view catches up. [Configuration](CONFIGURATION.md#sort-by-reactions-or-reply-counts) describes the controls.
-
-## Browser and presentation
-
-The conversation object owns sign-in, drafts, loaded comments, pagination and pending writes. A presentation subscribes to that state and supplies the DOM and controls. The default widget and forum example use the same API.
-
-Theme changes retain the conversation and its editors. Changing the page saves its draft and starts a conversation for the next page. Stable comment and editor IDs let presentations update content without replacing a focused textarea.
-
-## Source map
-
-| Directory | Responsibility |
-| --- | --- |
-| `src/contracts` | Request, configuration and GitHub response schemas |
-| `src/worker` | HTTP policy, public caching, rate limits and object calls |
-| `src/domain` | GitHub access, authorization, sessions, mappings and receipts |
-| `src/ranking` | Metadata collection, storage, budgets and ordering |
-| `src/conversation` | Browser state, commands, drafts and reaction intent |
-| `src/browser` | Browser lifecycle, content rendering and interaction bindings |
-| `src/browser/standard` | Default presentation |
-
-The Worker and browser have separate builds. Custom interfaces can import `giscusflare/headless` without the default presentation. See [package assets](PACKAGING.md) for the published modules and deployment files.
+[Migration](MIGRATION.md), [API](API.md), [customization](EXTENDING.md) and [verification results](CONFIDENCE.md) describe adoption and evidence. The replacement ledger includes new contracts, consumers and verification support.

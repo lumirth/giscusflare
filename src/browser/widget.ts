@@ -31,11 +31,11 @@ const mounted = mountComments(target, {
 const theme = () => {
   const sheet = document.querySelector<HTMLLinkElement>("[data-theme-sheet]");
   if (sheet)
-    sheet.href = isNamedTheme(mounted.appearance.theme)
-      ? "/themes/" + mounted.appearance.theme + ".css"
-      : mounted.appearance.theme;
-  document.documentElement.lang = mounted.appearance.lang;
-  document.documentElement.dir = /^(ar|he|fa|ur)(-|$)/.test(mounted.appearance.lang)
+    sheet.href = isNamedTheme(mounted.conversation.appearance.theme)
+      ? "/themes/" + mounted.conversation.appearance.theme + ".css"
+      : mounted.conversation.appearance.theme;
+  document.documentElement.lang = mounted.conversation.appearance.lang;
+  document.documentElement.dir = /^(ar|he|fa|ur)(-|$)/.test(mounted.conversation.appearance.lang)
     ? "rtl"
     : "ltr";
 };
@@ -47,10 +47,11 @@ const receive = (event: MessageEvent) => {
   )
     return;
   const data = event.data.giscus as Record<string, unknown>;
+  if (typeof data.loginError === 'string') mounted.conversation.initialize({ loginError: data.loginError });
   if (data.init && typeof data.init === "object")
-    mounted.initialize(data.init as Record<string, unknown>);
+    mounted.conversation.initialize(data.init as Record<string, unknown>);
   if (typeof data.sessionChanged === "string")
-    mounted.initialize({ session: data.sessionChanged });
+    mounted.conversation.initialize({ session: data.sessionChanged });
   if (data.setConfig && typeof data.setConfig === "object") {
     const update: Partial<Widget> = {};
     const value = data.setConfig as Record<string, unknown>;
@@ -58,9 +59,6 @@ const receive = (event: MessageEvent) => {
       "theme",
       "lang",
       "term",
-      "category",
-      "categoryId",
-      "repoId",
       "description",
       "backLink",
     ] as const)
@@ -83,14 +81,14 @@ const receive = (event: MessageEvent) => {
         delete update.theme;
       }
     }
-    stop();
-    const settings=conversationSettings({...mounted.page,...update},{...mounted.appearance,...update});
+    const settings=conversationSettings({...mounted.conversation.config,...update},{...mounted.conversation.appearance,...update});
     const pageChanged=Object.keys(update).some(key=>!["theme","lang","inputPosition","reactionsEnabled","emitMetadata"].includes(key));
-    if(pageChanged)mounted.replacePage(settings.page);
-    mounted.updateAppearance(settings.appearance);
-    stop = observe();
+    if (pageChanged) {
+      stop(); mounted.replacePage(settings.page); stop = observe();
+    }
+    mounted.conversation.updateAppearance(settings.appearance);
     theme();
-    emit({ ready: true, context: {...mounted.page,...mounted.appearance} });
+    emit({ ready: true, context: {...mounted.conversation.config,...mounted.conversation.appearance} });
   }
 };
 window.addEventListener("message", receive);
@@ -103,17 +101,18 @@ const resize = new ResizeObserver(() => {
   }
 });
 resize.observe(target);
-const observe = () =>
-  mounted.subscribe(() => {
-    const state = mounted.state;
-    if (state.ready && !state.loading) {
+const observe = () => {
+  const conversation = mounted.conversation;
+  return conversation.subscribe(() => {
+    const metadata = conversation.document.metadata;
+    if (conversation.ready && !conversation.reading()) {
       emit({ rendered: true });
-      if (mounted.appearance.emitMetadata)
-        emit({ discussion: state.thread, viewer: state.viewer });
+      if (conversation.appearance.emitMetadata)
+        emit({ discussion: metadata.thread, viewer: metadata.viewer });
     }
   });
+};
 let stop = observe();
-window.addEventListener("pagehide", () => mounted.saveDrafts());
 window.addEventListener(
   "unload",
   () => {

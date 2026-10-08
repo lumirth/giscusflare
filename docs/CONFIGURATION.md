@@ -45,7 +45,7 @@ Set these per repository:
 
 Both accept 0 to 3600000 milliseconds. Zero disables that cache. For example, `"displayCacheMs": 180000` caches public comments for three minutes. Readers still see their own successful changes immediately.
 
-See [Cloudflare usage](../FREE-TIER.md#choose-freshness-for-your-site) to choose lifetimes for your traffic.
+See [Cloudflare usage](../FREE-TIER.md#reads-contributions-and-freshness) to choose lifetimes for your traffic.
 
 ## Custom theme CSS
 
@@ -65,7 +65,7 @@ To add a "Popular" order alongside Oldest and Newest, add a `ranking` field to t
       "tieBreak": "oldest"
     }
   },
-  "maxAgeSeconds": 600
+  "refreshSeconds": 600
 }
 ```
 
@@ -73,7 +73,7 @@ This example gives each thumbs-up or heart one point and each reply half a point
 
 Each profile can use any of the eight [reaction names](API.md#commands), plus `replies`, `upvotes` and `answer`. Weights can be positive or negative. GitHub upvotes are separate from emoji reactions; they can contribute to a score, but visitors upvote through GitHub.
 
-`maxAgeSeconds` sets the maximum score age. The default is 600 seconds; accepted values are 1 to 604800 seconds. Increasing it allows less frequent updates. giscusflare fetches only the values used by your profiles. Including reply counts requires smaller batches than reactions alone. See [sorting costs](../FREE-TIER.md#sorting-by-reactions-or-reply-counts).
+`refreshSeconds` sets the interval after a completed acquisition before another is requested. The default is 600 seconds; accepted values are 1 to 604800 seconds. A returned order reports its acquisition's start and completion times and next refresh time. Remote observations can span that interval; this is neither an atomic snapshot nor a guarantee that every value is younger than one age cutoff. Increasing the cadence interval permits less frequent acquisition. The service fetches only profile inputs; reply counts require smaller batches than reactions alone. See [sorting costs](../FREE-TIER.md#optional-ranking).
 
 You can define up to eight profiles. Names start with a lowercase letter and contain up to 32 lowercase letters, digits, underscores or hyphens. Ties use creation time in the selected direction, then a stable ID order.
 
@@ -84,13 +84,15 @@ Set `RANKING_BUDGET` to a JSON object to change these service-wide limits:
 | Setting | Default | Controls |
 | --- | --- | --- |
 | `maxRequestsPerHour` | `240` | GitHub calls used to prepare orders |
-| `maxRowsWrittenPerDay` | `32000` | SQLite write allowance |
-| `maxRowsReadPerDay` | `500000` | SQLite read allowance |
+| `maxRowsWrittenPerDay` | `36000` | Metered SQLite write threshold |
+| `maxRowsReadPerDay` | `4000000` | Metered SQLite read threshold |
 | `maxOrderBytes` | `524288` | Maximum size in bytes of a returned comment-ID list |
 
-The call and row allowances are divided equally among repositories with sorting profiles. Discussions in each repository share that allocation. The service reserves enough allowance for a step before starting it, so its budget can run out before actual usage reaches the number you set. GitHub calls include access checks and token renewal.
+The call and row allowances are divided equally among repositories with sorting profiles. Discussions in each repository share that allocation. Upstream calls are admitted before dispatch, including access checks and token renewal. SQLite use is measured from native cursor counters and checked between bounded steps; a step can cross a daily row threshold before subsequent work pauses. These row settings are thresholds, not strict account-wide spending caps.
 
-These limits apply to preparing custom orders. Ordinary comments, sign-in and other services in your account also use Cloudflare resources. Check [account allowances](../FREE-TIER.md#free-allowances) when increasing the budget.
+These limits cover ranking access, acquisition, publication and ready-order work. Default row thresholds are 80% of the Free SQL read allowance and 36% of its write allowance; they are not independent capacity for every repository. Ordinary comments, sign-in and other services in your account also use Cloudflare resources. Check [account allowances](../FREE-TIER.md#free-allowances) when increasing the budget.
+
+Splitting the default allowance among several repositories does not guarantee each can complete acquisition on the requested cadence. Access checks and token renewal can exhaust the hourly call allowance while SQL use remains low. Measure intended traffic and discussion sizes before enabling sorting across an archive; increase the service-wide call budget only within GitHub's applicable limits.
 
 A custom order reports `preparing` while its data loads and `paused` when it cannot finish. [Troubleshooting](OPERATIONS.md#when-a-custom-sort-cannot-load) explains the reasons; the [API reference](API.md#ranked-views) covers custom controls.
 

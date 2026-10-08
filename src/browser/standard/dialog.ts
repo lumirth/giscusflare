@@ -1,76 +1,46 @@
-import { element as h, button } from "../dom.js";
-export type DialogField =
-  | { name: string; label: string; value: string; kind: "text" | "multiline" }
-  | {
-      name: string;
-      label: string;
-      value: string;
-      kind: "select";
-      options: readonly { value: string; label: string }[];
-    };
-/** Standard presentation only. Custom renderers may use their own interaction. */
-export function requestFields(
+import { html, render, nothing } from "lit-html";
+interface ReasonOptions {
+  label: string;
+  choices: readonly { value: string; label: string }[];
+}
+/** Confirm a comment action; hiding additionally requires a moderation reason. */
+export function confirmAction(
   host: HTMLElement,
   title: string,
-  fields: readonly DialogField[],
   labels: { confirm: string; cancel: string },
-): Promise<Record<string, string> | null> {
-  return new Promise((resolve) => {
-    const dialog = h("dialog", { class: "action-dialog", "aria-label": title });
-    const form = h("form");
-    form.append(h("h2", {}, title));
-    const controls = new Map<
-      string,
-      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
-    >();
-    for (const field of fields) {
-      const control =
-        field.kind === "select"
-          ? h(
-              "select",
-              {},
-              ...field.options.map((option) =>
-                h("option", { value: option.value }, option.label),
-              ),
-            )
-          : field.kind === "multiline"
-            ? h("textarea", { rows: 8 })
-            : h("input", { type: "text" });
-      control.name = field.name;
-      control.value = field.value;
-      controls.set(field.name, control);
-      form.append(h("label", {}, h("span", {}, field.label), control));
-    }
+  signal: AbortSignal,
+  reason?: ReasonOptions,
+): Promise<string | null> {
+  if (signal.aborted) return Promise.resolve(null);
+  return new Promise((resolve, reject) => {
+    const dialog = document.createElement('dialog');
+    dialog.className = 'action-dialog';dialog.setAttribute('aria-label', title);
     let settled = false;
-    const finish = (value: Record<string, string> | null) => {
+    const finish = (value: string | null) => {
       if (settled) return;
       settled = true;
+      signal.removeEventListener("abort", abort);
       dialog.close();
       dialog.remove();
       resolve(value);
     };
-    form.append(
-      h(
-        "div",
-        { class: "dialog-actions" },
-        button(labels.cancel, () => finish(null)),
-        h("button", { type: "submit", class: "primary" }, labels.confirm),
-      ),
-    );
-    form.addEventListener("submit", (event) => {
+    const abort = () => finish(null);
+    render(html`<form @submit=${(event: SubmitEvent) => {
+      event.preventDefault();finish(dialog.querySelector('select')?.value ?? '');
+    }}>
+      <h2>${title}</h2>
+      ${reason ? html`<label><span>${reason.label}</span><select name="reason">
+        ${reason.choices.map(option => html`<option value=${option.value}>${option.label}</option>`)}
+      </select></label>` : nothing}
+      <div class="dialog-actions"><button type="button" @click=${abort}>${labels.cancel}</button>
+        <button type="submit" class="primary">${labels.confirm}</button></div>
+    </form>`, dialog);
+    dialog.addEventListener("cancel", event => {
       event.preventDefault();
-      finish(
-        Object.fromEntries(
-          [...controls].map(([name, control]) => [name, control.value]),
-        ),
-      );
+      abort();
     });
-    dialog.addEventListener("cancel", (event) => {
-      event.preventDefault();
-      finish(null);
-    });
-    dialog.append(form);
-    host.append(dialog);
-    dialog.showModal();
+    signal.addEventListener("abort", abort, { once: true });
+    try { host.append(dialog);dialog.showModal(); }
+    catch (error) { reject(error);finish(null); }
   });
 }
