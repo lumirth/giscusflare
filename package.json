@@ -29,18 +29,18 @@
     "test:browser": "npm run build:test && node scripts/test-browser.mjs"
   },
   "dependencies": {
-    "@primer/octicons": "^19.27.0",
-    "dompurify": "^3.4.16",
-    "hono": "4.13.9",
     "lit-html": "^3.3.1",
-    "mathjax-full": "^3.2.2",
     "valibot": "1.5.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
+    "@primer/octicons": "^19.27.0",
     "@types/node": "^22.20.4",
+    "dompurify": "^3.4.16",
     "esbuild": "^0.28.1",
     "graphql": "^16.13.1",
+    "hono": "4.13.9",
+    "mathjax-full": "^3.2.2",
     "postcss": "^8.5.28",
     "typescript": "5.9.3",
     "wrangler": "^4.148.0"
