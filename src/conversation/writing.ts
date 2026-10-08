@@ -118,7 +118,7 @@ export function recoveredWriting(raw: string): SavedWriting[] {
   if (raw.length > 240000) return [];
   try {
     const value = JSON.parse(raw);
-    if (value.version !== 4 || !Array.isArray(value.writing) || value.writing.length > 30) return [];
+    if (value.version !== 4 || !Array.isArray(value.writing)) return [];
     const target = (v: WritingTarget): boolean => Boolean(v && (v.kind === 'comment' ||
       (['reply', 'edit'].includes(v.kind) && 'id' in v && typeof v.id === 'string' && v.id.length > 0 && v.id.length <= 256)));
     const text = (v: unknown): boolean => typeof v === 'string' && v.length <= 60000;

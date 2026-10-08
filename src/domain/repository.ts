@@ -264,7 +264,8 @@ export class RepositoryEngine {
     async contribute(input: C.Input<'contribute'>): Promise<ContributionResult> {
         const r = input.request, w = r.config, action = r.action;
         const base = this.#base(w.repo), session = await base.auth.session(input.session, w.origin, true);
-        const { html: _html, ...intent } = r;
+        const selected = w.number ? { repo: w.repo, number: w.number } : { repo: w.repo, term: w.term, strict: w.strict };
+        const intent = { selection: selected, action };
         const receiptKey = 'receipt:v3:' + await hash(r.key), fingerprint = await hash(JSON.stringify(intent)), owner = session!.principal;
         return this.store.lock(receiptKey, async () => {
             const receipt = this.store.get(receiptKey, S.Receipt);

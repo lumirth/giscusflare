@@ -57,6 +57,7 @@ function delay(signal: AbortSignal, ms: number): Promise<void> {
 }
 /** One normalized document and one ordered contribution pipeline own a page. */
 export class PageModel {
+    readonly config: Readonly<PageConfig>;
     document = emptyDocument();
     #writings = new Map<string, Writing>();
     get writings(): ReadonlyMap<string, Writing> { return this.#writings; }
@@ -81,7 +82,8 @@ export class PageModel {
     #issued = new Set<Promise<unknown>>();
     #tail: Promise<unknown> = Promise.resolve();
     #listeners = new Set<(page: PageModel) => void>();
-    constructor(readonly config: PageConfig, private transport: Transport, order: CommentOrder = 'oldest', readonly lifetime = new AbortController()) {
+    constructor(config: PageConfig, private transport: Transport, order: CommentOrder = 'oldest', readonly lifetime = new AbortController()) {
+        this.config = Object.freeze({ ...config });
         this.#order = typeof order === 'string' ? order : Object.freeze({ ...order });
         this.signal.addEventListener('abort', () => { this.#identity.abort(); this.#cancelReads(); this.#listeners.clear(); }, { once: true });
     }
