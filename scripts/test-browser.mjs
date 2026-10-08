@@ -175,7 +175,11 @@ try {
           await page.mouse.down();
           await page.mouse.move(box.x + box.width - 4, box.y + box.height + 70, { steps: 8 });
           await page.mouse.up();
-          await expect.poll(async () => (await textarea.boundingBox()).height, { message: engineName + ' ' + mode + ' manual resize from ' + JSON.stringify(box) }).toBeGreaterThan(box.height + 40);
+          const resizeDetails = await textarea.evaluate(element => {
+            const style = getComputedStyle(element), bounds = element.getBoundingClientRect(), hit = element.ownerDocument.elementFromPoint(bounds.right - 4, bounds.bottom - 4);
+            return { resize: style.resize, fieldSizing: style.fieldSizing, direction: style.direction, inlineStyle: element.getAttribute('style'), viewport: [innerWidth, innerHeight], hit: [hit?.tagName, hit?.className] };
+          });
+          await expect.poll(async () => (await textarea.boundingBox()).height, { message: engineName + ' ' + mode + ' manual resize from ' + JSON.stringify({ box, resizeDetails }) }).toBeGreaterThan(box.height + 40);
           const chosenHeight = (await textarea.boundingBox()).height;
           await textarea.click(); await textarea.press('End');
           await page.keyboard.type(' and manual resizing');
