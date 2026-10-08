@@ -169,11 +169,11 @@ try {
           await expect.poll(async () => (await textarea.boundingBox()).height).toBeGreaterThan(compactHeight + 40);
           await textarea.fill('A contribution with native undo');
           await expect.poll(async () => (await textarea.boundingBox()).height).toBeLessThanOrEqual(compactHeight + 2);
-          await textarea.evaluate(element => element.scrollIntoView({ block: 'center' }));
+          await textarea.scrollIntoViewIfNeeded();
           const box = await textarea.boundingBox();
-          await page.mouse.move(box.x + box.width - 4, box.y + box.height - 4);
+          await page.mouse.move(box.x + box.width - 10, box.y + box.height - 10);
           await page.mouse.down();
-          await page.mouse.move(box.x + box.width - 4, box.y + box.height + 70, { steps: 8 });
+          await page.mouse.move(box.x + box.width - 10, box.y + box.height + 70, { steps: 8 });
           await page.mouse.up();
           const resizeDetails = await textarea.evaluate(element => {
             const style = getComputedStyle(element), bounds = element.getBoundingClientRect(), hit = element.ownerDocument.elementFromPoint(bounds.right - 4, bounds.bottom - 4);
