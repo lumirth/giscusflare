@@ -35,6 +35,7 @@ export function createComposer({ runtime, report }: StandardContext, contributio
     if (textarea.placeholder !== placeholder) textarea.placeholder = placeholder;
     const textareaClass = 'form-control input-contrast gsc-comment-box-textarea ' + (editor.fixedWidth ? 'gsc-is-fixed-width' : '');
     if (textarea.className !== textareaClass) textarea.className = textareaClass;
+    if (!writing && !editor.previewPending && !previewElement.hasChildNodes()) previewElement.textContent = message(lang, 'nothingToPreview');
     if (previewElement.hidden !== writing) previewElement.hidden = writing;
     const typography = message(lang, editor.fixedWidth ? 'disableFixedWidth' : 'enableFixedWidth');
     render(html`<div class="color-bg-tertiary color-border-primary gsc-comment-box-tabs">

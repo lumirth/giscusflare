@@ -1,4 +1,3 @@
-import { message } from "./i18n.js";
 import { mountContent } from "./content.js";
 import type { Writing, WritingOutcome } from "../conversation/writing.js";
 import type { Conversation } from "./runtime.js";
@@ -131,7 +130,7 @@ export function createEditor(runtime: Conversation, writing: Writing, options: {
       if (disposed()) return;
       content.clear();const version = ++previewVersion, body = textarea.value;
       mode = 'preview';error = '';previewPending = Boolean(body.trim());
-      previewElement.replaceChildren(message(runtime.appearance.lang, previewPending ? 'loadingPreview' : 'nothingToPreview'));
+      previewElement.replaceChildren();
       draw();
       if (!previewPending) return;
       try {
