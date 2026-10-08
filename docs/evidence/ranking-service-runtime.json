@@ -1,10 +1,10 @@
 {
   "name": "native-ranking-service-resources",
   "source": {
-    "commit": "045e560b490e10d7696e5ce7c94ab4760aadcb9d",
-    "sha256": "4c9f003cb9a61b4c70f43a4a3914cb81cddc8acb30697336f7519253af46425b"
+    "commit": "ae6e72fdf93a976f6fa2908a04631934dd71e47d",
+    "sha256": "16148c0d86fe881b9b8ecb249cc0fdf6f3645fbd36251da681d47d0657c4ab95"
   },
-  "startedAt": "2026-10-08T09:12:33.613Z",
+  "startedAt": "2026-10-08T18:07:08.243Z",
   "node": "v22.23.2",
   "github": "local test-only simulation",
   "status": "passed",
@@ -199,5 +199,5 @@
       }
     }
   },
-  "completedAt": "2026-10-08T09:13:41.835Z"
+  "completedAt": "2026-10-08T18:08:28.972Z"
 }
