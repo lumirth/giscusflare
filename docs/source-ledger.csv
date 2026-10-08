@@ -23,7 +23,7 @@ scripts/probe-thread-github.mjs,19,19,21,1453,19,19,21,1453,0,0,0,0
 scripts/ranking-runtime-worker.ts,82,82,115,5796,84,84,118,6053,146,146,149,8008
 scripts/rate-bindings.mjs,10,10,12,667,0,0,0,0,0,0,0,0
 scripts/secret.mjs,2,2,2,95,2,2,2,95,2,2,2,95
-scripts/test-browser.mjs,0,0,0,0,0,0,0,0,244,243,298,21102
+scripts/test-browser.mjs,0,0,0,0,0,0,0,0,244,243,298,20980
 scripts/test-ranking-runtime.mjs,29,29,52,3310,31,31,63,3774,0,0,0,0
 scripts/test-ranking-service-runtime.mjs,0,0,0,0,0,0,0,0,166,166,173,10840
 scripts/test-runtime.mjs,163,161,208,11407,112,110,127,8055,119,119,122,9766

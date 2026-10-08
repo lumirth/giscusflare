@@ -22,6 +22,8 @@ Native and browser workflows use the actual production Worker and SQLite Durable
 
 The browser portfolio exercises native and iframe embedding, future-capability sign-in, actual typing and undo/redo, preview, refresh, appearance and contributions. Cohesive custom-view workflows cover rich-content sanitization and failed enhancements, acquired-resource retirement, forum switching and editing, and local setup/configuration. Use the current receipt for executed scenarios and engines; a fixed case count is not an acceptance target.
 
+CI runs the complete gate on [macOS 26](https://docs.github.com/en/actions/reference/runners/github-hosted-runners) to exercise WebKit's native controls on the Apple port. The Linux Playwright GTK build used during qualification did not enter resize mode through the mouse driver even for isolated plain textareas with fixed or content sizing. That observation does not establish behavior in a deployed GTK browser. The gate retains actual resize, subsequent typing and native undo assertions on macOS; it has no programmatic resize substitute or engine-specific skip.
+
 Browser fixtures navigate an actual local HTTP document served by the native service and load the same built assets as consumers. The resource command measures native SQLite counters across the complete repository service. Its controlled clock delivers due alarms; its receipt distinguishes actual SQL use, admitted HTTP allowance, and upstream requests from unmeasured ingress CPU, object billing and production latency.
 
 For manual editor checks, compare real typing, undo and redo with a plain textarea. Repeat after Preview/Write, theme changes, refresh and an asynchronous contribution completion. Verify the intended text, selection and focus; DOM identity alone is supporting evidence.
@@ -40,4 +42,4 @@ Include Safari, Firefox and physical iOS where available. Local Chromium/WebKit 
 
 ## Release evidence
 
-Record completed checks and their conditions in [verification results](docs/CONFIDENCE.md). Measure deployed CPU, duration and SQL usage using the [usage guide](FREE-TIER.md#check-your-deployment). Verify the extracted package in an independent website, then check the deployed assets and actual contribution flow after any authorized deployment. Version 3 uses fresh coordination namespaces; follow [migration instructions](docs/MIGRATION.md#rollout-and-recovery).
+Record completed checks and their conditions in [verification results](docs/CONFIDENCE.md). Measure deployed CPU, duration and SQL usage using the [usage guide](FREE-TIER.md#check-your-deployment). Verify the extracted package in an independent website, then check the deployed assets and actual contribution flow after any authorized deployment. Version 3 uses fresh coordination namespaces; follow [migration instructions](docs/MIGRATION.md#rollout-and-rollback).

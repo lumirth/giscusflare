@@ -35,9 +35,9 @@ Documentation, configuration, lockfiles, dependencies, vendor/platform reference
 | Product `src`: bytes | 446,474 | 423,479 | 389,243 |
 | All authored implementation/examples/verification: printed lines | 12,078 | 11,318 | 8,200 |
 | All authored implementation/examples/verification: physical lines | 9,596 | 8,758 | 6,913 |
-| All authored implementation/examples/verification: bytes | 680,915 | 662,251 | 537,379 |
+| All authored implementation/examples/verification: bytes | 680,915 | 662,251 | 537,257 |
 
-Against committed main, product printed source falls **24.3%** (1,911 lines), and the complete authored apparatus falls **32.1%** (3,878 lines). Total bytes fall **21.1%** (143,536 bytes). Against the already modified dirty starting checkout, product printed source falls **17.6%** and the complete apparatus **27.5%**, with total bytes down **18.9%**. New verification drivers grow `scripts`; their full cost is included rather than hidden by deletion of the older test directory.
+Against committed main, product printed source falls **24.3%** (1,911 lines), and the complete authored apparatus falls **32.1%** (3,878 lines). Total bytes fall **21.1%** (143,658 bytes). Against the already modified dirty starting checkout, product printed source falls **17.6%** and the complete apparatus **27.5%**, with total bytes down **18.9%**. New verification drivers grow `scripts`; their full cost is included rather than hidden by deletion of the older test directory.
 
 The default stylesheet independently falls from 674 declarations/31,302 bytes in the dirty starting checkout to 376 declarations/17,519 bytes. Removing JSDOM retires the simulated browser environment and 43 installed packages; dependency removals are not counted as authored LOC savings.
 
