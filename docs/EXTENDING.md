@@ -41,7 +41,7 @@ const comments = mountComments(document.querySelector('#comments'), {
 });
 ```
 
-The same contract works with a server renderer or a mounted framework. A server renderer owns its endpoint, authorization and costs. Raw Markdown is untrusted input: a custom pipeline must constrain URLs, raw HTML and executable extensions before returning DOM. Giscusflare does not sanitize a custom renderer's returned nodes or install its styles. Keep safe source interpretation, presentation and required resources together in your selected renderer.
+The same contract works with a server renderer or a mounted framework. A server renderer owns its endpoint, authorization and costs. Raw Markdown is untrusted input: a custom pipeline must constrain URLs, raw HTML and executable extensions before returning DOM. giscusflare does not sanitize a custom renderer's returned nodes or install its styles. Keep safe source interpretation, presentation and required resources together in your selected renderer.
 
 ## Use or replace built-in features
 

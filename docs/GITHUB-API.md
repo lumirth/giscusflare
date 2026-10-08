@@ -1,6 +1,6 @@
 # GitHub API use
 
-Use this reference when changing GitHub queries or investigating API usage. Giscusflare uses an App installation token for anonymous reads and the reader's App-issued token for signed-in requests. Both the configured repository policy and GitHub permissions apply.
+Use this reference when changing GitHub queries or investigating API usage. giscusflare uses an App installation token for anonymous reads and the reader's App-issued token for signed-in requests. Both the configured repository policy and GitHub permissions apply.
 
 ## Comment operations
 
@@ -35,4 +35,4 @@ GitHub documents [GraphQL rate and resource limits](https://docs.github.com/en/g
 
 ## Reactions and upvotes
 
-Emoji reactions and GitHub Discussions upvotes are separate data. Giscusflare exposes the eight emoji reactions. A ranking profile can read existing upvote counts, but the interface does not submit upvotes. GitHub's own interface remains available for that action.
+Emoji reactions and GitHub Discussions upvotes are separate data. giscusflare exposes the eight emoji reactions. A ranking profile can read existing upvote counts, but the interface does not submit upvotes. GitHub's own interface remains available for that action.
