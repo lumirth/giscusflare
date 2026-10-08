@@ -5,11 +5,12 @@ import { InstallationRecord } from '../contracts/storage.js';
 import type { Widget, Selection, PageRequest, Action } from '../contracts/requests.js';
 import type { Comment, Discussion, Reactions, Window, WindowPage } from '../contracts/document.js';
 import type { PublicConfig, SecretConfig } from '../contracts/config.js';
-import { User } from '../contracts/primitives.js';
+import { User, NodeID } from '../contracts/primitives.js';
 import { appJWT, sha1 } from './crypto.js';
 import { AppError, requireCondition } from './errors.js';
 import { Store } from './store.js';
 import { bodyBytes } from './body.js';
+const Viewer = v.object({ ...User.entries, id: NodeID });
 export const GRAPH = {
     reactions: 'reactionGroups { content viewerHasReacted reactors(first:1) { totalCount } }',
     scope: 'repository { id nameWithOwner isPrivate } category { id name }',
@@ -40,7 +41,7 @@ export interface AcquiredPage {
         name: string;
     } | undefined;
     discussion: Discussion | null;
-    viewer: User|null;
+    viewer: v.InferOutput<typeof Viewer>|null;
     page: WindowPage;
 }
 export async function limitedText(response: Response, max = 4 * 1024 * 1024): Promise<string> {
@@ -90,7 +91,7 @@ async function githubText(url: string, init: RequestInit, maximum = 4 * 1024 * 1
         clearTimeout(timer);
     }
 }
-const apiHeaders = (token: string) => ({ Accept: 'application/vnd.github+json', Authorization: 'Bearer ' + token, 'User-Agent': 'giscusflare/3', 'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/json' });
+const apiHeaders = (token: string) => ({ Accept: 'application/vnd.github+json', Authorization: 'Bearer ' + token, 'User-Agent': 'giscusflare/4', 'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/json' });
 /** Verify an installed public repository before creating any Durable Object.
  * Uses App authentication and the same transport/schema boundary as operations. */
 export async function installedRepository(repo: string, config: PublicConfig, keys: SecretConfig): Promise<string> {
@@ -131,10 +132,11 @@ export class GitHub {
         const response = await this.#response(path, token, method, body);
         return parse(schema, parseJSON(response, 'upstream'), 'upstream');
     }
-    async graph<S extends Schema>(schema: S, query: string, variables: Record<string, unknown>, token: string): Promise<v.InferOutput<S>> {
+    async graph<S extends Schema>(schema: S, query: string, variables: Record<string, unknown>, token: string, missingNodes = false): Promise<v.InferOutput<S>> {
         const envelope = await this.#rest(G.GraphQLEnvelope, '/graphql', token, 'POST', { query, variables });
-        if (envelope.errors?.length) {
-            const codes = envelope.errors.map(e => e.type);
+        const errors = envelope.errors?.filter(error => !(missingNodes && error.type === 'NOT_FOUND' && error.path?.[0] === 'nodes' && typeof error.path[1] === 'number' && error.path.length === 2 && Array.isArray(Object(envelope.data).nodes) && Object(envelope.data).nodes[error.path[1]] === null));
+        if (errors?.length) {
+            const codes = errors.map(e => e.type);
             // Partial GraphQL mutations can have effects despite errors. Never treat an
             // arbitrary error envelope as proof that a mutation was not committed.
             if (query.trimStart().startsWith('mutation'))
@@ -143,6 +145,8 @@ export class GitHub {
                 throw new AppError(429, 'RATE_LIMIT', 'GitHub rate limit reached.', 60);
             if (codes.includes('FORBIDDEN'))
                 throw new AppError(403, 'PERMISSION', 'GitHub denied access to this discussion.');
+            if (codes.includes('BAD_USER_INPUT'))
+                throw new AppError(400, 'BAD_INPUT', 'GitHub rejected the reading cursor. Restart the discussion traversal.');
             if (codes.includes('NOT_FOUND'))
                 throw new AppError(404, 'NOT_FOUND', 'The discussion or comment was not found.');
             throw new AppError(502, 'UPSTREAM', 'GitHub could not load the discussion.');
@@ -204,8 +208,8 @@ export class GitHub {
         const term = config.strict ? await sha1(config.term) : config.term;
         const query = `repo:${this.repo} category:${JSON.stringify(category)} ${config.strict ? 'in:body' : 'in:title'} ${JSON.stringify(term)} sort:created-asc`;
         const match = v.object({ ...G.DiscussionIdentity.entries, body: v.optional(v.string(), '') });
-        const schema=v.object({viewer:signedIn?User:v.optional(User),repository:v.nullable(G.Repository),search:v.object({nodes:v.array(v.nullable(match))})});
-        const data = await this.graph(schema, `query ResolvePage($owner:String!,$name:String!,$query:String!,$strict:Boolean!,$signedIn:Boolean!){viewer @include(if:$signedIn){login avatarUrl url} repository(owner:$owner,name:$name){${REPOSITORY}} search(type:DISCUSSION,query:$query,first:10){nodes{... on Discussion{${IDENTITY} body @include(if:$strict)}}}}`, { ...this.#scope(), query,strict:config.strict,signedIn},token);
+        const schema=v.object({viewer:signedIn?Viewer:v.optional(Viewer),repository:v.nullable(G.Repository),search:v.object({nodes:v.array(v.nullable(match))})});
+        const data = await this.graph(schema, `query ResolvePage($owner:String!,$name:String!,$query:String!,$strict:Boolean!,$signedIn:Boolean!){viewer @include(if:$signedIn){id login avatarUrl url} repository(owner:$owner,name:$name){${REPOSITORY}} search(type:DISCUSSION,query:$query,first:10){nodes{... on Discussion{${IDENTITY} body @include(if:$strict)}}}}`, { ...this.#scope(), query,strict:config.strict,signedIn},token);
         requireCondition(data.repository, 404, 'NOT_FOUND', 'The repository is not accessible.');
         const selected = data.search.nodes.find(d => d && (!config.strict || d.body.includes(term))) ?? null;
         return {repository:data.repository,selected,viewer:data.viewer??null};
@@ -250,22 +254,23 @@ export class GitHub {
         return { meta, summaries };
     }
     /** One physical query acquires the selected document window and its scope. */
-    async page(number: number, request: Pick<PageRequest, 'order' | 'cursor' | 'parentId' | 'ids' | 'replyPrefetch'>, token:string,signedIn=false):Promise<AcquiredPage>{
+    async page(number: number, request: Pick<PageRequest, 'order' | 'cursor' | 'parentId' | 'ids' | 'replyPrefetch' | 'html'>, token:string,signedIn=false):Promise<AcquiredPage>{
         const root = !request.parentId && request.ids === undefined;
-        const comment = `${COMMENT} discussion{${IDENTITY}} replies(last:$prefetch){${GRAPH.page} nodes @include(if:$previewReplies){${COMMENT}}}`;
+        const fields = COMMENT.replace('bodyHTML', 'bodyHTML @include(if:$html)');
+        const comment = `${fields} discussion{${IDENTITY}} replies(last:$prefetch){${GRAPH.page} nodes @include(if:$previewReplies){${fields}}}`;
         const summary = `id number title url locked closed answer{id} ${GRAPH.scope} ${GRAPH.reactions}`;
-        const query = `query Page($owner:String!,$name:String!,$number:Int!,$first:Int,$last:Int,$after:String,$before:String,$prefetch:Int!,$previewReplies:Boolean!,$roots:Boolean!,$ids:[ID!]!,$selected:Boolean!,$parent:ID!,$reply:Boolean!,$replyBefore:String,$signedIn:Boolean!){
-      viewer @include(if:$signedIn){login avatarUrl url}
+        const query = `query Page($owner:String!,$name:String!,$number:Int!,$first:Int,$last:Int,$after:String,$before:String,$prefetch:Int!,$previewReplies:Boolean!,$roots:Boolean!,$ids:[ID!]!,$selected:Boolean!,$parent:ID!,$reply:Boolean!,$replyBefore:String,$signedIn:Boolean!,$html:Boolean!){
+      viewer @include(if:$signedIn){id login avatarUrl url}
       repository(owner:$owner,name:$name){id nameWithOwner isPrivate isArchived discussion(number:$number){${summary} comments(first:$first,last:$last,after:$after,before:$before){${GRAPH.page} nodes @include(if:$roots){${comment}}}}}
       nodes(ids:$ids) @include(if:$selected){... on DiscussionComment{${comment}}}
-      parent:node(id:$parent) @include(if:$reply){... on DiscussionComment{${COMMENT} discussion{${IDENTITY}} replies(last:50,before:$replyBefore){${GRAPH.page} nodes{${COMMENT}}}}}
+      parent:node(id:$parent) @include(if:$reply){... on DiscussionComment{${fields} discussion{${IDENTITY}} replies(last:50,before:$replyBefore){${GRAPH.page} nodes{${fields}}}}}
     }`;
         const preview=v.object({...G.Replies.entries,nodes:request.replyPrefetch>0?G.Replies.entries.nodes:v.optional(G.Replies.entries.nodes,[])});
         const observed=v.object({...G.Comment.entries,discussion:G.DiscussionIdentity,replies:preview});
         const roots=v.pipe(v.array(observed),v.maxLength(20)),selected=v.array(v.nullable(observed));
         const connection=v.object({...G.Replies.entries,nodes:root?roots:v.optional(roots,[])});
-        const schema=v.object({viewer:signedIn?User:v.optional(User),repository:v.nullable(v.object({...G.RepositoryHead.entries,discussion:v.nullable(v.object({...G.DiscussionSummary.entries,comments:connection}))})),nodes:request.ids!==undefined?selected:v.optional(selected),parent:request.parentId?v.nullable(G.RootComment):v.optional(v.nullable(G.RootComment))});
-        const data = await this.graph(schema, query, { ...this.#scope(), number, roots: root, first: root && request.order === 'oldest' ? 20 : root ? null : 1, last: root && request.order === 'newest' ? 20 : null, after: root && request.order === 'oldest' && request.cursor ? request.cursor : null, before: root && request.order === 'newest' && request.cursor ? request.cursor : null, replyBefore: request.parentId && request.cursor ? request.cursor : null, prefetch: Math.max(1,request.replyPrefetch), previewReplies:request.replyPrefetch>0, ids: request.ids ?? [], selected: request.ids !== undefined, parent: request.parentId ?? 'unused', reply:Boolean(request.parentId),signedIn},token);
+        const schema=v.object({viewer:signedIn?Viewer:v.optional(Viewer),repository:v.nullable(v.object({...G.RepositoryHead.entries,discussion:v.nullable(v.object({...G.DiscussionSummary.entries,comments:connection}))})),nodes:request.ids!==undefined?selected:v.optional(selected),parent:request.parentId?v.nullable(G.RootComment):v.optional(v.nullable(G.RootComment))});
+        const data = await this.graph(schema, query, { ...this.#scope(), number, roots: root, first: root && request.order === 'oldest' ? 20 : root ? null : 1, last: root && request.order === 'newest' ? 20 : null, after: root && request.order === 'oldest' && request.cursor ? request.cursor : null, before: root && request.order === 'newest' && request.cursor ? request.cursor : null, replyBefore: request.parentId && request.cursor ? request.cursor : null, prefetch: Math.max(1,request.replyPrefetch), previewReplies:request.replyPrefetch>0, ids: request.ids ?? [], selected: request.ids !== undefined, parent: request.parentId ?? 'unused', reply:Boolean(request.parentId),signedIn,html:request.html},token, request.ids !== undefined);
         requireCondition(data.repository, 404, 'NOT_FOUND', 'The repository is not accessible.');
         const { discussion: raw, ...repository } = data.repository;
         if (raw)
@@ -369,7 +374,7 @@ export class GitHub {
     async exchange(parameters: Record<string, string>): Promise<G.OAuthToken> {
         try {
             const response = await githubText('https://github.com/login/oauth/access_token', {
-                method: 'POST', headers: { Accept: 'application/json', 'User-Agent': 'giscusflare/3' },
+                method: 'POST', headers: { Accept: 'application/json', 'User-Agent': 'giscusflare/4' },
                 body: new URLSearchParams({ client_id: this.config.clientId, client_secret: this.keys.clientSecret, ...parameters }),
             }, 16384);
             const raw = parseJSON(response, 'upstream');

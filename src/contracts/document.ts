@@ -27,9 +27,10 @@ export interface Window {
   /** Null means no authoritative observation has been obtained. */
   total: number | null;
 }
+export type Viewer = Person & { id: string };
 export interface Metadata {
   thread: Discussion | null;
-  viewer: Person | null;
+  viewer: Viewer | null;
   archived: boolean;
   unavailable: boolean;
   profiles: string[];

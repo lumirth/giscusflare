@@ -6,7 +6,7 @@ The giscus themes and presentation reference files are pinned at commit `3d64302
 
 ## Generated visual foundation
 
-`vendor/giscus/reference/styles/compiled.css` is a generated, project-selected dependency. It expands the pinned giscus `base.css`/`globals.css`, Tailwind 3.4.17 and `tailwindcss-vanilla-rtl` 0.4.0 using the standard presentation class vocabulary from Giscusflare `b39375bbba0b8249c3bc661c63150b5917b31d80`. PostCSS is 8.5.28. It contains no project-specific override stylesheet. Those rules remain in `src/browser/standard/styles.css`; ordinary builds concatenate the two and scope native output without scanning source or installing Tailwind.
+`vendor/giscus/reference/styles/compiled.css` is a generated, project-selected dependency. It expands the pinned giscus `base.css`/`globals.css`, Tailwind 3.4.17 and `tailwindcss-vanilla-rtl` 0.4.0 using the standard presentation class vocabulary from giscusflare `b39375bbba0b8249c3bc661c63150b5917b31d80`. PostCSS is 8.5.28. It contains no project-specific override stylesheet. Those rules remain in `src/browser/standard/styles.css`; independently usable content structure rules live in `src/browser/content.css`. Ordinary builds assemble the standard stylesheet and scope native output without scanning source or installing Tailwind.
 
 | Input/output | SHA-256 |
 | --- | --- |
@@ -41,7 +41,7 @@ const result = await postcss([tailwind({
     'vendor/giscus/reference/components/*.tsx'].map(path => resolve(path)),
   plugins: [rtl], corePlugins: { ...rtl.disabledCorePlugins },
 })]).process(source, { from: resolve('vendor/giscus/reference/styles/base.css') });
-const notice = '/*! Generated visual reference: pinned Giscus base/globals and Tailwind 3.4.17 + vanilla-rtl 0.4.0; utility usage from Giscusflare b39375bbba0b8249c3bc661c63150b5917b31d80. Project overrides are maintained separately in src/browser/standard/styles.css. See docs/PROVENANCE.md and THIRD-PARTY-NOTICES.md. */\n';
+const notice = '/*! Generated visual reference: pinned Giscus base/globals and Tailwind 3.4.17 + vanilla-rtl 0.4.0; utility usage from giscusflare b39375bbba0b8249c3bc661c63150b5917b31d80. Project overrides are maintained separately in src/browser/standard/styles.css. See docs/PROVENANCE.md and THIRD-PARTY-NOTICES.md. */\n';
 await writeFile('compiled.css', notice + result.css);
 JS
 shasum -a 256 compiled.css

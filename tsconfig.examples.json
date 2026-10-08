@@ -3,11 +3,25 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "giscusflare": ["src/browser/native.ts"],
-      "giscusflare/headless": ["src/browser/headless.ts"],
-      "giscusflare/interactions": ["src/browser/interactions.ts"],
-      "giscusflare/content": ["src/browser/content.ts"]
+      "giscusflare": [
+        "src/browser/native.ts"
+      ],
+      "giscusflare/headless": [
+        "src/browser/headless.ts"
+      ],
+      "giscusflare/interactions": [
+        "src/browser/interactions.ts"
+      ],
+      "giscusflare/content": [
+        "src/browser/content.ts"
+      ],
+      "giscusflare/content/github": [
+        "src/browser/github-content.ts"
+      ]
     }
   },
-  "include": ["examples/**/*.ts", "website/**/*.ts"]
+  "include": [
+    "examples/**/*.ts",
+    "website/**/*.ts"
+  ]
 }

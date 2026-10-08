@@ -1,4 +1,5 @@
-import { message } from "./i18n.js";
+import { mountContent } from "./content.js";
+import type { Writing, WritingOutcome } from "../conversation/writing.js";
 import type { Conversation } from "./runtime.js";
 
 export interface FocusHandle {
@@ -37,16 +38,20 @@ export interface Editor {
   write(): void;
   preview(): Promise<void>;
   toggleFixedWidth(): void;
-  submit(): Promise<void>;
-  cancel(): void;
+  readonly writing: Writing;
+  submit(): Promise<WritingOutcome>;
+  clear(): boolean;
+  undoClear(): boolean;
   dispose(): void;
 }
 /** One editor owns its DOM, projection, preview and native interaction lifetime. */
-export function createEditor(runtime: Conversation, name: string, options: {
+export function createEditor(runtime: Conversation, writing: Writing, options: {
   render(editor: Editor): void;
   signal?: AbortSignal;
-  draftWhileSignedOut?: boolean;
+  writeWhileSignedOut?: boolean;
+  submitted?(outcome: WritingOutcome): void;
 }): Editor {
+  const name = writing.id;
   runtime.signal.throwIfAborted();
   options.signal?.throwIfAborted();
   const form = document.createElement('form'), textarea = document.createElement('textarea'),
@@ -54,68 +59,91 @@ export function createEditor(runtime: Conversation, name: string, options: {
   form.dataset.composer = name;
   textarea.rows = 4;textarea.maxLength = 60000;textarea.dir = 'auto';
   let mode: 'write' | 'preview' = 'write', fixedWidth = false, error = '', previewPending = false,
-    preview: AbortController | undefined, stop: (() => void) | undefined, unregister: (() => void) | undefined;
+    changing = false, previewVersion = 0, clearedSelection: [number, number, 'forward' | 'backward' | 'none'] | undefined, stop: (() => void) | undefined, unregister: (() => void) | undefined;
+  const content = mountContent(previewElement, runtime.content, { signal: events.signal,
+    providerHTML: (input, signal) => runtime.preview(input.markdown, signal) });
   const disposed = () => events.signal.aborted;
   const dispose = runtime.own(() => {
     options.signal?.removeEventListener('abort', dispose);
-    events.abort();preview?.abort();stop?.();unregister?.();form.remove();form.replaceChildren();
+    events.abort();content.dispose();stop?.();unregister?.();form.remove();form.replaceChildren();
   });
   options.signal?.addEventListener('abort', dispose, { once: true });
-  const pending = () => Boolean(runtime.drafts.get(name)?.pending);
+  const pending = () => writing.pending;
   const focus = () => textarea.focus({ preventScroll: true });
   const draw = () => { if (!disposed()) options.render(editor); };
   const sync = () => {
-    if (disposed()) return;
-    const text = runtime.draft(name);
+    if (disposed() || changing) return;
+    const text = writing.text;
     if (textarea.value !== text) textarea.value = text;
-    const disabled = (!runtime.session.signedIn && !options.draftWhileSignedOut) || !runtime.canCompose;
+    const disabled = !runtime.session.signedIn && !options.writeWhileSignedOut;
     if (textarea.disabled !== disabled) textarea.disabled = disabled;
-    if (textarea.readOnly !== pending()) textarea.readOnly = pending();
+    if (textarea.readOnly !== !writing.actions.edit) textarea.readOnly = !writing.actions.edit;
     draw();
   };
   const errorText = (cause: unknown, fallback: string) => cause instanceof Error ? cause.message : fallback;
+  const replace = (text: string) => {
+    focus();textarea.select();
+    if (!document.execCommand('insertText', false, text) || textarea.value !== text) textarea.setRangeText(text, 0, textarea.value.length, 'end');
+  };
   const editor: Editor = {
-    form, textarea, previewElement, signal: events.signal,
+    form, textarea, previewElement, signal: events.signal, writing,
     get mode() { return mode; }, get fixedWidth() { return fixedWidth; },
-    get error() { return error || runtime.drafts.get(name)?.error?.message || runtime.session.error; }, get previewPending() { return previewPending; },
+    get error() { return error || writing.error?.message || runtime.session.error; }, get previewPending() { return previewPending; },
     get pending() { return pending(); },
-    write() { if (!disposed()) { preview?.abort();mode = 'write';previewPending = false;draw();focus(); } },
+    write() { if (!disposed()) { previewVersion++;content.clear();mode = 'write';previewPending = false;draw();focus(); } },
     toggleFixedWidth() { if (!disposed()) { fixedWidth = !fixedWidth;draw();focus(); } },
-    cancel() { if (!disposed()) runtime.closeEditor(name); },
+    clear() {
+      if (disposed() || !writing.actions.clear) return false;
+      error = '';
+      clearedSelection = [textarea.selectionStart, textarea.selectionEnd, textarea.selectionDirection];
+      changing = true;
+      try { writing.clear();replace(''); }
+      finally { changing = false;sync(); }
+      previewVersion++;content.clear();mode = 'write';previewPending = false;draw();return true;
+    },
+    undoClear() {
+      if (disposed() || !writing.actions.undoClear) return false;
+      changing = true;
+      try { writing.undoClear();replace(writing.text);if (clearedSelection) textarea.setSelectionRange(...clearedSelection); }
+      finally { changing = false;clearedSelection = undefined;sync(); }
+      return true;
+    },
     async submit() {
-      if (disposed() || pending()) return;
+      if (disposed()) return { status: 'blocked', reason: 'This editor is disposed.' };
+      if (writing.pending) return writing.submit();
       error = '';
       try {
-        if (!runtime.session.signedIn) { await runtime.session.signIn();return; }
-        runtime.setDraft(name, textarea.value);
-        await runtime.submit(name);
-        if (disposed()) return;
-        preview?.abort();mode = 'write';previewPending = false;previewElement.replaceChildren();
-      } catch { /* The draft or session owns contribution and authentication failures. */ }
-      finally { sync(); }
+        if (!runtime.session.signedIn) {
+          await runtime.session.signIn();return { status: 'blocked', reason: 'Sign in before submitting.' };
+        }
+        writing.update(textarea.value);
+        const outcome = await writing.submit();
+        if (outcome.status === 'blocked') error = outcome.reason;
+        if (!disposed() && outcome.status === 'saved') { previewVersion++;content.clear();mode = 'write';previewPending = false; }
+        if (options.submitted) queueMicrotask(() => { if (!runtime.signal.aborted && !options.signal?.aborted) options.submitted?.(outcome); });
+        return outcome;
+      } catch (cause) {
+        error = errorText(cause, 'Unable to submit.');return { status: 'blocked', reason: error };
+      } finally { sync(); }
     },
     async preview() {
       if (disposed()) return;
-      preview?.abort();const current = preview = new window.AbortController(), body = textarea.value;
+      content.clear();const version = ++previewVersion, body = textarea.value;
       mode = 'preview';error = '';previewPending = Boolean(body.trim());
-      previewElement.replaceChildren(message(runtime.appearance.lang, previewPending ? 'loadingPreview' : 'nothingToPreview'));
+      previewElement.replaceChildren();
       draw();
       if (!previewPending) return;
-      const active = () => !disposed() && !current.signal.aborted;
       try {
-        const html = await runtime.preview(body, current.signal);
-        if (active()) previewElement.replaceChildren(runtime.renderContent(html, body, current.signal));
+        await content.update({ markdown: body, purpose: 'preview', draft: writing.id, repo: runtime.config.repo });
       } catch (cause) {
-        if (!active()) return;
-        current.abort();previewPending = false;
-        error = errorText(cause, 'Unable to preview.');previewElement.replaceChildren();draw();
-      }
-      finally { if (active()) { previewPending = false;draw(); } }
+        if (disposed() || version !== previewVersion || mode !== 'preview') return;
+        error = errorText(cause, 'Unable to preview.');
+      } finally { if (!disposed() && version === previewVersion) { previewPending = false;draw(); } }
     },
     dispose,
   };
   try {
-    textarea.addEventListener('input', () => runtime.setDraft(name, textarea.value), { signal: events.signal });
+    textarea.addEventListener('input', () => { if (!changing) writing.update(textarea.value); }, { signal: events.signal });
     textarea.addEventListener('keydown', event => {
       if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault();form.requestSubmit(); }
     }, { signal: events.signal });

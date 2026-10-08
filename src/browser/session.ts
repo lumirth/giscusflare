@@ -5,7 +5,7 @@ import type { Transport } from '../conversation/page.js';
 export class ApiError extends Error {
   constructor(message: string, readonly status: number, readonly code: string) { super(message); }
 }
-export interface Login { capability: string; attempt: string; created: number; version: 3; status?: 'ready' | 'denied' }
+export interface Login { capability: string; attempt: string; created: number; version: 4; status?: 'ready' | 'denied' }
 export interface SessionHost {
   /** Parent bridge or native-page storage receives only the service capability. */
   emit(value: Record<string, unknown>): void;
@@ -16,6 +16,7 @@ type AuthFlow = Login & { popup?: Window | null };
 /** Shared authentication/transport for both embedding modes and custom views. */
 export class BrowserSession implements Transport {
   #token = '';
+  #principal: string | null = null;
   #login: AuthFlow | null = null;
   error = '';
   constructor(readonly service: string, readonly config: Pick<Widget, 'repo' | 'origin'>, readonly host: SessionHost, readonly changed: (identity: boolean) => void, readonly lifetime: AbortSignal) {
@@ -24,6 +25,7 @@ export class BrowserSession implements Transport {
     window.addEventListener('message', this.#message, { signal: lifetime });
     lifetime.addEventListener('abort', () => this.#retire(), { once: true });
   }
+  get principal(): string | null { return this.#principal; }
   get signedIn(): boolean { return Boolean(this.#token); }
   get pending(): boolean { return Boolean(this.#login && Date.now() - this.#login.created < 600000); }
   #emit(identity = false): void { if (!this.lifetime.aborted) this.changed(identity); }
@@ -35,7 +37,7 @@ export class BrowserSession implements Transport {
   setSession(token: string): void {
     if (token && !capability.test(token)) return;
     if (this.#token === token) return;
-    this.#token = token; this.error = ''; this.#emit(true);
+    this.#token = token; this.#principal = null; this.error = ''; this.#emit(true);
   }
   fail(message: string): void { this.#failed(message); }
   async request<T>(path: string, body: unknown, signal?: AbortSignal, method: 'GET' | 'POST' = 'POST'): Promise<T> {
@@ -43,7 +45,7 @@ export class BrowserSession implements Transport {
     if (!/^[a-z]+(?:\/[a-z]+)?$/.test(path)) throw new Error('Invalid API operation.');
     const token = this.#token;
     const read = method === 'GET';
-    const response=await fetch(this.service+'/api/v3/'+path+(read?'?'+new URLSearchParams({input:JSON.stringify(body)}):''),{
+    const response=await fetch(this.service+'/api/v4/'+path+(read?'?'+new URLSearchParams({input:JSON.stringify(body)}):''),{
       method:read?'GET':'POST',headers:{...(read?{}:{'Content-Type':'application/json'}),...(token?{Authorization:'Bearer '+token}:{})},
       ...(read?{}:{body:JSON.stringify(body)}),credentials:'omit',cache:'no-store',signal:signal ? AbortSignal.any([this.lifetime, signal]) : this.lifetime,
     });
@@ -53,13 +55,17 @@ export class BrowserSession implements Transport {
       if (response.status === 401 && !path.startsWith('auth/') && !this.lifetime.aborted && this.#token === token) { this.setSession(''); this.host.emit({ session: '' }); }
       throw new ApiError(typeof error?.message === 'string' ? error.message : 'Request failed.', response.status, typeof error?.code === 'string' ? error.code : 'UPSTREAM');
     }
+    if (path === 'page' && token && this.#token === token && !this.lifetime.aborted) {
+      const viewer = (data as {metadata?:{viewer?:{id?:unknown}}}).metadata?.viewer;
+      if (typeof viewer?.id === 'string') this.#principal = viewer.id;
+    }
     return data as T;
   }
   async signIn(mode:'popup'|'redirect'='redirect'): Promise<void> {
     if (this.lifetime.aborted) return;
     if (this.#login) this.host.emit({ clearPending: this.#login.attempt });
     this.#retire();
-    const flow: AuthFlow = { capability: randomProof(), attempt: '', created: Date.now(), version: 3,
+    const flow: AuthFlow = { capability: randomProof(), attempt: '', created: Date.now(), version: 4,
       popup: mode === 'redirect' ? null : window.open('about:blank', 'giscusflare-' + crypto.randomUUID(), 'popup,width=620,height=760') };
     this.#login = flow;this.error = '';
     let proof: string;
@@ -87,13 +93,13 @@ export class BrowserSession implements Transport {
     }
   };
   async adopt(login: Login): Promise<void> {
-    if (this.lifetime.aborted || login.version !== 3 || !Number.isFinite(login.created) || !capability.test(login.capability) || !capability.test(login.attempt)) return;
+    if (this.lifetime.aborted || login.version !== 4 || !Number.isFinite(login.created) || !capability.test(login.capability) || !capability.test(login.attempt)) return;
     if (this.#login && this.#login !== login && this.#login.attempt !== login.attempt) return;
     const flow = this.#login ?? { ...login };this.#login = flow;
     if (Date.now() - login.created >= 600000 || login.created > Date.now()) { this.#failed('Sign-in expired. Start again.', flow);return; }
     if (await challenge(await challenge(login.capability)) !== login.attempt || this.lifetime.aborted || this.#login !== flow) return;
     if (login.status === 'denied') { this.#failed('Sign-in cancelled.', flow);return; }
-    this.#token=login.capability;this.host.emit({session:login.capability,clearPending:login.attempt});this.#retire(flow);this.error='';this.#emit(true);
+    this.#principal=null;this.#token=login.capability;this.host.emit({session:login.capability,clearPending:login.attempt});this.#retire(flow);this.error='';this.#emit(true);
   }
   #failed(message: string, flow = this.#login): void {
     if (this.lifetime.aborted || this.#login !== flow) return;

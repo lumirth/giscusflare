@@ -16,8 +16,8 @@ export const reactions: ReactionSlot = ({ runtime, report, scope }, { subject, p
   let lifetime = scope.signal;
   const lang = runtime.appearance.lang, t = strings(lang), id = subject?.id || 'discussion',
     groups = subject ? runtime.reactions(id) : {}, signedIn = runtime.session.signedIn,
-    blocked = !signedIn || !runtime.canCompose,
-    uncertain = contents.some(reaction => runtime.reactionIntent(id, reaction)?.error?.status === 'uncertain');
+    capability = runtime.actions(id), blocked = capability.react.status !== 'available',
+    uncertain = capability.recover.status !== 'unavailable';
   const [before = '', signIn = t.signIn, after = ''] = message(lang, 'signInToAddYourReaction').split(/<a>|<\/a>/);
   const choose = async (reaction: Reaction, event: Event) => {
     if (lifetime.aborted || !runtime.session.signedIn) return;
@@ -61,6 +61,6 @@ export const reactions: ReactionSlot = ({ runtime, report, scope }, { subject, p
         </button>`)}
     </div>
     ${uncertain ? html`<button type="button" class="color-text-link text-xs"
-      @click=${() => { if (!lifetime.aborted) void runtime.retryReaction(id).catch(report); }}>${t.retry}</button>` : nothing}
+      @click=${() => { if (!lifetime.aborted) void runtime.retryAction(id).catch(report); }}>${t.retry}</button>${capability.abandon.status === 'available' ? html`<button type="button" class="ml-2 color-text-link text-xs" @click=${() => { if (window.confirm('This action may already be saved on GitHub. Stop trying to recover its outcome?')) runtime.abandonAction(id); }}>${t.cancel}</button>` : nothing}` : nothing}
   </div>`;
 };

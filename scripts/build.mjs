@@ -14,7 +14,7 @@ await mkdir('dist', { recursive: true });
 await buildStyles();
 const worker = await build({ entryPoints: ['src/worker/entry.ts'], outfile: 'dist/worker.mjs', bundle: true, format: 'esm', platform: 'neutral', target: 'es2022', external: ['cloudflare:workers'], minify: true, legalComments: 'eof', metafile: true });
 await build({entryPoints:['src/browser/client.ts'],outfile:'public/client.js',bundle:true,format:'iife',platform:'browser',target:'es2022',minify:true,legalComments:'eof'});
-const browser = await build({entryPoints:['widget','native','headless','auth-window','auth-complete','setup'].map(name=>'src/browser/'+name+'.ts'),outdir:'public',chunkNames:'chunks/[name]-[hash]',bundle:true,splitting:true,format:'esm',platform:'browser',target:'es2022',minify:true,legalComments:'eof',metafile:true});
+const browser = await build({entryPoints:['widget','native','headless','content','github-content','auth-window','auth-complete','setup'].map(name=>'src/browser/'+name+'.ts'),outdir:'public',chunkNames:'chunks/[name]-[hash]',bundle:true,splitting:true,format:'esm',platform:'browser',target:'es2022',minify:true,legalComments:'eof',metafile:true});
 if(Object.keys(browser.metafile.inputs).some(p=>/node_modules\/(hono|valibot)/.test(p)))throw new Error('Browser graph includes server libraries.');
 await writeFile('dist/browser-metafile.json',JSON.stringify(browser.metafile,null,2)+'\n');
 const sizes = {};
@@ -66,5 +66,5 @@ for(const name of (await readdir('vendor/giscus/themes')).filter(n=>n.endsWith('
   nativeThemes+=source.toString()+'\n';
 }
 await writeFile('public/native.css', sheet.toString()+'\n'+nativeThemes);
-await build({entryPoints:['src/browser/native.ts','src/browser/headless.ts','src/browser/interactions.ts','src/browser/content.ts'],outdir:'dist/browser',bundle:true,splitting:true,format:'esm',platform:'browser',target:'es2022',legalComments:'eof'});
+await build({entryPoints:['src/browser/native.ts','src/browser/headless.ts','src/browser/interactions.ts','src/browser/content.ts','src/browser/github-content.ts'],outdir:'dist/browser',bundle:true,splitting:true,format:'esm',platform:'browser',target:'es2022',legalComments:'eof'});
 await import('./build-assets.mjs');

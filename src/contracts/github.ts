@@ -5,7 +5,7 @@ export const PageInfo = v.object({ hasNextPage: v.boolean(), hasPreviousPage: v.
 export const ReactionGroup = v.object({ content: Reaction, viewerHasReacted: v.boolean(), reactors: v.object({ totalCount: Count }) });
 export const Reactions = v.pipe(v.array(ReactionGroup), v.maxLength(8));
 export const Comment = v.object({
-    id: NodeID, body: Body, bodyHTML: Body, url: HttpsURL, createdAt: ISODate, lastEditedAt: v.nullable(ISODate),
+    id: NodeID, body: Body, bodyHTML: v.optional(Body), url: HttpsURL, createdAt: ISODate, lastEditedAt: v.nullable(ISODate),
     author: v.nullable(User), authorAssociation: v.string(), viewerDidAuthor: v.boolean(),
     viewerCanUpdate: v.boolean(), viewerCanDelete: v.boolean(), viewerCanMinimize: v.boolean(),
     viewerCanUnminimize: v.boolean(), deletedAt: v.nullable(ISODate),
@@ -35,7 +35,7 @@ export const OAuthToken = v.pipe(v.object({
     refresh_token: v.optional(Token), refresh_token_expires_in: v.optional(PositiveInteger),
 }), v.check(x => !x.refresh_token || Boolean(x.refresh_token_expires_in)));
 export const Viewer = v.object({ node_id: NodeID });
-export const GraphQLError = v.object({ type: v.optional(v.string()), message: v.optional(v.string()) });
+export const GraphQLError = v.object({ type: v.optional(v.string()), message: v.optional(v.string()), path: v.optional(v.array(v.union([v.string(), v.number()]))) });
 export const GraphQLEnvelope = v.object({ data: v.optional(v.unknown()), errors: v.optional(v.array(GraphQLError)) });
 export const CreateResponse = v.object({ createDiscussion: v.object({ discussion: DiscussionAccess }) });
 export type Comment = v.InferOutput<typeof Comment>;

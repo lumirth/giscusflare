@@ -4,13 +4,14 @@ Both projects put website comments in GitHub Discussions, using a repository you
 
 [giscus](https://giscus.app) runs a hosted service. You install its App and generate an embed script. It supports themes, custom CSS, website restrictions and framework wrappers. It can also be [self-hosted](https://github.com/giscus/giscus/blob/main/SELF-HOSTING.md).
 
-Deploy giscusflare to your Cloudflare account and connect GitHub through its setup page. You can embed the default interface, replace its components or build your own interface with the JavaScript API.
+Deploy giscusflare to your Cloudflare account and connect GitHub through its setup page. You can embed the default interface, replace its controls/content rendering or build your own interface with the JavaScript API.
 
 | Choice | Hosted giscus | giscusflare |
 | --- | --- | --- |
 | Service | Operated by the giscus project | Deployed to your Cloudflare account |
 | Embedding | Iframe | Iframe or direct rendering in your page |
-| Interface | Widget settings, themes and custom CSS | Themes, replaceable components or your own presentation |
+| Interface | Widget settings, themes and custom CSS | Themes, replaceable controls or your own presentation |
+| Native content | Provider presentation in its iframe | GitHub defaults, complete code/math replacements or your own Markdown pipeline |
 | Allowed websites | Repository `giscus.json` | Service policy, restricted by default |
 | Other people's repositories | Install the giscus App | Enable open hosting and let owners install your App |
 

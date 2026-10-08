@@ -12,7 +12,7 @@ export const boundedJSON: MiddlewareHandler<AppEnv> = async (c, next) => {
   requireCondition(['GET','POST'].includes(c.req.method),405,'METHOD','Use GET to read or POST to write.');
   const origin = c.req.header('Origin') || (c.req.method==='GET'?new URL(c.req.url).origin:undefined);
   const native = origin !== c.get('config').origin;
-  requireCondition(origin && (!native || c.req.path !== '/api/v3/auth/prepare'), 403, 'ORIGIN', 'This operation must originate at the comments service.');
+  requireCondition(origin && (!native || c.req.path !== '/api/v4/auth/prepare'), 403, 'ORIGIN', 'This operation must originate at the comments service.');
   const site = c.req.header('Sec-Fetch-Site');
   requireCondition(native || !site || site === 'same-origin', 403, 'ORIGIN', 'Invalid service request origin.');
   let value:unknown;

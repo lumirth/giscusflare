@@ -34,10 +34,14 @@ try {
       let capability;
       for (const mode of ['native', 'iframe']) {
         const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+        if (mode === 'native') await page.addInitScript(() => {
+          const now = Date.now.bind(Date);
+          Date.now = () => now() + Number(sessionStorage.getItem('__qualification_clock') || 0);
+        });
         const clientIP = '192.0.2.' + (10 + client++);
         const platformClient = route => route.continue({ headers: { ...route.request().headers(), 'CF-Connecting-IP': clientIP } });
         await page.context().route(service + '/auth/**', platformClient);
-        await page.context().route(service + '/api/v3/auth/**', platformClient);
+        await page.context().route(service + '/api/v4/auth/**', platformClient);
         await page.context().route('https://avatars.githubusercontent.com/u/1', route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" rx="20" fill="#d9e2ee"/><circle cx="20" cy="15" r="7" fill="#596b82"/><path d="M7 37v-4a13 13 0 0 1 26 0v4" fill="#596b82"/></svg>' }));
         const errors = []; page.on('pageerror', error => errors.push(error.message));
         const requests = [], proofs = new Set(), capabilities = new Set(), callbackBodies = [];
@@ -66,7 +70,9 @@ try {
             : page.evaluate(({origin,changes}) => document.querySelector('iframe').contentWindow.postMessage({giscus:{setConfig:changes}},origin), {origin:service,changes});
           const composer = surface.locator('[data-composer="main"]');
           await expect(surface.getByText('Try posting a comment or replying here.', { exact: true })).toBeVisible();
-          if (mode === 'iframe') assert.equal(requests.filter(request => new URL(request.url).pathname === '/api/v3/page').length, 0, 'iframe renders its anonymous server bootstrap without fetching the same page again');
+          await expect(surface.getByText('Hono', { exact: true })).toBeVisible();
+          await expect(surface.locator('pre').first()).toContainText('export default');
+          if (mode === 'iframe') assert.equal(requests.filter(request => new URL(request.url).pathname === '/api/v4/page').length, 0, 'iframe renders its anonymous server bootstrap without fetching the same page again');
           if (screenshots) {
             await expect.poll(() => surface.locator('img').first().evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true);
             await page.screenshot({ path: resolve(screenshots, engineName + '-' + mode + '-reading.png') });
@@ -100,6 +106,10 @@ try {
           await expect(textarea).toHaveValue('First writing');
           assert.ok(Math.abs((await textarea.boundingBox()).height - blankHeight) < 2, 'first typing respects a height chosen before writing');
           await textarea.press(modifier + '+z'); await expect(textarea).toHaveValue('');
+          if (mode === 'iframe') await expect.poll(() => page.evaluate(() => Object.values(localStorage).every(raw => {
+            try { const stored = JSON.parse(raw); return !stored?.value || JSON.parse(stored.value).writing.every(writing => !writing.text); }
+            catch { return true; }
+          }))).toBe(true);
           await page.reload(); await expect(textarea).toBeEditable(); await expect(textarea).toHaveValue('');
           await textarea.click(); await page.keyboard.type('A contribution with native undo');
           await expect(textarea).toHaveValue('A contribution with native undo');
@@ -112,7 +122,7 @@ try {
           await textarea.press(modifier + '+z'); await expect(textarea).toHaveValue('');
           await textarea.press(modifier + '+Shift+z'); await expect(textarea).toHaveValue('A contribution with native undo');
           if (mode === 'native') {
-            await page.evaluate(() => window.demoComments.conversation.refresh());
+            await page.evaluate(() => window.demoComments.conversation.revalidate());
             await page.getByRole('button', { name: 'Toggle theme', exact: true }).click();
           } else {
             await appearance({ theme: 'dark' });
@@ -217,23 +227,72 @@ try {
           await expect(surface.getByText(reply, { exact: true })).toBeVisible();
           if (mode === 'native') {
             const recoveryText = 'Keep this writing when my credential expires';
-            await page.context().route(service + '/api/v3/contribute', route => route.abort('failed'));
+            await page.context().route(service + '/api/v4/contribute', route => route.abort('failed'));
             await textarea.fill(recoveryText);
             await composer.getByRole('button', { name: 'Comment', exact: true }).click();
             await expect.poll(() => page.evaluate(() => {
-              const draft = window.demoComments.conversation.drafts.get('main');
-              return Boolean(draft?.key && !draft.pending && draft.error);
+              const writing = window.demoComments.conversation.writing();
+              return writing.protected && !writing.pending && writing.error?.status === 'uncertain';
             })).toBe(true);
             const saved = await page.evaluate(() => Object.entries(localStorage).find(([, value]) => value.includes('Keep this writing when my credential expires')));
             assert.ok(saved, 'uncertain writing is actually persisted');
-            await page.context().unroute(service + '/api/v3/contribute');
-            await page.context().route(service + '/api/v3/preview', route => route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: { code: 'UNAUTHENTICATED', message: 'Credential expired' } }) }));
+            await page.context().unroute(service + '/api/v4/contribute');
+            await page.context().route(service + '/api/v4/preview', route => route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: { code: 'UNAUTHENTICATED', message: 'Credential expired' } }) }));
             await composer.getByRole('button', { name: 'Preview', exact: true }).click();
             await expect.poll(() => page.evaluate(() => window.demoComments.conversation.session.signedIn)).toBe(false);
-            assert.equal(await page.evaluate(key => localStorage.getItem(key), saved[0]), saved[1], 'passive credential expiry retains the exact persisted text and retry identity');
+            const storedWriting = raw => JSON.parse(JSON.parse(raw).value).writing.find(writing => writing.target.kind === 'comment');
+            const originalWriting = storedWriting(saved[1]), expiredWriting = storedWriting(await page.evaluate(key => localStorage.getItem(key), saved[0]));
+            assert.equal(expiredWriting.text, recoveryText, 'Passive credential expiry preserves writing');
+            assert.deepEqual(expiredWriting.issued, originalWriting.issued, 'Passive credential expiry preserves the issued contribution identity');
+            assert.equal(expiredWriting.error.status, 'uncertain', 'Expiry preserves unresolved submission state');
+            await expect(composer.getByRole('alert')).toBeVisible();
             await page.reload();
             await expect(textarea).toHaveValue(recoveryText);
-            await page.context().unroute(service + '/api/v3/preview');
+            await expect(textarea).toBeVisible();
+            await page.context().unroute(service + '/api/v4/preview');
+            await page.evaluate(capability => window.demoComments.conversation.session.setSession(capability), capability);
+            await expect.poll(() => page.evaluate(() => window.demoComments.conversation.writing().actions.retry)).toBe(true);
+            await page.evaluate(async () => {
+              const writing = window.demoComments.conversation.writing();
+              if (writing.error?.status !== 'uncertain' || writing.actions.edit || writing.actions.clear) throw Error('Restored unresolved writing is not protected');
+              const result = await writing.submit(); if (result.status !== 'saved') throw Error('Unresolved contribution did not recover');
+            });
+            await expect(surface.getByText(recoveryText, { exact: true })).toBeVisible();
+            const pendingText = engineName + ' reload during a committed request';
+            let committed = false, committedId, releaseResponse;
+            const responseHeld = new Promise(resolve => { releaseResponse = resolve; });
+            await page.context().route(service + '/api/v4/contribute', async route => {
+              const response = await route.fetch(); committedId = (await response.json()).id; committed = true; await responseHeld;
+              await route.fulfill({ response }).catch(() => {});
+            });
+            await textarea.fill(pendingText);
+            await composer.getByRole('button', { name: 'Comment', exact: true }).click();
+            await expect.poll(() => committed).toBe(true);
+            await expect.poll(() => page.evaluate(() => window.demoComments.conversation.writing().pending)).toBe(true);
+            await page.evaluate(() => sessionStorage.setItem('__qualification_clock', '301000'));
+            await page.reload(); releaseResponse(); await page.context().unroute(service + '/api/v4/contribute');
+            await expect(textarea).toHaveValue(pendingText);
+            await expect(textarea).toBeVisible();
+            await page.evaluate(capability => window.demoComments.conversation.session.setSession(capability), capability);
+            await expect.poll(() => page.evaluate(() => window.demoComments.conversation.writing().actions.retry)).toBe(true);
+            await composer.getByRole('button', { name: 'Sign out', exact: true }).click();
+            await expect.poll(() => page.evaluate(() => window.demoComments.conversation.session.signedIn)).toBe(false);
+            await expect(textarea).toHaveValue(pendingText);
+            await composer.getByRole('button', { name: 'Sign in with GitHub', exact: true }).click();
+            await expect.poll(() => page.evaluate(() => window.demoComments?.conversation.writing().actions.retry ?? false)).toBe(true);
+            await expect(textarea).toHaveValue(pendingText);
+            capability = [...capabilities].at(-1);
+            const recoveredId = await page.evaluate(async () => {
+              const writing = window.demoComments.conversation.writing();
+              if (writing.error?.status !== 'uncertain' || writing.actions.clear) throw Error('Reloaded pending work is not unresolved writing');
+              const result = await writing.submit(); if (result.status !== 'saved') throw Error('Committed contribution did not recover');
+              return result.result.id;
+            });
+            const providerReadback = await fetch(service + '/api/v4/page?' + new URLSearchParams({ input: JSON.stringify({ config: { repo: 'example/comments', origin: blog + '/native', term: 'article' }, ids: [recoveredId] }) }), { headers: { Origin: blog, Authorization: 'Bearer ' + capability } });
+            const observed = await providerReadback.json();
+            assert.equal(recoveredId, committedId, 'Reloading pending work retries the original provider contribution');
+            assert.equal(observed.nodes[recoveredId]?.body, pendingText, 'The recovered contribution is independently readable from the provider');
+
           }
           assert.deepEqual(errors, [], engineName + ' ' + mode + ' page errors');
           report.checks.push({ engine: engineName, version: browser.version(), mode, status: 'passed', authReturn: true, privateProofBoundary: true, nativeUndo: true, previewContinuity: true, appearanceContinuity: true, positionContinuity: true, rtl: true, customThemeCSS: true, themeFonts: true, hostFontIsolation: true, contentSizing: true, manualResizeContinuity: true, keyboardFocus: true, contributionReadback: true, replyReadback: true, serverBootstrap: mode === 'iframe', mobileOverflow: false });

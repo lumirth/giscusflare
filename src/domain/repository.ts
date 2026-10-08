@@ -25,7 +25,7 @@ interface Access extends AcquiredPage {
     policy: RepositoryPolicy;
 }
 const emptyWindow = () => ({ ids: [], cursor: null, total: 0 });
-const emptyRequest = (): Pick<R.PageRequest, 'order' | 'cursor' | 'replyPrefetch' | 'ids'> => ({ order: 'oldest', cursor: '', replyPrefetch: 0, ids: [] });
+const emptyRequest = (): Pick<R.PageRequest, 'order' | 'cursor' | 'replyPrefetch' | 'ids' | 'html'> => ({ order: 'oldest', cursor: '', replyPrefetch: 0, ids: [], html: false });
 export class RepositoryEngine {
     #reads = new ReadCache(() => this.store.now());
     #client?: GitHub;
@@ -67,7 +67,7 @@ export class RepositoryEngine {
     #metadata(a: Access, unavailable = false): Metadata { return { thread: a.discussion, viewer:a.viewer, archived: a.repository.isArchived, unavailable, profiles: Object.keys(a.policy.ranking?.profiles ?? {}) }; }
     /** One owner resolves selection, validates current authority, and acquires a window.
      * Creation shares this owner under the term lock rather than a second resolver. */
-    async #acquire(w: R.Selection, principal: string | S.Session, request: Pick<R.PageRequest, 'order' | 'cursor' | 'parentId' | 'ids' | 'replyPrefetch'>, create?: R.ContributionRequest['creation'], reserve?: (n: number) => void): Promise<Access> {
+    async #acquire(w: R.Selection, principal: string | S.Session, request: Pick<R.PageRequest, 'order' | 'cursor' | 'parentId' | 'ids' | 'replyPrefetch' | 'html'>, create?: R.ContributionRequest['creation'], reserve?: (n: number) => void): Promise<Access> {
         const base = this.#base(w.repo), session = typeof principal === 'string' ? await base.auth.session(principal, w.origin, create !== undefined) : principal;
         const token = session?.credentials.accessToken || await base.client.installation(reserve ? () => reserve(2) : undefined);
         const key = this.#mapping(w, base.policy);
@@ -128,7 +128,7 @@ export class RepositoryEngine {
         const r = input.request, w = r.config, p = policy(configuration(this.env), w.repo);
         const load = async () => {
             const a = await this.#acquire(w, input.session, r);
-            if (r.ids)
+            if (r.ids && !r.observe)
                 for (const id of a.page.window.ids)
                     requireCondition(!a.page.nodes[id]!.parentId, 400, 'BAD_INPUT', 'Ranked windows contain top-level comments.');
             return { ...a.page, metadata: this.#metadata(a, Boolean(!a.discussion && (w.number || this.store.get(this.#mapping(w, p), S.Mapping)))) };
@@ -136,7 +136,7 @@ export class RepositoryEngine {
         if (input.session)
             return { value: await load(), expires: 0 };
         const { origin, ...identity } = w;
-        return this.#reads.read(JSON.stringify(['page', identity, r.order, r.cursor, r.parentId, r.ids, r.replyPrefetch]), this.#group(w), p.displayCacheMs, load);
+        return this.#reads.read(JSON.stringify(['page', identity, r.order, r.cursor, r.parentId, r.ids, r.replyPrefetch, r.observe, r.html]), this.#group(w), p.displayCacheMs, load);
     }
     async info(input: R.InfoRequest) {
         const base = this.#base(input.repo);
@@ -217,10 +217,10 @@ export class RepositoryEngine {
         this.store.limit('preview:' + session!.principal, 30, 60000);
         return { html: await base.client.markdown(input.request.body, session!.credentials.accessToken) };
     }
-    async #observation(w: R.Selection, session: S.Session, effect: EffectResult, action: R.Action): Promise<ContributionResult> {
+    async #observation(w: R.Selection, session: S.Session, effect: EffectResult, action: R.Action, html: boolean): Promise<ContributionResult> {
         try {
             const ids = action.type === 'reaction' && action.id === 'discussion' ? [] : [...new Set([effect.id, ...(effect.parentId ? [effect.parentId] : [])])];
-            const a = await this.#acquire(w, session, { ...emptyRequest(), ids });
+            const a = await this.#acquire(w, session, { ...emptyRequest(), ids, html });
             const nodes: Patch['nodes'] = Object.fromEntries(ids.map(id => [id, a.page.nodes[id] ?? null]));
             const patch: Patch = { nodes, metadata: this.#metadata(a, !a.discussion), roots: { total: a.page.window.total ?? 0 }, replies: {} };
             for (const [id, window] of Object.entries(a.page.replies ?? {}))
@@ -264,7 +264,9 @@ export class RepositoryEngine {
     async contribute(input: C.Input<'contribute'>): Promise<ContributionResult> {
         const r = input.request, w = r.config, action = r.action;
         const base = this.#base(w.repo), session = await base.auth.session(input.session, w.origin, true);
-        const receiptKey = 'receipt:v3:' + await hash(r.key), fingerprint = await hash(JSON.stringify(r)), owner = session!.principal;
+        const selected = w.number ? { repo: w.repo, number: w.number } : { repo: w.repo, term: w.term, strict: w.strict };
+        const intent = { selection: selected, action };
+        const receiptKey = 'receipt:v3:' + await hash(r.key), fingerprint = await hash(JSON.stringify(intent)), owner = session!.principal;
         return this.store.lock(receiptKey, async () => {
             const receipt = this.store.get(receiptKey, S.Receipt);
             if (receipt) {
@@ -274,7 +276,7 @@ export class RepositoryEngine {
                 const meta = await base.client.repository(session!.credentials.accessToken);
                 repositoryScope(meta, w.repo, base.policy);
                 this.#pin(w.repo, meta);
-                return this.#observation({ ...w, number: receipt.result.number }, session!, receipt.result, action);
+                return this.#observation({ ...w, number: receipt.result.number }, session!, receipt.result, action, r.html);
             }
             const created = Number(r.key.split('.')[1]);
             requireCondition(Number.isSafeInteger(created) && created <= this.store.now() + 300000 && this.store.now() - created < 86400000, 409, 'OPERATION_EXPIRED', 'This submission is too old to retry. Check the discussion before submitting again.');
@@ -315,7 +317,7 @@ export class RepositoryEngine {
             finally {
                 this.#invalidate(w, a.discussion.number);
             }
-            return this.#observation({ ...w, number: effect.number }, session!, effect, action);
+            return this.#observation({ ...w, number: effect.number }, session!, effect, action, r.html);
         });
     }
     authPrepare(input: C.Input<'authPrepare'>) { return this.#base(input.request.repo).auth.prepare(input); }

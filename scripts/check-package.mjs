@@ -32,12 +32,14 @@ try {
   const standard = await copyAssets(join(temporary, 'standard-assets'));
   assert(standard.includes('widget.js'));
   assert(standard.includes('themes/dark.css'));
-  await writeFile(join(temporary, 'custom.ts'), `import { createConversation, mountPresentation } from 'giscusflare/headless';\nimport { createEditor } from 'giscusflare/interactions';\nimport { createContentRenderer } from 'giscusflare/content';\nexport { createConversation, mountPresentation, createEditor, createContentRenderer };\n`);
+  await writeFile(join(temporary, 'custom.ts'), `import { createConversation, mountPresentation } from 'giscusflare/headless';\nimport { createEditor } from 'giscusflare/interactions';\nimport { mountContent } from 'giscusflare/content';\nexport { createConversation, mountPresentation, createEditor, mountContent };\n`);
+  await writeFile(join(temporary, 'native.ts'), `import { mountComments } from 'giscusflare';\nimport { githubContent } from 'giscusflare/content/github';\nexport { mountComments, githubContent };\n`);
   await cp('examples', join(temporary, 'examples'), { recursive: true });
-  await writeFile(join(temporary, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2022', module: 'ESNext', moduleResolution: 'Bundler', strict: true, noUncheckedIndexedAccess: true, noEmit: true, skipLibCheck: true, types: [], lib: ['ES2022', 'DOM', 'DOM.Iterable'] }, include: ['custom.ts', 'examples/**/*.ts'] }));
+  await writeFile(join(temporary, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2022', module: 'ESNext', moduleResolution: 'Bundler', strict: true, noUncheckedIndexedAccess: true, noEmit: true, skipLibCheck: false, types: [], lib: ['ES2022', 'DOM', 'DOM.Iterable'] }, include: ['custom.ts', 'native.ts', 'examples/**/*.ts'] }));
   execFileSync(process.execPath, [resolve('node_modules/typescript/bin/tsc'), '-p', join(temporary, 'tsconfig.json')], { stdio: 'inherit' });
   await build({ absWorkingDir: temporary, entryPoints: ['custom.ts'], bundle: true, write: false, platform: 'browser', format: 'esm' });
+  await build({ absWorkingDir: temporary, entryPoints: ['native.ts'], bundle: true, write: false, platform: 'browser', format: 'esm' });
   await writeFile(join(temporary, 'worker.ts'), "export { default, Repository } from 'giscusflare/worker';\n");
   await build({ absWorkingDir: temporary, entryPoints: ['worker.ts'], bundle: true, write: false, platform: 'neutral', format: 'esm', external: ['cloudflare:workers'] });
-  console.log(JSON.stringify({ package: packed.filename, packedFiles: paths.length, selectedAssets: selected.length, standardAssets: standard.length, isolatedCustomBrowser: true, isolatedWorker: true, examplesOrTestsShipped: false }, null, 2));
+  console.log(JSON.stringify({ package: packed.filename, packedFiles: paths.length, selectedAssets: selected.length, standardAssets: standard.length, isolatedCustomBrowser: true, isolatedNativeBrowser: true, isolatedWorker: true, examplesOrTestsShipped: false }, null, 2));
 } finally { await rm(temporary, { recursive: true, force: true }); }

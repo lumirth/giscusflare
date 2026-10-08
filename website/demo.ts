@@ -1,4 +1,5 @@
 import { mountPresentation, createStandardPresentation } from 'giscusflare';
+import { githubContent } from 'giscusflare/content/github';
 import { forumPresentation } from '../examples/forum.js';
 
 declare const DEMO_ORIGIN: string;
@@ -9,6 +10,7 @@ let current: keyof typeof presentations = 'standard';
 host.replaceChildren();
 const comments = mountPresentation(host, {
   service: DEMO_ORIGIN,
+  content: githubContent(),
   page: { repo: 'lumirth/giscusflare', number: DEMO_NUMBER, origin: location.href, backLink: location.href },
   appearance: { theme: 'preferred_color_scheme' },
 }, presentations[current]);

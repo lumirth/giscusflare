@@ -43,13 +43,13 @@ Strict matching searches for the identifier's hash in the discussion body. Numbe
 
 ## Native rendering
 
-Install the released browser package in your website project:
+Version 4 is currently a release candidate. To use this checkout, build it with `npm ci && npm run build`, create its archive with `npm pack`, and install that archive in your website project.
 
 ```sh
-npm install https://github.com/lumirth/giscusflare/releases/download/v3.0.0/giscusflare-3.0.0.tgz
+npm install /path/to/giscusflare-4.0.0.tgz
 ```
 
-[GitHub releases](https://github.com/lumirth/giscusflare/releases) contain the package archives. Use the same release for the service and your website.
+[GitHub releases](https://github.com/lumirth/giscusflare/releases) contain published package archives. Use matching service and browser versions; do not combine this version 4 browser build with the released version 3 service.
 
 Add a container where comments should appear:
 
@@ -84,8 +84,8 @@ For iframe embedding, allow your service in your site's `script-src`, `style-src
 
 Add these origins to the policy your website already uses. The service's iframe policy does not apply to content rendered directly in your page.
 
-## Refresh and drafts
+## Reading and writing recovery
 
-Readers see their own successful changes immediately. Reloading or refreshing fetches the current conversation, subject to the service's public cache lifetime. Returning to a stale tab or reconnecting can also refresh it. Open tabs do not repeatedly fetch comments on a timer.
+Readers see confirmed changes through canonical observations. Returning to a stale tab or reconnecting can observe already loaded content without resetting reading progress. Deliberate restart or changing order starts a new traversal. Public cache lifetime still applies; open tabs do not poll on a timer.
 
-Draft recovery uses local browser storage for five minutes by default. Sign-out clears recovery for the conversation. Use `data-draft-recovery="off"` on the iframe script, or `draftRecovery: false` in JavaScript, to disable it. [API options](API.md) cover refresh triggers and retention.
+Ordinary writing recovery uses local browser storage for five minutes by default. Snapshots containing pending or unresolved issued submissions do not expire through that retention policy and survive sign-out. They preserve destination, original body, receipt key and author until the outcome is known or recovery is deliberately abandoned. Storage remains best effort. Use `data-writing-recovery="off"` on the iframe script, or `writingRecovery: false` in JavaScript, to disable storage. In-memory writing remains owned by its page. [API options](API.md) cover reading triggers and retention.

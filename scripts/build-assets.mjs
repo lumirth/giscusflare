@@ -21,6 +21,7 @@ const groups = {
   iframe: [...script('widget.js'), 'client.js', 'widget.css', 'iframe.css', 'embed.css', ...themes],
   native: [...script('native.js'), 'native.css'],
   headless: script('headless.js'),
+  content: [...script('content.js'), ...script('github-content.js'), 'content.css'],
 };
 await rm('dist/assets', { recursive: true, force: true });
 const files = {};
