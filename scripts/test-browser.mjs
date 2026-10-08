@@ -180,6 +180,15 @@ try {
             return { resize: style.resize, fieldSizing: style.fieldSizing, overflow: [style.overflowX, style.overflowY], direction: style.direction, inlineStyle: element.getAttribute('style'), viewport: [innerWidth, innerHeight], hit: [hit?.tagName, hit?.className] };
           });
           await expect.poll(async () => (await textarea.boundingBox()).height, { message: engineName + ' ' + mode + ' manual resize from ' + JSON.stringify({ box, resizeDetails }) }).toBeGreaterThan(box.height + 40).catch(async error => {
+            for (const sizing of ['fixed', 'content']) {
+              const probe = await browser.newPage({ viewport: { width: 390, height: 844 } });
+              await probe.setContent('<textarea style="width:200px;min-height:100px;max-height:500px;resize:vertical;overflow:auto;field-sizing:' + sizing + '">Writing</textarea>');
+              const input = probe.locator('textarea'), before = await input.boundingBox();
+              await probe.mouse.move(before.x + before.width - 10, before.y + before.height - 10);
+              await probe.mouse.down(); await probe.mouse.move(before.x + before.width - 10, before.y + before.height + 70, { steps: 8 }); await probe.mouse.up();
+              console.error('RESIZE_PROBE:' + JSON.stringify({ sizing, before, after: await input.boundingBox(), inline: await input.getAttribute('style') }));
+              await probe.close();
+            }
             console.error('RESIZE_SCREENSHOT:' + (await page.screenshot()).toString('base64')); throw error;
           });
           const chosenHeight = (await textarea.boundingBox()).height;
