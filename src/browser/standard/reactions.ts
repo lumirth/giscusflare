@@ -7,20 +7,17 @@ import { resource } from "./resource.js";
 import type { ReactionSlot } from "./contracts.js";
 
 export const reactionEmoji: Readonly<Record<Reaction, string>> = {
-  THUMBS_UP: '👍',
-  THUMBS_DOWN: '👎',
-  LAUGH: '😄',
-  HOORAY: '🎉',
-  CONFUSED: '😕',
-  HEART: '❤️',
-  ROCKET: '🚀',
-  EYES: '👀',
+  THUMBS_UP: '👍', THUMBS_DOWN: '👎', LAUGH: '😄', HOORAY: '🎉',
+  CONFUSED: '😕', HEART: '❤️', ROCKET: '🚀', EYES: '👀',
 };
+const contents = Object.keys(reactionEmoji) as Reaction[];
+
 export const reactions: ReactionSlot = ({ runtime, report, scope }, { subject, position }) => {
   let lifetime = scope.signal;
-  const lang = runtime.appearance.lang, t = strings(lang), groups = subject ? runtime.reactions(subject.id) : {},
-    id = subject?.id || 'discussion', blocked = !subject || !runtime.session.signedIn || !runtime.canCompose,
-    uncertain = Object.keys(reactionEmoji).some(reaction => runtime.reactionIntent(id, reaction as Reaction)?.error?.status === 'uncertain');
+  const lang = runtime.appearance.lang, t = strings(lang), id = subject?.id || 'discussion',
+    groups = subject ? runtime.reactions(id) : {}, signedIn = runtime.session.signedIn,
+    blocked = !signedIn || !runtime.canCompose,
+    uncertain = contents.some(reaction => runtime.reactionIntent(id, reaction)?.error?.status === 'uncertain');
   const [before = '', signIn = t.signIn, after = ''] = message(lang, 'signInToAddYourReaction').split(/<a>|<\/a>/);
   const choose = async (reaction: Reaction, event: Event) => {
     if (lifetime.aborted || !runtime.session.signedIn) return;
@@ -29,27 +26,41 @@ export const reactions: ReactionSlot = ({ runtime, report, scope }, { subject, p
     try { await runtime.setReaction(id, reaction, !groups[reaction]?.selected); }
     catch (error) { if (!lifetime.aborted) report(error); }
   };
+  const signInText = html`${before}<button type="button" class="color-text-link hover:underline"
+    @click=${() => { if (!lifetime.aborted) void runtime.session.signIn().catch(report); }}>${signIn}</button>${after}`;
   return html`<div class="gsc-reaction-group">
-    <details class="gsc-reaction-picker" ${resource(scope, (menu, signal, fresh) => { lifetime = signal;if (fresh) bindDismissableMenu(menu as HTMLDetailsElement, signal); })}>
-      <summary aria-label=${t.reactions} title=${t.reactions}>${icon('smiley')}</summary>
-      <div class="gsc-reactions-popover" data-position=${position}>
-        <p>${runtime.session.signedIn ? message(lang, 'pickYourReaction') : html`${before}<button type="button"
-          @click=${() => { if (!lifetime.aborted) void runtime.session.signIn().catch(report); }}>${signIn}</button>${after}`}</p>
-        <div class="gsc-emoji-grid">
-          ${(Object.keys(reactionEmoji) as Reaction[]).map(reaction => html`<button type="button"
-            aria-label=${reactionLabel(t, reaction)} title=${reactionLabel(t, reaction)}
-            aria-pressed=${String(Boolean(groups[reaction]?.selected))} ?disabled=${blocked}
-            @click=${(event: Event) => choose(reaction, event)}>${reactionEmoji[reaction]}</button>`)}
+    <details class="gsc-reactions-menu" ${resource(scope, (menu, signal, fresh) => {
+      lifetime = signal; if (fresh) bindDismissableMenu(menu as HTMLDetailsElement, signal);
+    })}>
+      <summary class="link-secondary gsc-reactions-button gsc-social-reaction-summary-item"
+        aria-label=${t.reactions} title=${t.reactions}>${icon('smiley')}</summary>
+      <div class=${'color-border-primary color-text-secondary color-bg-overlay gsc-reactions-popover text-sm open left ' + position}>
+        <p class=${signedIn ? 'm-2 overflow-hidden text-ellipsis whitespace-nowrap' : 'm-2'}>
+          ${signedIn ? message(lang,'pickYourReaction') : signInText}
+        </p>
+        <div class="color-border-primary my-2 border-t"></div>
+        <div class="m-2 gsc-emoji-grid">
+          ${contents.map(reaction => html`<button type="button"
+            class=${'gsc-emoji-button ' + (groups[reaction]?.selected ? 'has-reacted color-bg-info color-border-tertiary' : '')}
+            aria-label=${reactionLabel(t, reaction)} ?disabled=${blocked}
+            @click=${(event: Event) => choose(reaction, event)}>
+            <span class="gsc-emoji">${reactionEmoji[reaction]}</span>
+          </button>`)}
         </div>
       </div>
     </details>
-    ${repeat(Object.entries(groups).filter(([, group]) => group.count > 0), ([reaction]) => reaction, ([reaction, group]) => html`<button
-      class="gsc-reaction-chip" type="button" aria-label=${reactionLabel(t, reaction) + ': ' + group.count} title=${reactionLabel(t, reaction)}
-      aria-pressed=${String(group.selected)} ?disabled=${blocked}
-      @click=${(event: Event) => choose(reaction as Reaction, event)}>
-      ${reactionEmoji[reaction as Reaction]}<span>${group.count}</span>
-    </button>`)}
-    ${uncertain ? html`<button type="button"
+    <div class="gsc-direct-reaction-buttons">
+      ${repeat(Object.entries(groups).filter(([, group]) => group.count > 0), ([reaction]) => reaction,
+        ([reaction, group]) => html`<button type="button"
+          class=${'gsc-direct-reaction-button gsc-social-reaction-summary-item ' + (group.selected ? 'has-reacted' : '')}
+          aria-label=${reactionLabel(t, reaction) + ': ' + group.count} title=${reactionLabel(t, reaction)}
+          aria-pressed=${String(group.selected)} ?disabled=${blocked}
+          @click=${(event: Event) => choose(reaction as Reaction, event)}>
+          <span class="gsc-direct-reaction-button-emoji">${reactionEmoji[reaction as Reaction]}</span><span
+            class="gsc-social-reaction-summary-item-count">${group.count}</span>
+        </button>`)}
+    </div>
+    ${uncertain ? html`<button type="button" class="color-text-link text-xs"
       @click=${() => { if (!lifetime.aborted) void runtime.retryReaction(id).catch(report); }}>${t.retry}</button>` : nothing}
   </div>`;
 };

@@ -38,7 +38,7 @@ The page owns one normalized document, explicit reading windows and contribution
 
 Read signals belong to their acquisition. Replacing the root document retires child acquisitions. Changing identity retires prior acquisitions and queued contributions; issued remote effects can finish but cannot publish into the replacement. The page can join its issued work. There is no mixed registry combining drafts, reaction intent, reply loading and arbitrary operation status.
 
-The mount owns page and presentation replacement. Consumers observe the actual current page directly. Presentations receive an abortable view lifetime; renderer-owned descendants register cleanup when acquired. An editor owns its actual form, textarea, preview and native interactions. Active editors occupy a permanent region independent of read-window membership. The main editor also has one insertion point; visual position uses CSS. Native history does not depend on moving textareas during render.
+The mount owns page and presentation replacement. Consumers observe the actual current page directly. Presentations receive an abortable view lifetime; renderer-owned descendants register cleanup when acquired. An editor owns its actual form, textarea, preview and native interactions. Drafts retain writing independently of read-window membership. The default view renders reply/edit forms inline and retires their DOM with the row; the main editor has one permanent insertion point; visual position uses CSS. The main editor's native history does not depend on moving its textarea during render.
 
 ## Ranking
 

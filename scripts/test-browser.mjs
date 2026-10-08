@@ -133,7 +133,7 @@ try {
             await page.screenshot({ path: resolve(screenshots, engineName + '-' + mode + '-purple-top.png') });
           }
           const customTheme = 'https://themes.example/reader.css';
-          await page.context().route(customTheme, route => route.fulfill({ contentType: 'text/css', body: `.giscusflare[data-theme="${customTheme}"]{--color-fg-default:rgb(19,70,41);--font-family-default:monospace}` }));
+          await page.context().route(customTheme, route => route.fulfill({ contentType: 'text/css', body: `.giscusflare[data-theme="${customTheme}"]{--color-fg-default:rgb(19,70,41);--font-family-default:monospace;font-family:monospace}` }));
           if (mode === 'native') await page.addStyleTag({ url: customTheme });
           await setTheme(customTheme);
           await expect.poll(() => surface.locator('.giscusflare').evaluate(element => getComputedStyle(element).color)).toBe('rgb(19, 70, 41)');

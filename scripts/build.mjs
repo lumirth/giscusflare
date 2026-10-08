@@ -38,8 +38,15 @@ await writeFile('dist/sizes.json', JSON.stringify(sizes, null, 2) + '\n');
 await writeFile('dist/worker-metafile.json', JSON.stringify(worker.metafile, null, 2) + '\n');
 console.log(JSON.stringify({ build: 'passed', sizes }, null, 2));
 
-// Native and iframe share one authored, scoped presentation sheet.
-const sheet = await readFile('public/widget.css', 'utf8');
+// Keep the native presentation reset inside the comments host.
+const sheet = postcss.parse(await readFile('public/widget.css', 'utf8'));
+sheet.walkRules(rule => {
+  if (rule.parent?.type === 'atrule' && /keyframes$/.test(rule.parent.name)) return;
+  rule.selectors = rule.selectors.filter(selector => selector.trim()).map(selector => {
+    const scoped = selector.replace(/(^|[ ,])(:root|html|body|:host)(?=[ ,.:#\[]|$)/g, '$1.giscusflare').replace(/\.giscusflare\s+\.giscusflare/g, '.giscusflare');
+    return scoped.includes('.giscusflare') ? scoped : '.giscusflare ' + scoped;
+  });
+});
 await mkdir('public/themes', {recursive:true});
 let nativeThemes='';
 for(const name of (await readdir('vendor/giscus/themes')).filter(n=>n.endsWith('.css'))){
@@ -50,9 +57,14 @@ for(const name of (await readdir('vendor/giscus/themes')).filter(n=>n.endsWith('
     source.walkDecls(/animation(?:-name)?$/, declaration=>{declaration.value=declaration.value.replace(new RegExp('\\b'+original+'\\b','g'),scoped);});
   });
   source.walkRules(rule=>{if(rule.parent?.type==='atrule'&&/keyframes$/.test(rule.parent.name))return;rule.selectors=rule.selectors.map(s=>`.giscusflare[data-theme="${name.slice(0,-4)}"]`+(/^(main|html|body|:root|:host)(?=$|[\s.:#\[])/.test(s)?s.replace(/^(main|html|body|:root|:host)/,''):' '+s));});
-  await writeFile('public/themes/'+name,source.toString());
+  const iframe = source.clone();
+  iframe.walkRules(rule => {
+    if (rule.parent?.type === 'atrule' && /keyframes$/.test(rule.parent.name)) return;
+    rule.selectors = rule.selectors.map(selector => selector.replace(/^\.giscusflare\[data-theme="[^"\]]+"\]/, ':root'));
+  });
+  await writeFile('public/themes/'+name,iframe.toString());
   nativeThemes+=source.toString()+'\n';
 }
-await writeFile('public/native.css', sheet+'\n'+nativeThemes);
+await writeFile('public/native.css', sheet.toString()+'\n'+nativeThemes);
 await build({entryPoints:['src/browser/native.ts','src/browser/headless.ts','src/browser/interactions.ts','src/browser/content.ts'],outdir:'dist/browser',bundle:true,splitting:true,format:'esm',platform:'browser',target:'es2022',legalComments:'eof'});
 await import('./build-assets.mjs');

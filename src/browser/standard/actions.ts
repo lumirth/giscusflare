@@ -21,10 +21,10 @@ export function actions({runtime,report,scope}:StandardContext, host:HTMLElement
       if(reason!==null&&!signal.aborted)await runtime.moderateComment(item.id,true,reason as 'OFF_TOPIC');
     };
     return html`<details class="gsc-actions" ${resource(scope, (node, lifetime, fresh) => { element = node as HTMLDetailsElement;signal = lifetime;if (fresh) bindDismissableMenu(element, signal); })}><summary aria-label=${discussion?t.discussionActions:t.actions} title=${discussion?t.discussionActions:t.actions}>${icon('kebab-horizontal')}</summary>
-      <div class="gsc-action-menu">
+      <div class="gsc-action-menu color-bg-overlay color-border-primary">
         <a href=${item.url} target="_blank" rel="noopener noreferrer">${t.onGitHub}</a>
         ${runtime.session.signedIn&&!discussion&&item.viewerCanUpdate?html`<button type="button" @click=${act(()=>runtime.interactions.focus(runtime.beginEdit(item)))}>${t.edit}</button>`:nothing}
-        ${runtime.session.signedIn&&!discussion&&item.viewerCanDelete?html`<button type="button" data-danger="true" @click=${act(async()=>{
+        ${runtime.session.signedIn&&!discussion&&item.viewerCanDelete?html`<button type="button" class="color-text-danger" @click=${act(async()=>{
           if(await confirmAction(host,t.deleteConfirm,{confirm:t.remove,cancel:t.cancel},signal)!==null&&!signal.aborted)await runtime.removeComment(item.id);
         })}>${t.remove}</button>`:nothing}
         ${runtime.session.signedIn&&!discussion&&(item.viewerCanMinimize||item.viewerCanUnminimize)?html`<button type="button" @click=${act(hide)}>${item.isMinimized?t.unhide:t.hide}</button>`:nothing}

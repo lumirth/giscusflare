@@ -10,6 +10,7 @@ The release commands produce receipts identifying the source commit/content hash
 | --- | --- |
 | `docs/evidence/native-runtime.json` | Actual workerd/SQLite, RPC, encrypted-session restart and an independent simulated remote effect |
 | `docs/evidence/browser-acceptance.json` | Chromium/WebKit native/iframe and custom-view workflows against the actual local Worker/DO service |
+| `docs/evidence/visual-parity.json` | Paired pre-PR/current renders with complete RGBA comparison under equivalent presentation inputs |
 | `docs/evidence/ranking-service-runtime.json` | Actual repository, credentials, provider transport and due native alarms for the warm full-day workload and divided allowance pause |
 
 GitHub is explicitly simulated in the native/browser receipts. Both use the production Worker and SQLite Durable Object in local workerd; the browser loads production built modules and actual browser resources. Provider effects remain outside workerd across restart. The resource receipt records complete-service native SQL and due alarms under its declared clock and workload. Package checks build consumers from an extracted archive. [Verification](https://github.com/lumirth/giscusflare/blob/main/TESTING.md) defines the full gate and separately required deployed checks.

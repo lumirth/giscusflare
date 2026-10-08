@@ -28,6 +28,12 @@ Browser fixtures navigate an actual local HTTP document served by the native ser
 
 For manual editor checks, compare real typing, undo and redo with a plain textarea. Repeat after Preview/Write, theme changes, refresh and an asynchronous contribution completion. Verify the intended text, selection and focus; DOM identity alone is supporting evidence.
 
+## Visual reference
+
+The 3.0 demo/default presentation must retain the pre-PR appearance. [Visual qualification](docs/evidence/visual-parity.json) records a one-time comparison against `b39375bbba0b8249c3bc661c63150b5917b31d80`, built and run outside the repository. Both actual versions render equal fixture content in Chromium and WebKit, native and iframe modes, at 390px and 900px widths. Reading and editing states are captured before mutating journeys, so edge-cache freshness cannot make their input data unequal. Contribution/edit/delete-dialog states follow real local sign-in and writes.
+
+The comparison uses complete RGBA pixels and equal image dimensions, without masking or tolerance. Both versions receive the same deterministic avatar, display date, focus/hover state and settled fonts. These controlled inputs establish the recorded visual states; they do not turn historical DOM structure or ownership into a contract. The reference runner is a qualification artifact, not a second maintained runtime or a source-shape regression suite.
+
 ## Independent behavior
 
 Tautological tests and change detectors are harmful. Unit tests are presumed unnecessary in most cases. These rules apply to existing tests as well as new ones. Retained workflows must independently establish valuable user behavior or a real boundary; neither an old expectation nor a historic bug earns a test by itself. Avoid assertions about source spelling, prose, chosen maps/tables, dependency identity or a copy of the implementation’s calculation. A bug fix needs a new test only when existing behavior coverage has a genuine gap.

@@ -1,206 +1,255 @@
-/*! Giscusflare presentation. GitHub syntax-token colors follow Primer (MIT).
- * Copyright (c) GitHub, Inc. See THIRD-PARTY-NOTICES.md. */
+/* Deliberate additions to the pinned Giscus stylesheet. No theme palette here. */
+[hidden] {
+  display: none !important;
+}
+body {
+  margin: 0;
+  background: transparent;
+  color: var(--color-fg-default, var(--color-text-primary));
+}
 .giscusflare {
-  --font-family-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
-  --font-family-monospace: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  --gsc-text: var(--color-fg-default, var(--color-text-primary, var(--text-normal-color, CanvasText)));
-  --gsc-muted: var(--color-fg-muted, var(--color-text-secondary, var(--text-muted-color, GrayText)));
-  --gsc-surface: var(--color-canvas-default, var(--color-bg-primary, Canvas));
-  --gsc-inset: var(--color-canvas-subtle, var(--color-bg-tertiary, ButtonFace));
-  --gsc-overlay: var(--color-canvas-overlay, var(--color-bg-overlay, Canvas));
-  --gsc-line: var(--color-border-default, var(--color-border-primary, GrayText));
-  --gsc-accent: var(--color-accent-fg, var(--color-text-link, LinkText));
-  --gsc-tint: var(--color-accent-subtle, var(--color-bg-info, ButtonFace));
-  --gsc-danger: var(--color-danger-fg, var(--color-text-danger, #df3044));
-  font: 16px/1.5 var(--font-family-default, var(--font-family-sans));
-  color: var(--gsc-text); background-color: var(--gsc-surface); container-type: inline-size; color-scheme: light dark;
-  text-size-adjust: 100%; -webkit-text-size-adjust: 100%;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--color-fg-default, var(--color-text-primary));
 }
-.giscusflare *, .giscusflare *::before, .giscusflare *::after { box-sizing: border-box; }
-.giscusflare :is(h1, h2, h3, h4, h5, h6, p, pre, blockquote, figure, dl, dd, ul, ol) { margin: 0; }
-.giscusflare :is(button, input, textarea, select) { font: inherit; color: inherit; }
-.giscusflare :is(button, summary) { cursor: pointer; }
-.giscusflare button {
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  padding: 6px 12px; border: 1px solid var(--gsc-line); border-radius: 6px;
-  background: var(--gsc-surface); text-align: start; line-height: 1.4;
-}
-.giscusflare button:hover:enabled { background: var(--gsc-inset); }
-.giscusflare :disabled { opacity: .55; cursor: not-allowed; }
-.giscusflare a { color: var(--gsc-accent); text-decoration: none; }
-.giscusflare a:hover { text-decoration: underline; }
-.giscusflare :is(a, button, summary, input, textarea, select):focus-visible {
-  outline: 2px solid var(--gsc-accent); outline-offset: 2px;
-}
-.giscusflare button[aria-pressed="true"] {
-  color: var(--gsc-accent); background: var(--gsc-tint); border-color: var(--gsc-accent);
-}
-.giscusflare :is(button[type="submit"], .dialog-actions .primary) {
-  color: var(--color-btn-primary-text, var(--gsc-surface)); background: var(--color-btn-primary-bg, var(--gsc-accent));
-  border-color: var(--color-btn-primary-border, var(--gsc-accent));
-}
-.giscusflare :is(button[type="submit"], .dialog-actions .primary):hover:enabled { background: var(--color-btn-primary-hover-bg, var(--gsc-accent)); }
-.giscusflare [hidden] { display: none !important; }
-.giscusflare img { max-inline-size: 100%; block-size: auto; }
-.giscusflare .octicon { display: inline-block; fill: currentColor; vertical-align: text-bottom; }
-.giscusflare :is(code, pre, kbd, samp, .blob-code-inner, .blob-num, [data-fixed-width="true"]) { font-family: var(--font-family-monospace); }
 
-/* One conversation, card and metadata grammar for comments and replies. */
-.giscusflare :is(.gsc-main, .gsc-comments) { display: grid; gap: 20px; min-inline-size: 0; }
-.giscusflare .gsc-main { gap: 28px; }
-.giscusflare :is(.gsc-comments, .gsc-active-editors) { order: 1; min-inline-size: 0; }
-.giscusflare .gsc-main-composer { order: 2; min-inline-size: 0; }
-.giscusflare .gsc-main[data-input-position="top"] > .gsc-main-composer { order: 0; }
-.giscusflare :is(.gsc-header, .gsc-meta, .gsc-order, .gsc-comment-heading, .gsc-comment-header, .gsc-comment-footer) {
-  display: flex; align-items: center; gap: 8px; min-inline-size: 0;
+/* Action labels are controls; prose and timestamps remain selectable. */
+.giscusflare button,
+.giscusflare .gsc-actions > summary,
+.giscusflare summary.gsc-reactions-button {
+  user-select: none;
+  -webkit-user-select: none;
 }
-.giscusflare :is(.gsc-header, .gsc-meta, .gsc-comment-header, .gsc-comment-footer) { flex-wrap: wrap; }
-.giscusflare :is(.gsc-meta, .gsc-comment-header) { flex: 1; }
-.giscusflare .gsc-meta { font-size: 14px; }
-.giscusflare .gsc-meta small { color: var(--gsc-muted); font-size: 12px; }
-.giscusflare .gsc-order { flex-wrap: wrap; padding: 3px; background: var(--gsc-inset); border-radius: 8px; }
-.giscusflare .gsc-order button { padding: 4px 8px; font-size: 12px; }
-.giscusflare .gsc-comment {
-  display: grid; gap: 14px; min-inline-size: 0; padding: 16px;
-  border: 1px solid var(--gsc-line); border-radius: 10px; background: var(--gsc-surface); font-size: 14px;
-  scroll-margin-block-start: 5rem;
-}
-.giscusflare .gsc-comment[data-own="true"] { border-color: var(--gsc-accent); }
-.giscusflare .gsc-comment[data-reply="true"] { padding: 0; border: 0; border-radius: 0; background: transparent; gap: 8px; }
-.giscusflare .gsc-author { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; color: inherit; min-inline-size: 0; overflow-wrap: anywhere; }
-.giscusflare .gsc-author img { inline-size: 28px; block-size: 28px; border-radius: 50%; }
-.giscusflare :is(.gsc-time, .gsc-edited, .gsc-deleted, .gsc-minimized > summary) { color: var(--gsc-muted); }
-.giscusflare :is(.gsc-time, .gsc-edited, .gsc-association, .gsc-comment-footer) { font-size: 12px; }
-.giscusflare .gsc-association { padding: 1px 6px; border: 1px solid var(--gsc-line); border-radius: 1em; text-transform: capitalize; }
-.giscusflare .gsc-comment-footer { justify-content: space-between; color: var(--gsc-muted); }
-.giscusflare .gsc-answer { display: inline-flex; align-items: center; gap: 4px; color: var(--color-success-fg, var(--color-text-success)); }
-.giscusflare .gsc-replies {
-  display: grid; gap: 20px; min-inline-size: 0; padding-block-start: 16px; padding-inline-start: 16px;
-  border-block-start: 1px solid var(--gsc-line); border-inline-start: 2px solid var(--gsc-line);
-}
-.giscusflare .gsc-minimized > summary { margin-block-end: 12px; }
-.giscusflare .gsc-pagination { justify-self: center; }
-.giscusflare .gsc-reactions { display: grid; justify-items: center; gap: 10px; }
-.giscusflare .gsc-reactions-count { color: inherit; font-weight: 600; }
-.giscusflare :is(.gsc-error, .gsc-notice) { padding: 14px 16px; border: 1px solid var(--gsc-line); border-radius: 8px; background: var(--gsc-inset); }
-.giscusflare .gsc-error { color: var(--gsc-danger); border-color: var(--color-danger-muted, var(--color-border-danger)); }
-.giscusflare .gsc-error button { margin-inline-start: 8px; }
-.giscusflare .gsc-loading { display: grid; justify-items: center; gap: 12px; padding-block: 12px; color: var(--gsc-muted); font-size: 14px; }
-.giscusflare .gsc-loading-image { inline-size: 48px; block-size: 48px; background: url("https://github.githubassets.com/images/mona-loading-default.gif") center/contain no-repeat; }
 
-/* The form owns its tabs, writing surface, preview and actions. */
-.giscusflare .gsc-comment-box { display: grid; gap: 12px; min-inline-size: 0; padding: 12px; border: 1px solid var(--gsc-line); border-radius: 8px; background: var(--gsc-surface); font-size: 14px; }
-.giscusflare :is(.gsc-editor-tabs, .gsc-editor-toolbar, .gsc-editor-footer) { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.giscusflare .gsc-editor-toolbar { margin-inline-start: auto; }
-.giscusflare .gsc-comment-box-textarea {
-  field-sizing: content; inline-size: 100%; min-block-size: 100px; max-block-size: 500px; resize: vertical;
-  padding: 12px; border: 1px solid var(--gsc-line); border-radius: 6px; background: var(--gsc-inset); margin: 0;
+.gsc-header-with-actions {
+  display: flex;
+  align-items: center;
+  min-width: 0;
 }
-.giscusflare .gsc-comment-box-preview { min-block-size: 100px; padding: 12px; border: 1px solid var(--gsc-line); border-radius: 6px; }
-.giscusflare .gsc-editor-footer { justify-content: flex-end; }
-.giscusflare .gsc-editor-footer > a { display: inline-flex; align-items: center; gap: 6px; color: var(--gsc-muted); font-size: 12px; }
-.giscusflare .gsc-editor-footer > :first-child:not(:last-child) { margin-inline-end: auto; }
-
-/* Native details and dialog controls provide menus and confirmation. */
-.giscusflare :is(.gsc-actions, .gsc-reaction-picker) { position: relative; flex: none; }
-.giscusflare :is(.gsc-actions, .gsc-reaction-picker) > summary { display: grid; place-items: center; inline-size: 30px; block-size: 30px; border: 1px solid var(--gsc-line); border-radius: 6px; list-style: none; }
-.giscusflare :is(.gsc-actions, .gsc-reaction-picker) > summary::-webkit-details-marker { display: none; }
-.giscusflare :is(.gsc-action-menu, .gsc-reactions-popover) {
-  position: absolute; z-index: 20; max-inline-size: calc(100cqi - 24px); padding: 8px;
-  border: 1px solid var(--gsc-line); border-radius: 8px; background: var(--gsc-overlay);
-  box-shadow: var(--color-shadow-medium, 0 8px 24px #0003); font-size: 14px;
+.gsc-header-with-actions > .gsc-comment-header,
+.gsc-header-with-actions > .gsc-reply-header {
+  flex: 1;
+  min-width: 0;
 }
-.giscusflare .gsc-action-menu { inset-inline-end: 0; inset-block-start: calc(100% + 6px); inline-size: 220px; }
-.giscusflare .gsc-action-menu > :is(a, button) { display: block; inline-size: 100%; padding: 7px 8px; border: 0; border-radius: 4px; background: transparent; color: inherit; text-align: start; }
-.giscusflare .gsc-action-menu > :is(a, button):hover { background: var(--gsc-inset); text-decoration: none; }
-.giscusflare .gsc-action-menu > [data-danger="true"] { color: var(--gsc-danger); }
-.giscusflare .gsc-reaction-group { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
-.giscusflare .gsc-reaction-chip { padding: 4px 8px; border-radius: 1em; font-size: 12px; }
-.giscusflare .gsc-reaction-chip:disabled { opacity: 1; }
-.giscusflare .gsc-reactions-popover { inline-size: 184px; inset-inline-start: 0; }
-.giscusflare .gsc-reactions-popover[data-position="top"] { inset-block-end: calc(100% + 8px); }
-.giscusflare .gsc-reactions-popover[data-position="bottom"] { inset-block-start: calc(100% + 8px); }
-.giscusflare .gsc-reactions-popover p { margin-block-end: 8px; }
-.giscusflare .gsc-emoji-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
-.giscusflare .gsc-emoji-grid button { padding: 6px 4px; border-color: transparent; font-family: "Apple Color Emoji", "Segoe UI Emoji", sans-serif; }
-.giscusflare .gsc-emoji-grid button[aria-pressed="true"] { border-color: var(--gsc-accent); }
-.giscusflare .action-dialog { inline-size: min(560px, calc(100% - 32px)); padding: 24px; border: 1px solid var(--gsc-line); border-radius: 12px; background: var(--gsc-overlay); color: inherit; }
-.giscusflare .action-dialog::backdrop { background: #0006; }
-.giscusflare .action-dialog :is(form, label) { display: grid; gap: 12px; }
-.giscusflare .action-dialog h2 { font-size: 1.25em; }
-.giscusflare .action-dialog select { padding: 8px; border: 1px solid var(--gsc-line); border-radius: 6px; background: var(--gsc-inset); }
-.giscusflare .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.gsc-header-with-actions > .gsc-actions {
+  margin: 8px 12px 0 0;
+}
+.gsc-reply .gsc-header-with-actions > .gsc-actions {
+  margin: 0 0 8px 8px;
+}
+.gsc-comment-author-is-viewer {
+  border-color: var(--color-accent-muted, var(--color-box-border-info));
+}
+.gsc-actions {
+  position: relative;
+  flex-shrink: 0;
+}
+.gsc-actions > summary {
+  display: flex;
+  list-style: none;
+  padding: 4px;
+  border-radius: 4px;
+  color: var(--color-fg-muted, var(--color-text-secondary));
+}
+.gsc-actions > summary::-webkit-details-marker {
+  display: none;
+}
+.gsc-actions > summary:focus-visible,
+summary.gsc-reactions-button:focus-visible {
+  outline: 2px solid var(--color-accent-fg, var(--color-text-link));
+  outline-offset: 2px;
+}
+.gsc-action-menu {
+  position: absolute;
+  inset-inline-end: 0;
+  top: 100%;
+  width: 220px;
+  border: 1px solid var(--color-border-default, var(--color-border-primary));
+  border-radius: 6px;
+  padding: 4px 0;
+  z-index: 30;
+  box-shadow: var(--color-shadow-medium, 0 8px 24px #0003);
+  font-size: 14px;
+}
+.gsc-action-menu > * {
+  display: block;
+  width: 100%;
+  text-align: start;
+  padding: 6px 12px;
+}
+.gsc-action-menu > a {
+  color: inherit;
+}
+.gsc-action-menu > *:hover {
+  background: var(--color-neutral-muted, var(--color-bg-tertiary));
+  text-decoration: none;
+}
+.gsc-replies-more-icon .octicon {
+  width: 100%;
+  transform: rotate(90deg);
+  fill: var(--color-border-muted, var(--color-border-secondary));
+}
+.gsc-reaction-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.gsc-discussion-reactions {
+  display: flex;
+  justify-content: center;
+  margin-top: 8px;
+}
+.gsc-emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 32px);
+}
+.gsc-emoji {
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
+}
+.gsc-reactions-popover {
+  box-shadow: var(--color-shadow-medium, 0 8px 24px #0003);
+}
+.gsc-comment-box-textarea {
+  display: block;
+  resize: vertical;
+}
+.gsc-toolbar-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-width: 24px;
+  min-height: 24px;
+}
+.gsc-comment-box-textarea:focus {
+  outline: none;
+}
+.gsc-comment-box-write:focus-within .input-contrast {
+  background: var(--color-canvas-default, var(--color-bg-primary));
+}
+.markdown {
+  overflow-wrap: anywhere;
+}
+.markdown pre {
+  position: relative;
+  overflow-wrap: normal;
+}
+.markdown img {
+  max-width: 100%;
+  height: auto;
+}
+.markdown .code-block {
+  position: relative;
+}
+.markdown .code-copy {
+  position: absolute;
+  inset-inline-end: 8px;
+  top: 8px;
+  padding: 8px;
+  border: 1px solid var(--color-border-default, var(--color-border-primary));
+  border-radius: 6px;
+  background: var(--color-canvas-default, var(--color-bg-primary));
+  color: var(--color-fg-muted, var(--color-text-secondary));
+}
+@media (hover: hover) and (pointer: fine) {
+  .markdown .code-copy { opacity: 0; transition: opacity .2s; }
+  .markdown .code-block:hover > .code-copy,
+  .markdown .code-copy:focus-visible { opacity: 1; }
+}
+.markdown .blob-wrapper table { margin: 0; }
+.markdown .Box-header p { margin: 0; }
+.markdown .blob-wrapper td { border: 0; padding: 0 12px; }
+.markdown .blob-wrapper .blob-code-inner { overflow-wrap: normal; }
+.markdown .blob-wrapper .blob-num { cursor: default; }
+.markdown .math-render-error { display: block; margin: 16px 0; }
+.markdown .math-render-message {
+  display: block;
+  padding: 16px;
+  border: 1px solid var(--color-danger-muted, var(--color-border-danger));
+  border-radius: 6px;
+  background: var(--color-danger-subtle, var(--color-bg-danger));
+}
+.markdown code.math-render-source {
+  display: block;
+  margin-top: 16px;
+  padding: 16px;
+  overflow: auto;
+  white-space: pre;
+  background: var(--color-canvas-subtle, var(--color-bg-tertiary));
+}
+.markdown .giscus-math[data-display="block"] {
+  display: block;
+  overflow-x: auto;
+}
+.action-dialog {
+  max-width: min(560px, calc(100% - 32px));
+  width: 100%;
+  border: 1px solid var(--color-border-default, var(--color-border-primary));
+  border-radius: 6px;
+  padding: 20px;
+  background: var(--color-canvas-overlay, var(--color-bg-overlay));
+  color: var(--color-fg-default, var(--color-text-primary));
+}
+.action-dialog::backdrop {
+  background: #0006;
+}
+.action-dialog form,
+.action-dialog label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.action-dialog form {
+  gap: 16px;
+}
+.action-dialog input,
+.action-dialog textarea,
+.action-dialog select {
+  border: 1px solid var(--color-border-default, var(--color-border-primary));
+  border-radius: 6px;
+  background: var(--color-canvas-inset, var(--color-bg-canvas-inset));
+  padding: 8px;
+}
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+.dialog-actions button {
+  padding: 6px 12px;
+  border: 1px solid var(--color-border-default, var(--color-border-primary));
+  border-radius: 6px;
+}
+.dialog-actions .primary {
+  background: var(--color-btn-primary-bg);
+  color: var(--color-btn-primary-text);
+}
+/* Prevent iOS focus zoom; preserve the rest of Giscus's compact mobile UI. */
+@media (pointer: coarse) {
+  .gsc-comment-box-textarea {
+    font-size: 16px;
+  }
+}
 
-/* Sanitized prose, embedded GitHub code, copy controls and math are content. */
-.giscusflare .markdown { min-inline-size: 0; overflow-wrap: anywhere; line-height: 1.65; }
-.giscusflare .markdown a { text-decoration: underline; }
-.giscusflare .markdown :is(p, pre, table, ul, ol, blockquote, details, .highlight) { margin-block-end: 1em; }
-.giscusflare .markdown :is(h1, h2, h3, h4, h5, h6) { font: inherit; font-weight: 600; margin-block: 1.25em .75em; }
-.giscusflare .markdown :is(h1, h2) { font-size: 1.5em; padding-block-end: .3em; border-block-end: 1px solid var(--gsc-line); }
-.giscusflare .markdown h3 { font-size: 1.25em; }
-.giscusflare .markdown :is(h5, h6) { font-size: .875em; }
-.giscusflare .markdown :is(ul, ol) { padding-inline-start: 1.75em; }
-.giscusflare .markdown li + li { margin-block-start: .25em; }
-.giscusflare .markdown blockquote { padding-inline-start: 1em; border-inline-start: 3px solid var(--gsc-line); color: var(--gsc-muted); }
-.giscusflare .markdown :is(code, kbd) { padding: 2px 4px; border-radius: 4px; background: var(--gsc-inset); font-size: .875em; }
-.giscusflare .markdown :is(pre, .blob-wrapper) { direction: ltr; text-align: start; overflow: auto; overflow-wrap: normal; }
-.giscusflare .markdown pre { padding: 16px; border-radius: 6px; background: var(--gsc-inset); line-height: 1.5; }
-.giscusflare .markdown pre code { padding: 0; background: transparent; }
-.giscusflare .markdown table { display: block; max-inline-size: 100%; overflow: auto; border-collapse: collapse; }
-.giscusflare .markdown :is(th, td) { padding: 6px 12px; border: 1px solid var(--gsc-line); }
-.giscusflare .markdown tr:nth-child(even) { background: var(--gsc-inset); }
-.giscusflare .markdown hr { margin-block: 1.5em; border: 0; border-block-start: 1px solid var(--gsc-line); }
-.giscusflare .markdown .task-list-item { list-style: none; }
-.giscusflare .markdown .task-list-item-checkbox { margin-inline: -1.5em .3em; }
-.giscusflare .markdown > :first-child { margin-block-start: 0; }
-.giscusflare .markdown > :last-child { margin-block-end: 0; }
-.giscusflare .markdown .Box { border: 1px solid var(--gsc-line); border-radius: 6px; overflow: hidden; }
-.giscusflare .markdown .Box-header { padding: 8px 12px; border-block-end: 1px solid var(--gsc-line); background: var(--gsc-inset); }
-.giscusflare .markdown .Box-header :is(h3, p) { margin: 0; font: inherit; }
-.giscusflare .markdown .blob-wrapper-embedded { max-block-size: 240px; }
-.giscusflare .markdown .blob-wrapper table { display: table; max-inline-size: none; margin: 0; }
-.giscusflare .markdown .blob-wrapper td { border: 0; padding: 0 10px; }
-.giscusflare .markdown .blob-num { color: var(--gsc-muted); text-align: end; user-select: none; font-size: 12px; }
-.giscusflare .markdown .blob-num::before { content: attr(data-line-number); }
-.giscusflare .markdown .blob-code-inner { white-space: pre; overflow-wrap: normal; font-size: 12px; }
-.giscusflare .markdown .code-block { position: relative; }
-.giscusflare .markdown .code-block pre { padding-inline-end: 48px; }
-.giscusflare .markdown .code-copy { position: absolute; inset-block-start: 8px; inset-inline-end: 8px; padding: 6px; }
-.giscusflare .markdown :is(.giscus-math[data-display="block"], .math-render-source) { display: block; overflow: auto; }
-.giscusflare .markdown .math-render-message { display: block; padding: 12px; border: 1px solid var(--gsc-danger); border-radius: 6px; color: var(--gsc-danger); }
-.giscusflare .markdown .math-render-source { margin-block-start: 12px; padding: 12px; white-space: pre; }
-@media (pointer: coarse) { .giscusflare .gsc-comment-box-textarea { font-size: 16px; } }
+/* Give the summary its own row when controls would squeeze its text. */
+.giscusflare { container-type: inline-size; }
 @container (max-width: 440px) {
-  .giscusflare .gsc-header { align-items: flex-start; }
-  .giscusflare .gsc-meta { flex-basis: 100%; }
-  .giscusflare .gsc-comment { padding: 12px; }
-  .giscusflare .gsc-comment[data-reply="true"] { padding: 0; }
-  .giscusflare .gsc-replies { padding-inline-start: 12px; }
+  .gsc-header { flex-wrap: wrap; }
+  .gsc-left-header { flex-basis: 100%; }
+  .gsc-right-header { margin-inline-start: auto; }
 }
 
-/* Provider syntax tokens use the active palette rather than a second palette. */
-.giscusflare .pl-c { color: var(--color-prettylights-syntax-comment); }
-.giscusflare :is(.pl-v, .pl-smw) { color: var(--color-prettylights-syntax-variable); }
-.giscusflare :is(.pl-c1, .pl-s .pl-v) { color: var(--color-prettylights-syntax-constant); }
-.giscusflare :is(.pl-e, .pl-en) { color: var(--color-prettylights-syntax-entity); }
-.giscusflare :is(.pl-smi, .pl-s .pl-s1) { color: var(--color-prettylights-syntax-storage-modifier-import); }
-.giscusflare .pl-ent { color: var(--color-prettylights-syntax-entity-tag); }
-.giscusflare .pl-k { color: var(--color-prettylights-syntax-keyword); }
-.giscusflare :is(.pl-s, .pl-pds, .pl-sr, .pl-sr .pl-cce, .pl-sr .pl-sre, .pl-sr .pl-sra, .pl-s .pl-pse .pl-s1) { color: var(--color-prettylights-syntax-string); }
-.giscusflare .pl-bu { color: var(--color-prettylights-syntax-brackethighlighter-unmatched); }
-.giscusflare .pl-ii { color: var(--color-prettylights-syntax-invalid-illegal-text); background: var(--color-prettylights-syntax-invalid-illegal-bg); }
-.giscusflare .pl-c2 { color: var(--color-prettylights-syntax-carriage-return-text); background: var(--color-prettylights-syntax-carriage-return-bg); }
-.giscusflare .pl-c2::before { content: "^M"; }
-.giscusflare .pl-sr .pl-cce { font-weight: bold; color: var(--color-prettylights-syntax-string-regexp); }
-.giscusflare .pl-ml { color: var(--color-prettylights-syntax-markup-list); }
-.giscusflare :is(.pl-mh, .pl-mh .pl-en, .pl-ms) { font-weight: bold; color: var(--color-prettylights-syntax-markup-heading); }
-.giscusflare .pl-mi { font-style: italic; color: var(--color-prettylights-syntax-markup-italic); }
-.giscusflare .pl-mb { font-weight: bold; color: var(--color-prettylights-syntax-markup-bold); }
-.giscusflare .pl-md { color: var(--color-prettylights-syntax-markup-deleted-text); background: var(--color-prettylights-syntax-markup-deleted-bg); }
-.giscusflare .pl-mi1 { color: var(--color-prettylights-syntax-markup-inserted-text); background: var(--color-prettylights-syntax-markup-inserted-bg); }
-.giscusflare .pl-mc { color: var(--color-prettylights-syntax-markup-changed-text); background: var(--color-prettylights-syntax-markup-changed-bg); }
-.giscusflare .pl-mi2 { color: var(--color-prettylights-syntax-markup-ignored-text); background: var(--color-prettylights-syntax-markup-ignored-bg); }
-.giscusflare .pl-mdr { font-weight: bold; color: var(--color-prettylights-syntax-meta-diff-range); }
-.giscusflare .pl-ba { color: var(--color-prettylights-syntax-brackethighlighter-angle); }
-.giscusflare .pl-sg { color: var(--color-prettylights-syntax-sublimelinter-gutter-mark); }
-.giscusflare .pl-corl { text-decoration: underline; color: var(--color-prettylights-syntax-constant-other-reference-link); }
+/* Stable editor placement changes visual order without moving its textarea. */
+.gsc-main-composer { order: 2; }
+.gsc-main[data-input-position="top"] > .gsc-main-composer { order: 0; }
+.gsc-comments { order: 1; }
+.giscusflare [hidden] { display: none !important; }
+
+/* The picker label is a visual derivation of the active native control. */
+.gsc-reactions-popover:has(.gsc-emoji-button:not(:disabled):is(:hover, :focus)) > p { visibility: hidden; }
+.gsc-emoji-button:not(:disabled):is(:hover, :focus)::after {
+  content: attr(aria-label); position: absolute; inset-inline: 8px; top: 8px;
+  text-align: start; font-size: 14px; line-height: 20px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; pointer-events: none;
+}
