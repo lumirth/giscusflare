@@ -1,6 +1,6 @@
 # The 3.0 replacement
 
-Version 3 replaces the conversation, authentication, repository authority and ranking models while retaining the demo/default giscus presentation visually. The codebase becomes smaller by deleting responsibilities that the new owners make unnecessary. It deliberately breaks browser contracts, the service protocol, persisted coordination and ranking freshness semantics. [Migration](MIGRATION.md) describes cutover; [design](DESIGN.md) specifies the resulting system.
+Version 3 replaces the conversation, authentication, repository authority and ranking models while retaining the demo/default giscus presentation visually. The codebase becomes smaller by deleting responsibilities that the new owners make unnecessary. It deliberately breaks browser contracts, the service protocol, persisted coordination and ranking freshness semantics. [Design](DESIGN.md) specifies the resulting system.
 
 ## What was replaced
 

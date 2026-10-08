@@ -9,8 +9,6 @@ A customizable comments system powered by GitHub Discussions, self-hosted on Clo
 - Replace individual components or build your own interface in JavaScript.
 - Deploy on Cloudflare's Free plan.
 
-This checkout is the 3.0 release candidate. See [upgrade instructions](docs/MIGRATION.md) when replacing a 2.x installation; readers sign in again while existing contributions remain on GitHub.
-
 [Try the demo](https://giscusflare.kukas.me/) · [Customization](docs/EXTENDING.md) · [Cloudflare usage](FREE-TIER.md)
 
 ## Get started

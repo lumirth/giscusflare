@@ -2,15 +2,15 @@
 
 ## Update
 
-1. Choose a [release](https://github.com/lumirth/giscusflare/releases) and read its update instructions. For the 3.0 candidate, follow [migration](MIGRATION.md).
+1. Choose a [release](https://github.com/lumirth/giscusflare/releases).
 2. Merge the release changes into your source repository. Preserve your Wrangler configuration, including the Worker name, repository settings, Durable Object binding and migration history. Keep the existing secrets in Cloudflare.
 3. Record the current Worker version and deploy through your connected Cloudflare build.
 4. If your website imports the browser package, update it as required by the release and rebuild the site.
 5. Open comments on your website and check sign-in, posting and reactions.
 
-Source deployments apply the values in Wrangler's `vars`. If you changed public settings in the Cloudflare dashboard, copy those values into your source configuration before deploying. Keep `SESSION_SECRET` so encrypted operational records remain readable. The 3.0 cutover requires earlier readers to sign in again because their sessions lack immutable account IDs.
+Source deployments apply the values in Wrangler's `vars`. If you changed public settings in the Cloudflare dashboard, copy those values into your source configuration before deploying. Keep `SESSION_SECRET` so encrypted operational records remain readable.
 
-After the 3.0 storage migration, recover by rolling forward to a compatible 3.x Worker and matching website bundle. A code rollback to 2.x is unsupported; retain operational records and follow [migration guidance](MIGRATION.md#rollout-and-recovery). Cloudflare's [version rollback mechanism](https://developers.cloudflare.com/workers/configuration/versions-and-deployments/rollbacks/) changes code, not stored data.
+Record the current Worker version and website revision before an update. If an update fails, restore a compatible service and website pair. Cloudflare's [version rollback mechanism](https://developers.cloudflare.com/workers/configuration/versions-and-deployments/rollbacks/) changes code, not stored data.
 
 ## Troubleshoot
 

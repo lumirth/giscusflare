@@ -48,4 +48,4 @@ Returning source observations cannot overwrite a newer complete local fact. Cano
 
 Native SQL cursor counters meter actual row work. HTTP calls are admitted against the configured allowance; SQL scheduling stops between bounded steps when its threshold is reached. Thresholds can overshoot by the final bounded step. The implementation has no prepaid per-operation row reservations, emergency global invalidation or legacy ranking migration. [Capacity](../FREE-TIER.md) records the measured workload and its limits.
 
-[Migration](MIGRATION.md), [API](API.md), [customization](EXTENDING.md) and [verification results](CONFIDENCE.md) describe adoption and evidence. The replacement ledger includes new contracts, consumers and verification support.
+[API](API.md), [customization](EXTENDING.md) and [verification results](CONFIDENCE.md) describe adoption and evidence. The replacement ledger includes new contracts, consumers and verification support.

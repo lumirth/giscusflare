@@ -2,7 +2,7 @@
 
 Version 3.0 replaces browser ownership, internal service transport and ranking persistence. Earlier release results establish historical behavior and workloads; they do not qualify this replacement. Follow [verification](https://github.com/lumirth/giscusflare/blob/main/TESTING.md) to reproduce the current checks.
 
-## Current candidate
+## Current verification
 
 The release commands produce receipts identifying the source commit/content hash, runtime, conditions and result. Inspect each receipt’s status rather than treating the presence of a file as a passing check:
 
@@ -17,7 +17,7 @@ GitHub is explicitly simulated in the native/browser receipts. Both use the prod
 
 The replacement removed DOM-identity and mutation-count proxies for native undo. Actual typing exposed failures despite stable editor nodes, and typing/undo/redo remains the oracle. Retiring a page, view or authentication flow must prevent late publication even when already-issued remote work completes. Check each receipt for the interleavings actually exercised; passing a happy-path journey alone does not establish those obligations.
 
-Local evidence does not establish production latency, CPU distributions, real GitHub permissions, fresh-account deployment, Firefox, Safari or physical iOS behavior. No v3 deployment is claimed here.
+Local evidence does not establish production latency, CPU distributions, real GitHub permissions, fresh-account deployment, Firefox, Safari or physical iOS behavior. These local receipts do not establish a deployed service.
 
 ## Historical observations
 

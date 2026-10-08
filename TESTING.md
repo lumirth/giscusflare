@@ -48,4 +48,4 @@ Include Safari, Firefox and physical iOS where available. Local Chromium/WebKit 
 
 ## Release evidence
 
-Record completed checks and their conditions in [verification results](docs/CONFIDENCE.md). Measure deployed CPU, duration and SQL usage using the [usage guide](FREE-TIER.md#check-your-deployment). Verify the extracted package in an independent website, then check the deployed assets and actual contribution flow after any authorized deployment. Version 3 uses fresh coordination namespaces; follow [migration instructions](docs/MIGRATION.md#rollout-and-rollback).
+Record completed checks and their conditions in [verification results](docs/CONFIDENCE.md). Measure deployed CPU, duration and SQL usage using the [usage guide](FREE-TIER.md#check-your-deployment). Verify the extracted package in an independent website, then check the deployed assets and actual contribution flow after any authorized deployment. Preserve deployment bindings, platform migration history and secrets across updates.

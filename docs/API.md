@@ -1,6 +1,6 @@
 # JavaScript API
 
-This reference describes the unreleased 3.0 API. Use `mountComments` for the default interface, `mountPresentation` for a custom interface, or `createConversation` to render comments in your own framework.
+This reference describes the public JavaScript and HTTP API. Use `mountComments` for the default interface, `mountPresentation` for a custom interface, or `createConversation` to render comments in your own framework.
 
 `createConversation` returns one page's conversation. Mounting returns an owner whose `conversation` property exposes its current page. The owner replaces and disposes pages; the conversation is the actual page model with browser capabilities attached.
 
@@ -76,7 +76,7 @@ The mount has no second state stream. A page subscription ends with that page. C
 
 `fetching` accepts `onFocus`, `onReconnect`, `staleAfterMs` and `replyPrefetch`. Defaults enable focus and reconnect refresh after 60 seconds, with five replies prefetched per root. Set `fetching: false` to disable automatic focus/reconnect refresh. `refresh()` remains available. The server's cache lifetime and reply limit still apply. An optional `bootstrap: { view, expires }` installs an unexpired anonymous `WindowPage` from the server without a second anonymous fetch.
 
-`draftRecovery` accepts `{ retentionMs, store }`, where `store` is an optional `DraftStore`. The default uses browser storage for five minutes. Set it to `false` to keep drafts only in memory. Version 3 stores whole contribution records, including text, editor and retry identity. Retry identities remain attached to their text. Version 2 protocol receipts are not imported or replayed. See [migration](MIGRATION.md).
+`draftRecovery` accepts `{ retentionMs, store }`, where `store` is an optional `DraftStore`. The default uses browser storage for five minutes. Set it to `false` to keep drafts only in memory. Version 3 stores whole contribution records, including text, editor and retry identity. Retry identities remain attached to their text.
 
 ## Document and owners
 
@@ -191,7 +191,3 @@ For comment counts beside posts on an index or archive page, request `/api/v3/co
 All comment, edit, delete, moderation and reaction effects use `POST /api/v3/contribute` with a service bearer capability. The request is `{ config, key, action, creation? }`; `action.type` selects `comment`, `edit`, `delete`, `moderate` or `reaction`. A comment has `body` and optional `replyToId`; an edit has `id` and `body`; a reaction has `id`, `reaction` and `add`; moderation has `id`, `minimized` and optional `reason`.
 
 The page owner manages receipt keys and serializes effect dispatch and adoption. A confirmed result contains `id`, discussion `number`, optional `parentId` and an optional canonical `patch`. The patch carries observed nodes, window changes and metadata. An observation failure does not turn a confirmed GitHub effect into a failed write or invent count changes. Preserve the same key when retrying unchanged intent; a new key represents a new effect. If the result is uncertain, inspect GitHub before intentionally creating another intent.
-
-## Migrating from 2.x
-
-Follow [the 3.0 upgrade guide](MIGRATION.md) for page/view ownership, declarative slots, explicit content lifetimes, new reading/contribution protocols and the fresh coordination namespace.

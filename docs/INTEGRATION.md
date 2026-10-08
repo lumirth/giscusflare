@@ -43,20 +43,13 @@ Strict matching searches for the identifier's hash in the discussion body. Numbe
 
 ## Native rendering
 
-The 3.0 API is currently an unreleased local candidate. Build and pack this checkout:
+Install the released browser package in your website project:
 
 ```sh
-npm run build
-npm pack
+npm install https://github.com/lumirth/giscusflare/releases/download/v3.0.0/giscusflare-3.0.0.tgz
 ```
 
-Install the resulting archive in your website project:
-
-```sh
-npm install /path/to/giscusflare/giscusflare-3.0.0.tgz
-```
-
-For an existing 2.x installation, follow the [3.0 migration table](API.md#migrating-from-2x) when updating your calls. Published 2.x archives remain available from [GitHub releases](https://github.com/lumirth/giscusflare/releases).
+[GitHub releases](https://github.com/lumirth/giscusflare/releases) contain the package archives. Use the same release for the service and your website.
 
 Add a container where comments should appear:
 
