@@ -169,14 +169,14 @@ try {
           await expect.poll(async () => (await textarea.boundingBox()).height).toBeGreaterThan(compactHeight + 40);
           await textarea.fill('A contribution with native undo');
           await expect.poll(async () => (await textarea.boundingBox()).height).toBeLessThanOrEqual(compactHeight + 2);
-          await textarea.scrollIntoViewIfNeeded();
+          await textarea.evaluate(element => element.scrollIntoView({ block: 'center' }));
           const box = await textarea.boundingBox();
           await page.mouse.move(box.x + box.width - 4, box.y + box.height - 4);
           await page.mouse.down();
           await page.mouse.move(box.x + box.width - 4, box.y + box.height + 70, { steps: 8 });
           await page.mouse.up();
+          await expect.poll(async () => (await textarea.boundingBox()).height, { message: engineName + ' ' + mode + ' manual resize from ' + JSON.stringify(box) }).toBeGreaterThan(box.height + 40);
           const chosenHeight = (await textarea.boundingBox()).height;
-          assert.ok(chosenHeight > box.height + 40, engineName + ' ' + mode + ' reader can resize the actual editor');
           await textarea.click(); await textarea.press('End');
           await page.keyboard.type(' and manual resizing');
           await expect(textarea).toHaveValue('A contribution with native undo and manual resizing');
