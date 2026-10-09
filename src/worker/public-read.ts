@@ -23,7 +23,7 @@ export async function publicRead(c:Context<AppEnv>, input:{repo:string;origin:st
   const respond=async()=>{
     const {value,expires} = await read(), response = render(value,expires);
     const remaining = Math.max(0, Math.floor((expires - Date.now()) / 1000));
-    response.headers.set('Cache-Control', remaining?'public, max-age=' + remaining : 'no-store');
+    response.headers.set('Cache-Control', remaining && !fresh ? 'public, max-age=' + remaining : 'no-store');
     response.headers.set('X-Giscusflare-Expires', String(expires));
     return response;
   };

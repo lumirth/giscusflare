@@ -75,7 +75,9 @@ try {
     const measureCounts = async (label,target=rootTarget('article'),expected=service.github.discussions[0].comments.length) => {
       await service.restart();
       const before = service.github.calls.length, started = performance.now();
-      const value = await json(await read('counts', { ...countInput, targets:[target], fresh: true }));
+      const response = await read('counts', { ...countInput, targets:[target], fresh: true });
+      assert.equal(response.headers.get('Cache-Control'),'no-store','Explicit fresh observations cannot be reused by the browser HTTP cache');
+      const value = await json(response);
       const operations = service.github.calls.slice(before);
       assert.equal(value.observations[countKey(target)].count, expected);
       assert.equal(operations.filter(call => call.operation === 'CommentCounts').length, 1);
@@ -105,7 +107,9 @@ try {
     assert.equal(unknownPeers.observations[countKey(warmReply)].count,warmParent.replies.length);
     assert.equal(unknownPeers.observations[countKey(foreignReply)],undefined,'A parent from another canonical discussion cannot publish a reply count');
     assert.equal(unknownPeers.errors[countKey(foreignReply)].code,'PERMISSION','A foreign parent fails locally without discarding its valid peers');
-    const mixed = await json(await read('counts', { ...countInput, targets: [rootTarget('article'), rootTarget('missing')] }));
+    const mixedResponse = await read('counts', { ...countInput, targets: [rootTarget('article'), rootTarget('missing')] });
+    assert.match(mixedResponse.headers.get('Cache-Control'),/^public, max-age=\d+$/,'Ordinary public observations remain reusable within their original deadline');
+    const mixed = await json(mixedResponse);
     assert.equal(mixed.observations[articleKey].count, service.github.discussions[0].comments.length, 'The mixed provider query returns the actual resolved count independently of missing selections');
     assert.equal(mixed.observations[missingKey].count, 0);
     const beforeReuse = service.github.calls.length;
