@@ -6,7 +6,7 @@ import { browserWritingStore, type WritingRecovery } from './writing-store.js';
 import { type SavedWriting, type Writing } from '../conversation/writing.js';
 import { PageModel, type CommentOrder } from '../conversation/page.js';
 import { conversationSettings, type Page, type Appearance } from './options.js';
-import { BrowserSession, type Login, type SessionHost } from './session.js';
+import { BrowserSession, type DisplayProfile, type Login, type SessionHost } from './session.js';
 import { createContentOwner, type ContentProfile, type ContentOwner } from './content.js';
 import { selection } from '../contracts/selection.js';
 import type { WindowPage } from '../contracts/document.js';
@@ -53,6 +53,7 @@ export interface WritingRestoration {
 /** The same initialization event is used by native hosts and the iframe adapter. */
 export interface ConversationInitialization {
   session?: string;
+  displayProfile?: DisplayProfile | null;
   handoff?: Login;
   fetching?: Partial<FetchPolicy> | false;
   writing?: WritingRestoration;
@@ -101,7 +102,7 @@ export function createConversation(options: ConversationOptions): Conversation {
   if (options.writingRecovery === false) recovered();
   const host: ConversationHost = options.host || persistence!;
   const session = new BrowserSession(options.service, settings.page, host, change => {
-    if (change === 'identity') page.changeIdentity();
+    if (change === 'identity') { page.changeIdentity();void page.refreshViewer(true); }
     else if (change === 'verified') { page.notify();void page.refreshViewer(true); }
     else page.notify();
   }, lifetime.signal);
@@ -190,6 +191,7 @@ export function createConversation(options: ConversationOptions): Conversation {
         recovered();page.notify();
       }
       if (data.session !== undefined) session.setSession(data.session);
+      if (data.displayProfile) void session.restoreDisplayProfile(data.displayProfile);
       if (data.handoff) void session.adopt(data.handoff);
       if (!page.acquisition() && !page.ready) void page.start();
     },
@@ -215,9 +217,16 @@ export function createConversation(options: ConversationOptions): Conversation {
     document.addEventListener('visibilitychange', fresh, events);
     window.addEventListener('pagehide', flushWriting, events);
     if (persistence) {
-      window.addEventListener('storage', event => { if (event.key === persistence.sessionKey) session.setSession(persistence.session(event.newValue));else if (event.key?.startsWith(persistence.writingPrefix)) page.notify(); }, events);
+      window.addEventListener('storage', event => {
+        if (event.key === persistence.sessionKey) {
+          const token = persistence.session(event.newValue);session.setSession(token);
+          if (token) void persistence.displayProfile(token).then(displayProfile => { if (displayProfile && !lifetime.signal.aborted && persistence.session() === token) void session.restoreDisplayProfile(displayProfile); }).catch(() => {});
+        } else if (event.key?.startsWith(persistence.writingPrefix)) page.notify();
+      }, events);
       const returned = persistence.returning();
       page.initialize({session: persistence.session(), handoff: returned?.handoff, position: returned?.position});
+      const token = persistence.session();
+      if (token) void persistence.displayProfile(token).then(displayProfile => { if (displayProfile && !lifetime.signal.aborted && persistence.session() === token) page.initialize({displayProfile}); }).catch(() => {});
       void persistence.recover().then(state => { if (!lifetime.signal.aborted) page.initialize({writing: state});else recovered(); }, cause => { recoveryError = cause instanceof Error ? cause.message : 'Unable to restore writing.';recovered();page.notify(); });
     }
   } catch (error) { try { page.dispose(); } finally { throw error; } }

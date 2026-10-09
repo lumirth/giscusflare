@@ -3,7 +3,7 @@ import {hostStorage} from './host-storage.js';
 import {browserWritingStore} from './writing-store.js';
 import {fetchPolicy} from '../conversation/fetch-policy.js';
 import {conversationSettings} from './options.js';
-import {validLogin} from './session.js';
+import {validDisplayProfile,validLogin} from './session.js';
 import {recoveredWriting} from '../conversation/writing.js';
 import type {ConversationInitialization} from './runtime.js';
 (() => {
@@ -59,6 +59,8 @@ import type {ConversationInitialization} from './runtime.js';
       }
       const generation = ++initialization, returning = handoff;handoff = undefined;
       initialize({session: persistence.session(), fetching, handoff: returning, ...(composer ? {position: {composer}} : {})});composer = undefined;
+      const token = persistence.session();
+      if (token) void persistence.displayProfile(token).then(displayProfile => { if (displayProfile && !lifetime.signal.aborted && generation === initialization && persistence.session() === token) initialize({displayProfile}); }).catch(() => {});
       void persistence.recover().then(writing => {
         if (!lifetime.signal.aborted && generation === initialization) initialize({writing,availableWriting:persistence.records()});
       }).catch(cause => {
@@ -67,6 +69,10 @@ import type {ConversationInitialization} from './runtime.js';
     }
     if (typeof message.resizeHeight === 'number' && Number.isFinite(message.resizeHeight)) frame.style.height = `${Math.min(100000, Math.max(80, Math.ceil(message.resizeHeight)))}px`;
     if (typeof message.session === 'string') persistence.saveSession(message.session);
+    if (message.displayProfile && typeof message.displayProfile === 'object') {
+      const value = message.displayProfile as {fingerprint?: unknown; profile?: unknown};
+      if (typeof value.fingerprint === 'string' && validDisplayProfile(value.profile)) void persistence.saveDisplayProfile(value.fingerprint, value.profile).catch(() => {});
+    }
     if (message.clearPending === true || typeof message.clearPending === 'string') persistence.clearPending(message.clearPending === true ? undefined : message.clearPending);
     if (validLogin(message.pending)) { const pending = message.pending as import('./session.js').Login & {composer?: unknown};persistence.pendingLogin({...pending,composer:typeof pending.composer === 'string' ? pending.composer : undefined}); }
     if (Array.isArray(message.writingSelected) && message.writingSelected.every(id => typeof id === 'string')) persistence.selectWriting(message.writingSelected);
@@ -86,7 +92,10 @@ import type {ConversationInitialization} from './runtime.js';
     if (Object.hasOwn(message, 'discussion')) host?.dispatchEvent(new CustomEvent('giscus', {detail: message}));
   };
   const storage = (event: StorageEvent) => {
-    if (event.key === persistence.sessionKey) initialize({session: persistence.session(event.newValue)});
+    if (event.key === persistence.sessionKey) {
+      const token = persistence.session(event.newValue);initialize({session: token});
+      if (token) void persistence.displayProfile(token).then(displayProfile => { if (displayProfile && !lifetime.signal.aborted && persistence.session() === token) initialize({displayProfile}); }).catch(() => {});
+    }
     else if (event.key?.startsWith(persistence.writingPrefix)) initialize({availableWriting: persistence.records()});
   };
   window.addEventListener('message', handler);window.addEventListener('storage', storage);

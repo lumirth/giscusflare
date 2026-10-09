@@ -1,6 +1,7 @@
 import { scopedStorage, storageNamespace, writingIdentity } from './storage.js';
 import type { WritingStore } from './writing-store.js';
-import { validLogin, type Login } from './session.js';
+import { validDisplayProfile, validLogin, type DisplayProfile, type Login } from './session.js';
+import type { Person } from '../contracts/document.js';
 import { challenge } from './dom.js';
 import { writingTargetKey, type SavedWriting } from '../conversation/writing.js';
 type Pending = Login & { fragment?: string; scroll?: number; composer?: string };
@@ -67,6 +68,15 @@ export function hostStorage(service: string, repo: string, recovery: WritingStor
   };
   return {
     sessionKey: prefix + 'session', session,
+    async displayProfile(token = session()): Promise<DisplayProfile | null> {
+      if (!token) return null;
+      const fingerprint = await challenge(token), value = read('profile', true) as {fingerprint?: unknown; profile?: unknown} | null;
+      return session() === token && value?.fingerprint === fingerprint && validDisplayProfile(value.profile) ? {fingerprint, profile:value.profile} : null;
+    },
+    async saveDisplayProfile(fingerprint: string, profile: Person): Promise<void> {
+      const token = session();
+      if (token && validDisplayProfile(profile) && await challenge(token) === fingerprint && session() === token && !controller.signal.aborted) write('profile', {fingerprint, profile}, true);
+    },
     get writingPrefix() { return scope() + ':record:'; },
     get error() { return [...retentionErrors.values()][0] || error; },
     usePage(page: Parameters<typeof writingIdentity>[0]) {
@@ -87,7 +97,7 @@ export function hostStorage(service: string, repo: string, recovery: WritingStor
       if (signal.aborted || key !== scope()) return { records: [], selected: [] };
       return { records: writingRecords, selected: selected.filter(id => owned.has(id)) };
     },
-    saveSession(value: string) { write('session', value || null, true); },
+    saveSession(value: string) { if (session() !== value || !value) write('profile', null, true);write('session', value || null, true); },
     selectWriting(ids: readonly string[]) { write(hintKey(), ids); },
     saveWriting(record: SavedWriting) { if (recovery && !controller.signal.aborted) retain(record); },
     removeWriting(id: string) {
