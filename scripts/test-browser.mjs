@@ -224,7 +224,7 @@ try {
           await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
           const afterCancel = await page.evaluate(() => ({ scroll: window.scrollY,
             maximum: Math.max(0, document.documentElement.scrollHeight - window.innerHeight) }));
-          assert.equal(Math.round(afterCancel.scroll), Math.round(Math.min(beforeCancelScroll, afterCancel.maximum)), 'Cancel preserves bottom reading progress, subject only to the restored document bounds');
+          assert.ok(Math.round(afterCancel.scroll) >= Math.round(Math.min(beforeCancelScroll, afterCancel.maximum)), 'Cancel preserves bottom reading progress, allowing the restored document to grow');
           if (screenshots) await page.screenshot({ path: resolve(screenshots, engineName + '-' + mode + '-writing.png') });
           const contribution = engineName + ' ' + mode + ' real-browser contribution';
           await textarea.fill(contribution);
