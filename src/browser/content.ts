@@ -109,7 +109,10 @@ function installContent(target: HTMLElement, renderer: ContentRenderer, options:
         failing = true;
         current.abort(); target.removeAttribute('aria-busy');
         if (!retained) lifetime.abort();
-        if (!view) { target.textContent = next.markdown; publishReady(true); }
+        if (!view) {
+          const source = document.createElement('div'); source.style.whiteSpace = 'pre-wrap'; source.style.overflowWrap = 'anywhere';
+          source.textContent = next.markdown; target.replaceChildren(source); publishReady(true);
+        }
         const status = failure = document.createElement('div'); status.className = 'giscus-content-recovery'; status.setAttribute('role', 'status');
         const reload = cause instanceof ResourceMismatch;
         status.append(document.createTextNode(reload ? 'Content resources changed. Reload this page to continue. ' : 'Formatted content could not load. '));
