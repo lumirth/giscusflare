@@ -211,20 +211,34 @@ try {
           assert.equal(focus.focusVisible && ((parseFloat(focus.outlineWidth)>0 && focus.outlineStyle!=='none') || focus.boxShadow!=='none'),true,engineName+' '+mode+' visible keyboard focus '+JSON.stringify(focus));
           assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false, engineName + ' ' + mode + ' overflow');
           assert.equal(await textarea.evaluate(element => element.ownerDocument.documentElement.scrollWidth > element.ownerDocument.defaultView.innerWidth), false, engineName + ' ' + mode + ' comments overflow');
-          const richComment = surface.getByRole('article').filter({ has: surface.getByText('Hono', { exact: true }) });
+          const richCommentID = await surface.getByRole('article').filter({ has: surface.getByText('Hono', { exact: true }) }).getAttribute('id');
+          const richComment = surface.locator('[id="' + richCommentID + '"]');
           await richComment.locator('.gsc-actions > summary').click();
           await richComment.getByRole('button', { name: 'Edit', exact: true }).click();
           const cancelEdit = richComment.getByRole('button', { name: 'Cancel', exact: true });
           await expect(cancelEdit).toBeVisible();
           await cancelEdit.focus();
-          await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-          const beforeCancelScroll = await page.evaluate(() => window.scrollY);
+          await richComment.evaluate(card => {
+            const document = card.ownerDocument, view = document.defaultView, heights = [], id = card.id;
+            const sample = () => heights.push(document.getElementById(id)?.getBoundingClientRect().height || 0);
+            const observer = new view.MutationObserver(sample);
+            observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+            let frame;
+            const paint = () => { sample(); frame = view.requestAnimationFrame(paint); };
+            sample(); frame = view.requestAnimationFrame(paint);
+            view.__cancelGeometry = () => {
+              observer.disconnect(); view.cancelAnimationFrame(frame); sample();
+              return { minimum: Math.min(...heights), heights };
+            };
+          });
           await cancelEdit.press('Enter');
           await expect(richComment.getByText('Hono', { exact: true })).toBeVisible();
-          await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-          const afterCancel = await page.evaluate(() => ({ scroll: window.scrollY,
-            maximum: Math.max(0, document.documentElement.scrollHeight - window.innerHeight) }));
-          assert.ok(Math.round(afterCancel.scroll) >= Math.round(Math.min(beforeCancelScroll, afterCancel.maximum)), 'Cancel preserves bottom reading progress, allowing the restored document to grow');
+          await richComment.evaluate(card => new Promise(resolve => card.ownerDocument.defaultView.requestAnimationFrame(() => card.ownerDocument.defaultView.requestAnimationFrame(resolve))));
+          const canceledGeometry = await richComment.evaluate(card => {
+            const view = card.ownerDocument.defaultView, result = view.__cancelGeometry();
+            delete view.__cancelGeometry; return result;
+          });
+          assert.ok(canceledGeometry.minimum > 0, engineName + ' ' + mode + ' Cancel keeps its published card in the reading layout: ' + JSON.stringify(canceledGeometry));
           if (screenshots) await page.screenshot({ path: resolve(screenshots, engineName + '-' + mode + '-writing.png') });
           const contribution = engineName + ' ' + mode + ' real-browser contribution';
           await textarea.fill(contribution);
