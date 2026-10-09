@@ -64,13 +64,11 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
       if (!scope.signal.aborted) runtime.interactions.focus(runtime.writing({kind:'reply',id}).show().id);
     };
       function content(c: Comment, reply: boolean) {
-        const t = strings(runtime.appearance.lang);
-        return html` ${
-          runtime.activeWriting({ kind: 'edit', id: c.id })?.open
-            ? composer(runtime.writing({kind:'edit',id:c.id}))
-            : html`<div
+        const t = strings(runtime.appearance.lang), editing = Boolean(runtime.activeWriting({ kind: 'edit', id: c.id })?.open);
+        return html`${editing ? composer(runtime.writing({kind:'edit',id:c.id})) : nothing}<div
                 dir="auto"
                 class=${(reply ? "gsc-reply-content" : "gsc-comment-content") + (c.isMinimized ? " minimized" : "")}
+                ?hidden=${editing}
               >
                 ${
                   c.deletedAt
@@ -86,8 +84,7 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
                         </details>`
                       : body(context, c)
                 }
-              </div>`
-        }`;
+              </div>`;
       }
       const displayable = (c: Comment) => Boolean(c.deletedAt || c.isMinimized ||
         runtime.activeWriting({ kind: 'edit', id: c.id })?.open || readable.has(c.id));
