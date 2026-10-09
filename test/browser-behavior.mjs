@@ -1,7 +1,194 @@
 import assert from 'node:assert/strict';
 
+async function cachedIdentityBehavior({ browser, service, blog, report, capability }) {
+  const { expect } = await import(process.env.PLAYWRIGHT_MODULE || '@playwright/test');
+  for (const mode of ['native', 'iframe']) for (const ordering of ['access-first', 'session-first']) {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const page = await context.newPage(), errors = [], holds = [], accountObservations = [];
+    const clientIP = '192.0.2.' + ((browser.browserType().name() === 'chromium' ? 182 : 186) + (mode === 'iframe' ? 2 : 0) + (ordering === 'session-first' ? 1 : 0));
+    let returningCapability;
+    await context.route(service + '/api/v7/**', route => route.continue({ headers: { ...route.request().headers(), 'CF-Connecting-IP': clientIP } }));
+    await context.route(service + '/auth/**', route => route.continue({ headers: { ...route.request().headers(), 'CF-Connecting-IP': clientIP } }));
+    await context.route(service + '/__demo/authorize?*', route => route.continue({ headers: { ...route.request().headers(), 'CF-Connecting-IP': clientIP } }));
+    await context.addInitScript(() => {
+      window.cachedIdentityInitializations = [];
+      window.cachedIdentityMessages = [];
+      window.addEventListener('message', event => {
+        const message = event.data?.giscus, init = message?.init;
+        if (init) window.cachedIdentityMessages.push({ at: Date.now(), init: { hasSession: Object.hasOwn(init, 'session'), signedIn: Boolean(init.session), handoff: Boolean(init.handoff), display: init.displayProfile?.profile?.login ?? null } });
+        if (typeof message?.session === 'string') window.cachedIdentityMessages.push({ at: Date.now(), savedSession: Boolean(message.session) });
+        if (event.source === parent && init && Object.hasOwn(init, 'displayProfile')) window.cachedIdentityInitializations.push(init.displayProfile?.profile?.login ?? null);
+      });
+      window.cachedIdentityMetadata = [];
+      document.addEventListener('giscus', event => { if (Object.hasOwn(event.detail, 'viewer')) window.cachedIdentityMetadata.push(event.detail.viewer?.login ?? null); }, true);
+    });
+    page.on('pageerror', error => errors.push(error.message));
+    page.on('request', request => {
+      const path = new URL(request.url()).pathname;
+      if (path === '/api/v7/session') returningCapability = request.headers().authorization?.slice(7);
+      if (['session', 'access', 'identity', 'logout', 'auth/prepare'].some(operation => path === '/api/v7/' + operation)) accountObservations.push({ path, request: true, authenticated: Boolean(request.headers().authorization) });
+    });
+    page.on('response', response => { const path = new URL(response.url()).pathname;if (['session', 'access', 'identity', 'logout', 'auth/prepare'].some(operation => path === '/api/v7/' + operation)) accountObservations.push({ path, status: response.status() }); });
+    const hold = async (pattern, failure = '') => {
+      let release;
+      const gate = new Promise(resolve => { release = resolve; });
+      const held = { arrived: 0, release };holds.push(held);
+      await context.route(service + pattern, async route => {
+        const response = await route.fetch({ headers: { ...route.request().headers(), 'CF-Connecting-IP': clientIP } });
+        assert.equal(response.ok(), true, 'The held account/public observation comes from the real local service');
+        held.arrived++;await gate;
+        if (failure) await route.fulfill({ status: 503, contentType: 'application/json', json: { error: { message: failure, code: 'UNAVAILABLE' } } });
+        else await route.fulfill({ response });
+      });
+      return held;
+    };
+    const nativeName = async () => page.evaluate(() => {
+      const owner = window.demoComments.conversation;
+      const output = document.createElement('output');output.id = 'cached-account-name';document.body.append(output);
+      const draw = () => { output.textContent = owner.session.displayProfile?.login ?? 'Guest'; };
+      owner.own(owner.subscribe(draw));draw();
+    });
+    try {
+      const path = mode === 'native' ? '/native' : '/article';
+      await page.goto(blog + path);
+      const surface = mode === 'native' ? page : page.frameLocator('iframe.giscus-frame');
+      const composer = surface.locator('[data-composer="main"]');
+      await composer.getByRole('button', { name: 'Sign in with GitHub', exact: true }).click();
+      await composer.getByRole('button', { name: 'Sign out', exact: true }).waitFor();
+      if (mode === 'native') await expect.poll(() => page.evaluate(() => window.demoComments.conversation.session.viewer?.login)).toBe('reader');
+      else await expect.poll(() => page.evaluate(() => window.cachedIdentityMetadata.includes('reader'))).toBe(true);
+      await expect.poll(() => Boolean(returningCapability)).toBe(true);
+      await surface.getByText('Try posting a comment or replying here.', { exact: true }).waitFor();
+      const session = await hold('/api/v7/session', ordering === 'access-first' ? 'Session profile temporarily unavailable' : '');
+      const access = await hold('/api/v7/access', ordering === 'session-first' ? 'Account observation temporarily unavailable' : '');
+      const publicPage = mode === 'native' ? await hold('/api/v7/page?*') : undefined;
+      await page.reload();
+      if (mode === 'native') await nativeName();
+      await expect.poll(() => session.arrived).toBeGreaterThan(0);
+      if (publicPage) {
+        await expect.poll(() => publicPage.arrived).toBeGreaterThan(0);
+        assert.equal(access.arrived, 0, 'Account startup waits for a public target, not an unverified cached identity');
+        publicPage.release();
+      }
+      await surface.getByText('Try posting a comment or replying here.', { exact: true }).waitFor();
+      await expect.poll(() => access.arrived, { message: mode + ' access starts while session proof is held' }).toBeGreaterThan(0);
+      if (mode === 'native') {
+        await expect(page.locator('#cached-account-name')).toHaveText('reader');
+        assert.deepEqual(await page.evaluate(() => {
+          const owner = window.demoComments.conversation;
+          return { principal: owner.session.principal, profile: owner.session.viewer, account: owner.viewer, composition: owner.composition.status };
+        }), { principal: null, profile: null, account: null, composition: 'sign-in' }, 'Cached display identity provides no principal, verified viewer or account permissions');
+      } else {
+        await expect.poll(() => surface.locator('.giscusflare').evaluate(() => window.cachedIdentityInitializations.includes('reader'))).toBe(true);
+        assert.equal(await page.evaluate(() => window.cachedIdentityMetadata.some(login => login !== null)), false, 'Iframe cached display initialization never publishes a verified viewer');
+      }
+      await composer.locator('textarea').fill('Cached identity cannot authorize this writing');
+      await expect(composer.locator('button[type="submit"]')).toBeDisabled();
+      const reading = await surface.getByRole('article').evaluateAll(nodes => nodes.map(node => ({ id: node.id, text: node.querySelector('.gsc-comment-content,.gsc-reply-content')?.textContent, hidden: node.hidden })));
+      if (ordering === 'access-first') {
+        access.release();
+        await expect(composer.locator('button[type="submit"]')).toBeEnabled();
+        if (mode === 'native') {
+          assert.equal(await page.evaluate(() => Boolean(window.demoComments.conversation.session.principal && window.demoComments.conversation.viewer)), true, 'Access independently establishes principal and account facts');
+          assert.equal(await page.evaluate(() => window.demoComments.conversation.session.viewer), null, 'Access proof alone cannot verify the cached display profile');
+        } else assert.equal(await page.evaluate(() => window.cachedIdentityMetadata.some(login => login !== null)), false, 'Access-first iframe metadata still has no verified display profile');
+        session.release();
+        await expect(surface.getByRole('alert').filter({ hasText: 'Session profile temporarily unavailable' }).first()).toBeVisible();
+        await expect(composer.locator('button[type="submit"]')).toBeEnabled();
+        if (mode === 'native') await expect(page.locator('#cached-account-name')).toHaveText('reader');
+      } else {
+        session.release();
+        if (mode === 'native') {
+          await expect.poll(() => page.evaluate(() => window.demoComments.conversation.session.viewer?.login)).toBe('reader');
+          assert.equal(await page.evaluate(() => window.demoComments.conversation.viewer), null, 'Session-first display proof cannot manufacture held account permissions');
+        } else await expect.poll(() => page.evaluate(() => window.cachedIdentityMetadata.includes('reader'))).toBe(true);
+        access.release();
+        await expect(surface.getByRole('alert').filter({ hasText: 'Account observation temporarily unavailable' }).first()).toBeVisible();
+      }
+      assert.deepEqual(await surface.getByRole('article').evaluateAll(nodes => nodes.map(node => ({ id: node.id, text: node.querySelector('.gsc-comment-content,.gsc-reply-content')?.textContent, hidden: node.hidden }))), reading, 'Independent session/account failure preserves every readable public comment and its position');
+      assert.equal(await composer.locator('textarea').inputValue(), 'Cached identity cannot authorize this writing', 'Independent account failure preserves native writing');
+      for (const held of holds) held.release();
+      await context.unroute(service + '/api/v7/session');
+      await context.unroute(service + '/api/v7/access');
+      if (publicPage) await context.unroute(service + '/api/v7/page?*');
+      if (mode === 'native' && ordering === 'session-first') await retiredIdentityBehavior({ page, context, service, capability, returningCapability, expect, clientIP });
+      else await Promise.all([page.waitForResponse(response => new URL(response.url()).pathname === '/api/v7/logout'), composer.getByRole('button', { name: 'Sign out', exact: true }).click()]);
+      await composer.getByRole('button', { name: 'Sign in with GitHub', exact: true }).waitFor();
+      await page.reload();
+      if (mode === 'native') { await nativeName();await expect(page.locator('#cached-account-name')).toHaveText('Guest'); }
+      else {
+        await composer.getByRole('button', { name: 'Sign in with GitHub', exact: true }).waitFor();
+        assert.equal(await surface.locator('.giscusflare').evaluate(() => window.cachedIdentityInitializations.includes('reader')), false, 'Iframe sign-out remount cannot revive the retired cached name');
+      }
+      assert.deepEqual(errors, [], 'Controlled cached identity page errors');
+      report.checks.push({ engine: browser.browserType().name(), workflow: mode + ' cached identity without authority, ' + ordering + ' startup and public failure isolation', status: 'passed' });
+      console.log('PASS', browser.browserType().name(), mode, 'cached identity', ordering);
+    } catch (error) {
+      const surface = mode === 'native' ? page : page.frameLocator('iframe.giscus-frame');
+      console.error(JSON.stringify({ engine: browser.browserType().name(), mode, ordering, accountObservations,
+        host: await page.evaluate(() => ({ metadata: window.cachedIdentityMetadata, hints: window.cachedIdentityInitializations, messages: window.cachedIdentityMessages })).catch(() => null),
+        surface: await surface.locator('.giscusflare').evaluate(element => ({ alerts: [...element.querySelectorAll('[role="alert"]')].map(alert => alert.textContent), placeholder: element.querySelector('textarea')?.placeholder, disabled: element.querySelector('textarea')?.disabled, hints: window.cachedIdentityInitializations, messages: window.cachedIdentityMessages })).catch(() => null) }, null, 2));
+      throw error;
+    } finally {
+      for (const held of holds) held.release();
+      await context.close();
+    }
+  }
+}
+
+async function retiredIdentityBehavior({ page, context, service, capability, returningCapability, expect, clientIP }) {
+  const held = [], saves = [];
+  for (const operation of ['session', 'access']) await context.route(service + '/api/v7/' + operation, async route => {
+    const response = await route.fetch({ headers: { ...route.request().headers(), 'CF-Connecting-IP': clientIP } });
+    assert.equal(response.ok(), true, 'Retirement exercises real successful identity/account observations');
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    const observation = { old: route.request().headers().authorization === 'Bearer ' + capability, release, completed: false };held.push(observation);
+    await gate;await route.fulfill({ response });observation.completed = true;
+  });
+  await page.exposeFunction('retainedIdentityProfile', login => { saves.push(login); });
+  try {
+    await page.evaluate(async ({ capability, returningCapability }) => {
+      const mounted = window.demoComments, owner = mounted.conversation;
+      const output = document.createElement('output');output.id = 'retired-account-name';document.body.append(output);
+      const remember = owner.session.host.saveDisplayProfile;
+      owner.session.host.saveDisplayProfile = (fingerprint, profile) => { void window.retainedIdentityProfile(profile.login);return remember?.(fingerprint, profile); };
+      const draw = () => { output.textContent = owner.session.displayProfile?.login ?? 'Guest'; };
+      owner.own(owner.subscribe(draw));
+      const hint = async (token, login) => ({ fingerprint: btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token))))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''), profile: { login, url: 'https://github.com/reader', avatarUrl: '' } });
+      const oldHint = await hint(capability, 'Old cached identity'), newHint = await hint(returningCapability, 'New cached identity');
+      owner.initialize({ session: capability, displayProfile: oldHint });draw();
+      window.retiredIdentity = { owner, oldHint, newHint };
+    }, { capability, returningCapability });
+    await expect.poll(() => held.filter(value => value.old).length).toBe(2);
+    await page.getByText('Try posting a comment or replying here.', { exact: true }).waitFor();
+    const reading = await page.getByRole('article').evaluateAll(nodes => nodes.map(node => ({ id: node.id, text: node.querySelector('.gsc-comment-content,.gsc-reply-content')?.textContent, hidden: node.hidden })));
+    await page.evaluate(returningCapability => { const { owner, newHint } = window.retiredIdentity;owner.initialize({ session: returningCapability, displayProfile: newHint }); }, returningCapability);
+    await expect.poll(() => held.filter(value => !value.old).length).toBe(2);
+    await expect(page.locator('#retired-account-name')).toHaveText('New cached identity');
+    await page.evaluate(async () => { const { owner, oldHint } = window.retiredIdentity;owner.initialize({ displayProfile: oldHint });await owner.session.restoreDisplayProfile(oldHint); });
+    for (const observation of held.filter(value => value.old)) observation.release();
+    await expect.poll(() => held.filter(value => value.old).every(value => value.completed)).toBe(true);
+    await expect(page.locator('#retired-account-name')).toHaveText('New cached identity');
+    assert.deepEqual(await page.evaluate(() => { const { owner } = window.retiredIdentity;return { principal: owner.session.principal, profile: owner.session.viewer, account: owner.viewer }; }), { principal: null, profile: null, account: null }, 'Late session/access from the former identity cannot prove or grant access to the new identity');
+    assert.deepEqual(saves, [], 'Late former-identity profile cannot reach the host cache');
+    await page.evaluate(() => window.retiredIdentity.owner.session.signOut());
+    for (const observation of held.filter(value => !value.old)) observation.release();
+    await expect.poll(() => held.every(value => value.completed)).toBe(true);
+    await expect(page.locator('#retired-account-name')).toHaveText('Guest');
+    assert.deepEqual(await page.evaluate(() => { const { owner } = window.retiredIdentity;return { signedIn: owner.session.signedIn, principal: owner.session.principal, profile: owner.session.viewer, account: owner.viewer }; }), { signedIn: false, principal: null, profile: null, account: null }, 'Late successful session/access cannot revive a signed-out identity');
+    assert.deepEqual(saves, [], 'Late signed-out profile cannot repopulate the host cache');
+    assert.deepEqual(await page.getByRole('article').evaluateAll(nodes => nodes.map(node => ({ id: node.id, text: node.querySelector('.gsc-comment-content,.gsc-reply-content')?.textContent, hidden: node.hidden }))), reading, 'Identity switching and sign-out preserve every readable public comment and its position');
+  } finally {
+    for (const observation of held) observation.release();
+    await context.unroute(service + '/api/v7/session');
+    await context.unroute(service + '/api/v7/access');
+  }
+}
+
 /** Custom consumers and content run against the same native service as the embedding journey. */
 export async function browserBehavior({ browser, service, blog, report, capability }) {
+  await cachedIdentityBehavior({ browser, service, blog, report, capability });
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
   await page.context().route(service + '/api/v7/**', route => route.continue({headers:{...route.request().headers(),'CF-Connecting-IP':browser.browserType().name()==='chromium'?'192.0.2.180':'192.0.2.181'}}));
   const errors = [], providerPreviews = [], contentReads = [], countReads = [];

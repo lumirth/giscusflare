@@ -2,7 +2,7 @@
 import {assetURL} from '../contracts/protocol.js';
 import {mountComments, conversationSettings} from './native.js';
 import type {ConversationInitialization} from './runtime.js';
-import {validLogin} from './session.js';
+import {validDisplayProfileHint,validLogin} from './session.js';
 import {recoveredWriting, type SavedWriting} from '../conversation/writing.js';
 import type {Widget} from '../contracts/requests.js';
 import {isNamedTheme} from '../themes.js';
@@ -19,6 +19,7 @@ const mounted = mountComments(target, {
   service: location.origin, ...conversationSettings(raw, raw), bootstrap, order: defaultCommentOrder,
   ...(embedded ? {host: {
     saveSession: (session: string) => emit({session}),
+    saveDisplayProfile: (fingerprint: string, profile: import('../contracts/document.js').Person) => emit({displayProfile:{fingerprint,profile}}),
     clearPending: (attempt?: string) => emit({clearPending:attempt ?? true}),
     pendingLogin: (pending: import('./session.js').Login) => emit({pending:{...pending,composer:mounted.conversation.interactions.active}}),
     saveWriting: (writingRecord: SavedWriting) => emit({writingRecord}),
@@ -49,6 +50,7 @@ const receive = (event: MessageEvent) => {
   if (data.init && typeof data.init === 'object') {
     const raw = data.init as Record<string,unknown>, init:ConversationInitialization = {};
     if (typeof raw.session === 'string') init.session = raw.session;
+    if (validDisplayProfileHint(raw.displayProfile)) init.displayProfile = raw.displayProfile;
     if (validLogin(raw.handoff)) init.handoff = raw.handoff;
     if (typeof raw.loginError === 'string') init.loginError = raw.loginError;
     if (raw.fetching === false || raw.fetching && typeof raw.fetching === 'object') init.fetching = raw.fetching as ConversationInitialization['fetching'];

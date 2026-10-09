@@ -33,7 +33,7 @@ The website origin authorizes embedding. The canonical page URL resolves relativ
 Install an archive from the chosen [release](https://github.com/lumirth/giscusflare/releases), commit its lockfile and use the matching service version:
 
 ```sh
-npm install https://github.com/lumirth/giscusflare/releases/download/v7.0.0/giscusflare-7.0.0.tgz
+npm install https://github.com/lumirth/giscusflare/releases/download/v7.0.1/giscusflare-7.0.1.tgz
 ```
 
 ```html

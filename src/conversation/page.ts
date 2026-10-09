@@ -166,7 +166,7 @@ export class PageModel {
         if (conflicted) void this.refreshViewer(false,[...ids]);
     }
     async refreshViewer(missingOnly = false, observedIds?: string[]): Promise<void> {
-        if (!this.#principal() || !this.targetReady || this.transport.needsAuthorization || this.signal.aborted) return;
+        if ((!this.#principal() && !this.transport.signedIn) || !this.targetReady || this.transport.needsAuthorization || this.signal.aborted) return;
         if (this.#access) return missingOnly || observedIds ? this.#access.then(() => { if (!this.viewerError) return this.refreshViewer(missingOnly, observedIds); }) : this.#access;
         const identity = this.#identity, signal = AbortSignal.any([this.signal, identity.signal]);
         const ids = (observedIds ? unique(observedIds).filter(id => this.document.nodes[id]) : Object.keys(this.document.nodes)).filter(id => !missingOnly || !this.#viewer?.permissions[id] || !this.#viewer.reactions[id]);
