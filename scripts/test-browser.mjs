@@ -291,6 +291,7 @@ try {
             const observed = await providerReadback.json();
             assert.equal(recoveredId, committedId, 'Reloading pending work retries the original provider contribution');
             assert.equal(observed.nodes[recoveredId]?.body, pendingText, 'The recovered contribution is independently readable from the provider');
+            await page.evaluate(() => sessionStorage.removeItem('__qualification_clock'));
             const ownerText = engineName + ' unresolved writing belongs to owner A', independentText = engineName + ' separate writing belongs to owner B';
             let ownerProviderId;
             await page.context().route(service + '/api/v5/contribute', async route => {
@@ -309,6 +310,7 @@ try {
               independentRecordId = await second.evaluate(() => window.demoComments.conversation.newWriting({ kind: 'comment' }).show().id);
               assert.notEqual(independentRecordId, ownerRecordId, 'A second editor owns a distinct record for the same destination');
               await second.locator('[data-composer="main"] textarea').fill(independentText);
+              await expect.poll(() => page.evaluate(({ id, text }) => window.demoComments.conversation.recovery.records().some(record => record.id === id && record.text === text), { id: independentRecordId, text: independentText })).toBe(true);
             } finally { await second.close(); }
             await expect(textarea).toHaveValue(ownerText);
             await page.close();
