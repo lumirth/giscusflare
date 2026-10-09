@@ -8,6 +8,7 @@ export type StandardValue = TemplateResult | DirectiveResult | Node | string | n
 export interface StandardContext {
   runtime: Conversation;
   scope: ResourceScope;
+  contentReady(id: string, ready: boolean): void;
   report(error: unknown): void;
 }
 export type ComposerSlot = (

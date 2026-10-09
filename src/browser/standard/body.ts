@@ -8,7 +8,7 @@ class Body extends AsyncDirective {
   #element?: HTMLElement;
   #mount?: ContentMount;
   #signal?: AbortSignal;
-  render({ runtime, scope }: StandardContext, comment: Comment) {
+  render({ runtime, scope, contentReady }: StandardContext, comment: Comment) {
     scope.signal.throwIfAborted();
     if (!this.#element) {
       this.#element = document.createElement('div');
@@ -16,7 +16,8 @@ class Body extends AsyncDirective {
     }
     if (!this.#mount || this.#signal !== scope.signal) {
       this.#mount?.dispose(); this.#signal = scope.signal;
-      this.#mount = mountContent(this.#element, runtime.content, { signal: scope.signal });
+      this.#mount = mountContent(this.#element, runtime.content, { signal: scope.signal,
+        onReady: ready => contentReady(comment.id, ready) });
     }
     void this.#mount.update({ markdown: comment.body, html: comment.bodyHTML, prepared: comment.prepared,
       purpose: 'comment', repo: runtime.config.repo, pageURL: runtime.config.origin,

@@ -108,6 +108,8 @@ body.dispose();
 
 `mountContent` serves both published bodies and previews. `clear()` cancels work and removes installed output. An update failure rejects so the host can report it; the last installed output stays available. When there is no installed output, original Markdown remains readable text.
 
+The optional `onReady(ready)` mount option reports installed readable output, including the cold source fallback. It stays ready while a replacement prepares, and becomes false on clear or disposal. Use it to keep a loading presentation until cold comment bodies can be shown together; data acquisition alone does not mean their presentation is ready. Canceled or superseded work cannot make a body ready.
+
 ## Replace built-in features
 
 ```js
