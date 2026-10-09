@@ -3,21 +3,9 @@ const failedWrites = new WeakMap<Window, Map<string, unknown>>();
 export function storageNamespace(service: string, repo: string): string {
   return `giscusflare:5:${service}:${repo}:`;
 }
-export function writingIdentity(config: {
-  origin?: unknown;
-  strict?: unknown;
-  number?: unknown;
-  term?: unknown;
-}): string {
-  return (
-    "writing:" +
-    JSON.stringify([
-      typeof config.origin === 'string' ? new URL(config.origin).origin : '',
-      Boolean(config.strict),
-      Number(config.number) || 0,
-      config.term || "",
-    ])
-  );
+export function writingIdentity(config: Pick<import('./options.js').Page, 'origin' | 'selector'>): string {
+  const selector = config.selector;
+  return 'writing:' + JSON.stringify([config.origin, selector.kind === 'page', selector.kind === 'discussion' ? selector.number : 0, selector.kind === 'page' ? selector.key : '']);
 }
 export function scopedStorage(prefix: string) {
   let memory = failedWrites.get(window);

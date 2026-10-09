@@ -1,6 +1,6 @@
 {
   "name": "giscusflare",
-  "version": "5.0.3",
+  "version": "6.0.0",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -26,7 +26,9 @@
     "build:test": "npm run build && npm run typecheck:examples && node scripts/build-test-assets.mjs",
     "test:package": "node scripts/check-package.mjs",
     "build:website": "npm run build && node scripts/build-website.mjs",
-    "test:browser": "npm run build:test && node scripts/test-browser.mjs"
+    "test:browser": "npm run build:test && node scripts/test-browser.mjs",
+    "deploy:content": "wrangler deploy --config wrangler.content.jsonc",
+    "register": "node scripts/register.mjs"
   },
   "dependencies": {
     "lit-html": "^3.3.1",
@@ -36,11 +38,11 @@
     "@playwright/test": "^1.63.0",
     "@primer/octicons": "^19.27.0",
     "@types/node": "^22.20.4",
-    "dompurify": "^3.4.16",
     "esbuild": "^0.28.1",
     "graphql": "^16.13.1",
     "hono": "4.13.9",
     "mathjax-full": "^3.2.2",
+    "parse5": "^8.0.1",
     "postcss": "^8.5.28",
     "typescript": "5.9.3",
     "wrangler": "^4.148.0"
@@ -80,6 +82,26 @@
     "./model": {
       "types": "./dist/types/conversation/index.d.ts",
       "import": "./dist/browser/model.js"
+    },
+    "./counts": {
+      "types": "./dist/types/browser/counts.d.ts",
+      "import": "./dist/browser/counts.js"
+    },
+    "./content/worker": {
+      "types": "./dist/types/content/worker.d.ts",
+      "import": "./dist/content-worker.mjs"
+    },
+    "./content/stock": {
+      "types": "./dist/types/browser/stock-content.d.ts",
+      "import": "./dist/browser/stock-content.js"
+    },
+    "./content/worker/stock": {
+      "types": "./dist/types/content/stock.d.ts",
+      "import": "./dist/stock-content-worker.mjs"
+    },
+    "./registration": {
+      "types": "./dist/types/registration.d.ts",
+      "import": "./dist/registration.mjs"
     }
   },
   "files": [
@@ -94,7 +116,11 @@
     "README.md",
     "DEPLOY.md",
     "FREE-TIER.md",
-    "docs/*.md"
+    "docs/*.md",
+    "dist/content-worker.mjs",
+    "dist/stock-content-worker.mjs",
+    "dist/registration.mjs",
+    "scripts/register.mjs"
   ],
   "overrides": {
     "@xmldom/xmldom": "0.9.12",

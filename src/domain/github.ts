@@ -2,13 +2,15 @@ import * as v from 'valibot';
 import * as G from '../contracts/github.js';
 import { parse, parseJSON, type Schema } from '../contracts/parse.js';
 import { InstallationRecord } from '../contracts/storage.js';
-import type { Widget, Selection, PageRequest, Action } from '../contracts/requests.js';
-import type { Comment, Discussion, Reactions, Window, WindowPage, Patch } from '../contracts/document.js';
+import type { Widget, Selection, Selector, ReadIntent, Action } from '../contracts/requests.js';
+import type { Comment, Discussion, Reactions, Patch,Permissions,AccessResult,AccountPatch,SelectedReactions,WindowPage,Window } from '../contracts/document.js';
 import type { PublicConfig, SecretConfig } from '../contracts/config.js';
 import { User, NodeID } from '../contracts/primitives.js';
 import { appJWT, sha1 } from './crypto.js';
-import { AppError, requireCondition } from './errors.js';
-import { Store } from './store.js';
+import {AppError,requireCondition,failure,type Failure} from './errors.js';
+import {countObservation,type CountTarget} from '../contracts/count.js';
+import {discussionScope} from './authorization.js';
+import {Store} from './store.js';
 import { bodyBytes } from './body.js';
 const Viewer = v.object({ ...User.entries, id: NodeID });
 export const GRAPH = {
@@ -23,30 +25,27 @@ export const REPOSITORY = 'id nameWithOwner isPrivate isArchived discussionCateg
 export const QUERIES = {
     repository: `query Repository($owner:String!,$name:String!) { repository(owner:$owner,name:$name) { ${REPOSITORY} } }`,
 };
-function reactions(groups: G.Comment['reactionGroups']): Reactions {
-    return Object.fromEntries(groups.map(g => [g.content, { count: g.reactors.totalCount, selected: g.viewerHasReacted }]));
+const PublicReaction=v.omit(G.ReactionGroup,['viewerHasReacted']);
+const PublicComment=v.object({...v.omit(G.Comment,['viewerDidAuthor','viewerCanUpdate','viewerCanDelete','viewerCanMinimize','viewerCanUnminimize']).entries,reactionGroups:v.array(PublicReaction)});
+const PUBLIC_REACTIONS=GRAPH.reactions.replace('viewerHasReacted','');
+function reactions(groups:v.InferOutput<typeof PublicReaction>[]): Reactions {
+    return Object.fromEntries(groups.map(g=>[g.content,{count:g.reactors.totalCount}]));
 }
-function node(raw: G.Comment & Partial<Pick<G.RootComment, 'replies' | 'discussion'>>): Comment {
-    const { reactionGroups, replyTo, upvoteCount, replies, discussion, ...value } = raw;
-    return { ...value, parentId: replyTo?.id ?? null, reactions: reactions(reactionGroups), upvotes: upvoteCount };
+const AUTHORITY='viewerDidAuthor viewerCanUpdate viewerCanDelete viewerCanMinimize viewerCanUnminimize';
+const PermissionObservation=v.pick(G.Comment,['id','viewerDidAuthor','viewerCanUpdate','viewerCanDelete','viewerCanMinimize','viewerCanUnminimize']);
+function permissions(raw:v.InferOutput<typeof PermissionObservation>):Permissions{return {didAuthor:raw.viewerDidAuthor,canUpdate:raw.viewerCanUpdate,canDelete:raw.viewerCanDelete,canMinimize:raw.viewerCanMinimize,canUnminimize:raw.viewerCanUnminimize};}
+function selections(groups:G.Comment['reactionGroups']):SelectedReactions{return Object.fromEntries(groups.map(g=>[g.content,g.viewerHasReacted]));}
+function account(raw:v.InferOutput<typeof PermissionObservation>&{reactionGroups?:G.Comment['reactionGroups']}):Omit<AccountPatch,'principal'|'observedAt'>{return {permissions:{[raw.id]:permissions(raw)},...(raw.reactionGroups?{reactions:{[raw.id]:selections(raw.reactionGroups)}}:{})};}
+function node(raw:v.InferOutput<typeof PublicComment>):Comment {
+  return {id:raw.id,body:raw.body,url:raw.url,parentId:raw.replyTo?.id??null,createdAt:raw.createdAt,lastEditedAt:raw.lastEditedAt,deletedAt:raw.deletedAt,author:raw.author,authorAssociation:raw.authorAssociation,isMinimized:raw.isMinimized,minimizedReason:raw.minimizedReason,reactions:reactions(raw.reactionGroups),upvotes:raw.upvoteCount};
 }
-function window(connection: G.Replies, order: 'oldest' | 'newest',unobserved=false): Window {
+function window(connection:Pick<G.Replies,'totalCount'|'pageInfo'>&{nodes:{id:string}[]},count:Window['count'],order:'oldest'|'newest',unobserved=false):Window {
     const p = connection.pageInfo;
-    return { ids: connection.nodes.map(n => n.id), total: connection.totalCount, cursor: unobserved&&connection.totalCount>0?'':order === 'oldest' ? (p.hasNextPage ? p.endCursor : null) : (p.hasPreviousPage ? p.startCursor : null) };
+    return { ids: connection.nodes.map(n => n.id), count, cursor: unobserved&&connection.totalCount>0?'':order === 'oldest' ? (p.hasNextPage ? p.endCursor : null) : (p.hasPreviousPage ? p.startCursor : null) };
 }
-export type AcquisitionRequest = Pick<PageRequest, 'order' | 'cursor' | 'parentId' | 'ids' | 'replyPrefetch'> & { html: boolean; operation?: Action };
-export interface OperationTarget { id: string; parentId: string | null; url: string; viewerCanUpdate: boolean; viewerCanDelete: boolean; viewerCanMinimize: boolean; viewerCanUnminimize: boolean }
-export interface AcquiredPage {
-    target?: OperationTarget;
-    repository: G.RepositoryHead;
-    category: {
-        id: string;
-        name: string;
-    } | undefined;
-    discussion: Discussion | null;
-    viewer: v.InferOutput<typeof Viewer>|null;
-    page: WindowPage;
-}
+type SelectedDiscussion={id?:string;number:number};
+export interface CommandTarget {discussion:Discussion;archived:boolean;targetId:string;parentId:string}
+function thread(raw:(Omit<G.DiscussionSummary,'reactionGroups'>&{reactionGroups:v.InferOutput<typeof PublicReaction>[]})|null):Discussion|null{return raw?{id:raw.id,number:raw.number,title:raw.title,url:raw.url,locked:raw.locked,closed:raw.closed,answerId:raw.answer?.id??null,reactions:reactions(raw.reactionGroups)}:null;}
 export async function limitedText(response: Response, max = 4 * 1024 * 1024): Promise<string> {
     const oversized = new AppError(502, 'UPSTREAM', 'The GitHub response is too large to display safely. Open the discussion on GitHub.');
     if (response.body && !(Number(response.headers.get('Content-Length') || 0) <= max)) {
@@ -83,42 +82,50 @@ async function githubText(url: string, init: RequestInit, maximum = 4 * 1024 * 1
             throw new AppError(404, 'NOT_FOUND', 'The GitHub resource is not accessible.');
         if ([400, 422].includes(response.status))
             throw new AppError(400, 'BAD_INPUT', 'GitHub rejected the request. Check the content or repository settings.');
-        throw new AppError(502, 'WRITE_UNCERTAIN', 'GitHub could not complete the request.');
+        throw new AppError(502, 'UPSTREAM','GitHub could not complete the request.');
     }
     catch (error) {
         if (error instanceof AppError)
             throw error;
-        throw new AppError(502, 'WRITE_UNCERTAIN', 'The connection to GitHub ended before a complete response arrived.');
+        throw new AppError(502, 'UPSTREAM','The connection to GitHub ended before a complete response arrived.');
     }
     finally {
         clearTimeout(timer);
     }
 }
-const apiHeaders = (token: string) => ({ Accept: 'application/vnd.github+json', Authorization: 'Bearer ' + token, 'User-Agent': 'giscusflare/5', 'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/json' });
-/** Verify an installed public repository before creating any Durable Object.
- * Uses App authentication and the same transport/schema boundary as operations. */
-export async function installedRepository(repo: string, config: PublicConfig, keys: SecretConfig): Promise<string> {
-    const token = await appJWT(config.appId, keys.privateKey, Date.now());
-    const read = async (path: string, body?: unknown) => parseJSON(await githubText('https://api.github.com' + path, {
-        method: body === undefined ? 'GET' : 'POST', headers: apiHeaders(token), ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    }, 262144), 'upstream');
-    const installation = parse(G.Installation, await read('/repos/' + repo + '/installation'), 'upstream');
-    const schema = v.object({ repositories: v.tuple([v.object({ private: v.boolean(), node_id: G.RepositoryHead.entries.id, full_name: v.string() })]) });
-    const result = parse(schema, await read('/app/installations/' + installation.id + '/access_tokens', { repositories: [repo.split('/')[1]], permissions: { metadata: 'read' } }), 'upstream');
-    const repository = result.repositories[0];
-    requireCondition(!repository.private && repository.full_name.toLowerCase() === repo, 403, 'PUBLIC_ONLY', 'Use the canonical name of a public repository with this GitHub App installed.');
-    return repository.node_id;
+const apiHeaders = (token: string) => ({ Accept: 'application/vnd.github+json', Authorization: 'Bearer ' + token, 'User-Agent':'giscusflare', 'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/json' });
+/** Registration is an explicit operator/open-hosting operation, never an operation prerequisite. */
+export async function registerRepository(repo:string,category:string,config:Pick<PublicConfig,'appId'>,keys:Pick<SecretConfig,'privateKey'>) {
+  const jwt=await appJWT(config.appId,keys.privateKey,Date.now());
+  const read=async(path:string,token:string,body?:unknown)=>parseJSON(await githubText('https://api.github.com'+path,{method:body===undefined?'GET':'POST',headers:apiHeaders(token),...(body===undefined?{}:{body:JSON.stringify(body)})}),'upstream');
+  const installation=parse(G.Installation,await read('/repos/'+repo+'/installation',jwt),'upstream');
+  const issued=parse(G.InstallationToken,await read('/app/installations/'+installation.id+'/access_tokens',jwt,{repositories:[repo.split('/')[1]],permissions:{discussions:'write'}}),'upstream');
+  const envelope=parse(G.GraphQLEnvelope,await read('/graphql',issued.token,{query:QUERIES.repository,variables:{owner:repo.split('/')[0],name:repo.split('/')[1]}}),'upstream');
+  requireCondition(!envelope.errors?.length,502,'UPSTREAM','GitHub could not register the repository.');
+  const {repository}=parse(G.RepositoryResponse,envelope.data,'upstream');
+  requireCondition(repository&&!repository.isPrivate&&repository.nameWithOwner.toLowerCase()===repo,403,'PUBLIC_ONLY','Register the canonical name of a public repository with this GitHub App installed.');
+  const selected=repository.discussionCategories.nodes.find(c=>c.name===category);
+  requireCondition(selected,403,'CATEGORY','The discussion category does not exist.');
+  return {repositoryId:repository.id,installationId:installation.id,categoryId:selected.id};
 }
 export class GitHub {
     #installation: {
         token: string;
-        expires: number;
-    } | undefined;
-    constructor(readonly repo:string,readonly repositoryId:string,readonly config:PublicConfig,readonly keys:SecretConfig,readonly store:Store) { }
-    #scope(): {
+        expires:number;installationId:number;
+    }|undefined;
+    constructor(readonly repo:string,readonly repositoryId:string,readonly installationId:number,readonly categoryId:string,readonly config:PublicConfig,readonly keys:SecretConfig,readonly store:Store) { }
+    #names(): {
         owner: string;
         name: string;
     } { const [owner, name] = this.repo.split('/'); return { owner: owner!, name: name! }; }
+    #scope(repository:G.RepositoryHead,discussion?:G.DiscussionIdentity|null,selected?:SelectedDiscussion):void{
+      requireCondition(!repository.isPrivate&&repository.id===this.repositoryId&&repository.nameWithOwner.toLowerCase()===this.repo,403,'PUBLIC_ONLY','The repository is outside this public page.');
+      if(discussion)this.#discussion(discussion,selected);
+    }
+    #discussion(discussion:G.DiscussionIdentity,selected?:SelectedDiscussion):void{
+      discussionScope(discussion,this.repo,this.repositoryId,this.categoryId);
+      requireCondition(!selected||discussion.number===selected.number&&(!selected.id||discussion.id===selected.id),403,'PERMISSION','The discussion identity changed.');
+    }
     async #response(path: string, token: string, method: 'GET' | 'POST' | 'PUT' | 'DELETE', body?: unknown, text = false): Promise<string> {
         try {
             return await githubText('https://api.github.com' + path, { method, headers: { ...apiHeaders(token), ...(text ? { Accept: 'text/html' } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
@@ -127,6 +134,7 @@ export class GitHub {
             if (error instanceof AppError && error.code === 'GITHUB_AUTH' && this.#installation?.token === token) {
                 this.#installation = undefined;
                 this.store.delete('installation');
+                throw new AppError(503,'CONFIGURATION','The GitHub App credential was revoked. Check the installation or retry to renew it.');
             }
             throw error;
         }
@@ -173,7 +181,7 @@ export class GitHub {
             const context = `${this.config.appId}:${this.repositoryId}`;
             try {
                 const record = await this.store.secret(recordKey, InstallationRecord, this.keys.sessionSecret, context);
-                if (record && record.expires > this.store.now() + 300000) {
+                if (record&&record.installationId===this.installationId&&record.expires> this.store.now() + 300000) {
                     this.#installation = record;
                     return record.token;
                 }
@@ -182,176 +190,197 @@ export class GitHub {
                 this.store.delete(recordKey);
             }
             beforeRenew?.();
-            const jwt = await appJWT(this.config.appId, this.keys.privateKey, this.store.now());
-            const installation = await this.#rest(G.Installation, `/repos/${this.repo}/installation`, jwt);
-            const result = await this.#rest(G.InstallationToken, `/app/installations/${installation.id}/access_tokens`, jwt, 'POST', { repositories: [this.#scope().name], permissions: { discussions: 'write' } });
+            const jwt=await appJWT(this.config.appId,this.keys.privateKey,this.store.now());
+            let result:v.InferOutput<typeof G.InstallationToken>;
+            try{result=await this.#rest(G.InstallationToken, `/app/installations/${this.installationId}/access_tokens`, jwt, 'POST', { repositories: [this.#names().name], permissions:{discussions:'write'}});}
+            catch(error){if(error instanceof AppError&&error.code==='GITHUB_AUTH')throw new AppError(503,'CONFIGURATION','The GitHub App credentials could not renew repository access.');throw error;}
             const expires = Date.parse(result.expires_at);
             requireCondition(expires > this.store.now(), 502, 'UPSTREAM_SCHEMA', 'GitHub issued an expired installation token.');
-            await this.store.putSecret(recordKey, InstallationRecord, { token: result.token, expires }, this.keys.sessionSecret, context, expires);
-            this.#installation = { token: result.token, expires };
+            await this.store.putSecret(recordKey, InstallationRecord, {token:result.token,expires,installationId:this.installationId},this.keys.sessionSecret, context, expires);
+            this.#installation={token:result.token,expires,installationId:this.installationId};
             return result.token;
         });
     }
-    async repository(token: string): Promise<G.Repository> {
-        try {
-            const result = await this.graph(G.RepositoryResponse, QUERIES.repository, this.#scope(), token);
-            requireCondition(result.repository, 404, 'NOT_FOUND', 'The repository is not accessible to this GitHub App.');
-            return result.repository;
+    /** One minimal batch obtains exact root or reply counts and their canonical scope. */
+    async counts(pages:{target:CountTarget;mapped?:{id:string;number:number}}[],token:string):Promise<{
+      meta:G.RepositoryHead;observedAt:number;
+      summaries:({discussion:G.DiscussionIdentity;count:number}|null|Failure)[];
+    }>{
+      const observedAt=this.store.now(),variables:Record<string,string|number|boolean>={...this.#names()};
+      const declarations=['$owner:String!','$name:String!'],known:string[]=[],nodes:string[]=[],searches=new Map<string,{alias:string;hash:string}>(),discovery=new Map<number,{alias:string;hash:string}>();
+      for(const [i,page]of pages.entries()){
+        const {selector,window}=page.target,number=page.mapped?.number??(selector.kind==='discussion'?selector.number:null);
+        if(selector.kind==='page'&&!page.mapped){
+          let search=searches.get(selector.key);
+          if(!search){
+            search={alias:'s'+searches.size,hash:await sha1(selector.key)};searches.set(selector.key,search);
+            declarations.push('$'+search.alias+':String!');variables[search.alias]=`repo:${this.repo} in:body ${JSON.stringify(search.hash)} sort:created-asc`;
+            nodes.push(`${search.alias}:search(type:DISCUSSION,query:$${search.alias},first:10){nodes{... on Discussion{${IDENTITY} body comments(first:1){totalCount}}}}`);
+          }
+          discovery.set(i,search);
         }
-        catch (error) {
-            if (error instanceof AppError && error.code === 'GITHUB_AUTH') {
-                this.store.delete('installation');
-                throw new AppError(503, 'CONFIGURATION', 'Check the GitHub App installation and its Discussions permission.');
-            }
-            throw error;
+        if(window.kind==='replies'){
+          declarations.push('$p'+i+':ID!');variables['p'+i]=window.parentId;
+          nodes.push(`p${i}:node(id:$p${i}){... on DiscussionComment{id replyTo{id} discussion{${IDENTITY}} replies(first:1){totalCount}}}`);
+        }else if(number!==null){
+          declarations.push('$n'+i+':Int!');variables['n'+i]=number;
+          known.push(`p${i}:discussion(number:$n${i}){${IDENTITY} comments(first:1){totalCount}}`);
         }
-    }
-    /** An unknown term needs catalogue identity and minimal search results once. */
-    async resolve(config:Selection,category:string,token:string,signedIn=false) {
-        const term = config.strict ? await sha1(config.term) : config.term;
-        const query = `repo:${this.repo} category:${JSON.stringify(category)} ${config.strict ? 'in:body' : 'in:title'} ${JSON.stringify(term)} sort:created-asc`;
-        const match = v.object({ ...G.DiscussionIdentity.entries, body: v.optional(v.string(), '') });
-        const schema=v.object({viewer:signedIn?Viewer:v.optional(Viewer),repository:v.nullable(G.Repository),search:v.object({nodes:v.array(v.nullable(match))})});
-        const data = await this.graph(schema, `query ResolvePage($owner:String!,$name:String!,$query:String!,$strict:Boolean!,$signedIn:Boolean!){viewer @include(if:$signedIn){id login avatarUrl url} repository(owner:$owner,name:$name){${REPOSITORY}} search(type:DISCUSSION,query:$query,first:10){nodes{... on Discussion{${IDENTITY} body @include(if:$strict)}}}}`, { ...this.#scope(), query,strict:config.strict,signedIn},token);
-        requireCondition(data.repository, 404, 'NOT_FOUND', 'The repository is not accessible.');
-        const selected = data.search.nodes.find(d => d && (!config.strict || d.body.includes(term))) ?? null;
-        return {repository:data.repository,selected,viewer:data.viewer??null};
-    }
-    /** Batch minimal summaries. Search is only used until a mapping is known. */
-    async counts(pages: {
-        term: string;
-        number: number | null;
-    }[], strict: boolean, category: string, token: string): Promise<{
-        meta: G.Repository;
-        summaries: (G.DiscussionCount | null)[];
-    }> {
-        const variables: Record<string, string | number> = { ...this.#scope() };
-        const declarations = ['$owner:String!', '$name:String!'], known: string[] = [], searches: string[] = [];
-        const terms = new Map<number, string>();
-        for (const [i, page] of pages.entries()) {
-            if (page.number !== null) {
-                declarations.push('$n' + i + ':Int!');
-                variables['n' + i] = page.number;
-                known.push('p' + i + ':discussion(number:$n' + i + '){number ' + GRAPH.scope + ' comments(first:1){totalCount}}');
-            }
-            else {
-                const term = strict ? await sha1(page.term) : page.term;
-                terms.set(i, term);
-                declarations.push('$q' + i + ':String!');
-                variables['q' + i] = `repo:${this.repo} category:${JSON.stringify(category)} ${strict ? 'in:body' : 'in:title'} ${JSON.stringify(term)} sort:created-asc`;
-                searches.push('p' + i + ':search(type:DISCUSSION,query:$q' + i + ',first:10){nodes{... on Discussion{number ' + (strict ? 'body ' : '') + GRAPH.scope + ' comments(first:1){totalCount}}}}');
-            }
+      }
+      const query=`query CommentCounts(${declarations.join(',')}){repository(owner:$owner,name:$name){id nameWithOwner isPrivate isArchived ${known.join(' ')}} ${nodes.join(' ')}}`;
+      const envelope=await this.#rest(G.GraphQLEnvelope,'/graphql',token,'POST',{query,variables}),errors=envelope.errors??[];
+      if(errors.some(e=>e.type==='RATE_LIMITED'))throw new AppError(429,'RATE_LIMIT','GitHub rate limit reached.',60);
+      requireCondition(errors.every(e=>typeof e.path?.[0]==='string'&&(/^[ps]\d+$/.test(e.path[0])||e.path[0]==='repository'&&/^p\d+$/.test(String(e.path[1])))),502,'UPSTREAM','GitHub could not acquire these counts.');
+      const data=parse(v.record(v.string(),v.unknown()),envelope.data,'upstream'),meta=parse(G.RepositoryHead,data.repository,'upstream'),repository=data.repository as Record<string,unknown>;
+      this.#scope(meta);
+      const summaries=pages.map((page,i)=>{try{
+        const search=discovery.get(i);
+        if(errors.some(e=>e.path?.[0]==='p'+i||e.path?.[0]==='repository'&&e.path[1]==='p'+i||search&&e.path?.[0]===search.alias))throw new AppError(502,'UPSTREAM','GitHub could not acquire this count.');
+        const {selector,window}=page.target;let discussion:G.DiscussionIdentity,count:number;
+        let searched:v.InferOutput<typeof G.DiscussionCount>|null=null;
+        if(search){
+          const result=parse(v.object({nodes:v.pipe(v.array(v.nullable(v.object({...G.DiscussionCount.entries,body:v.string()}))),v.maxLength(10))}),data[search.alias],'upstream');
+          searched=result.nodes.find(d=>d&&d.category.id===this.categoryId&&d.body.includes('<!-- sha1: '+search.hash+' -->'))??null;
+          if(searched)this.#discussion(searched);
         }
-        const query = `query CommentCounts(${declarations.join(',')}){repository(owner:$owner,name:$name){${REPOSITORY} ${known.join(' ')}} ${searches.join(' ')}}`;
-        const data = await this.graph(v.record(v.string(), v.unknown()), query, variables, token);
-        const meta = parse(G.Repository, data.repository, 'upstream');
-        const repository = data.repository as Record<string, unknown>;
-        const summaries = pages.map((page, i) => {
-            if (page.number !== null) {
-                requireCondition(Object.hasOwn(repository, 'p' + i), 502, 'UPSTREAM_SCHEMA', 'GitHub omitted a count result.');
-                return repository['p' + i] === null ? null : parse(G.DiscussionCount, repository['p' + i], 'upstream');
-            }
-            const result = parse(v.object({ nodes: v.pipe(v.array(v.nullable(v.object({ ...G.DiscussionCount.entries, body: strict ? v.string() : v.optional(v.string(), '') }))), v.maxLength(10)) }), data['p' + i], 'upstream');
-            return result.nodes.find(d => d && (!strict || d.body.includes(terms.get(i)!))) ?? null;
-        });
-        return { meta, summaries };
+        if(window.kind==='replies'){
+          const parent=parse(v.nullable(v.object({id:NodeID,replyTo:G.Comment.entries.replyTo,discussion:G.DiscussionIdentity,replies:v.object({totalCount:G.Replies.entries.totalCount})})),data['p'+i],'upstream');
+          requireCondition(parent&&parent.id===window.parentId&&!parent.replyTo,410,'NOT_FOUND','The reply parent is unavailable.');
+          if(search)requireCondition(searched,410,'NOT_FOUND','The reply discussion is unavailable.');
+          discussion=parent.discussion;count=parent.replies.totalCount;
+        }else if(page.mapped||selector.kind==='discussion'){
+          requireCondition(Object.hasOwn(repository,'p'+i),502,'UPSTREAM_SCHEMA','GitHub omitted a count.');
+          if(repository['p'+i]===null)throw new AppError(410,'NOT_FOUND','The mapped discussion is unavailable.');
+          const selected=parse(G.DiscussionCount,repository['p'+i],'upstream');discussion=selected;count=selected.comments.totalCount;
+        }else{
+          if(!searched)return null;discussion=searched;count=searched.comments.totalCount;
+        }
+        const expected=page.mapped??(selector.kind==='discussion'?selector:searched??undefined);
+        if(window.kind==='replies'||!search)this.#discussion(discussion,expected);
+        return {discussion:parse(G.DiscussionIdentity,discussion,'upstream'),count};
+      }catch(error){return failure(error);}});
+      return {meta,summaries,observedAt};
     }
     /** One physical query acquires the selected document window and its scope. */
-    async page(number: number, request: AcquisitionRequest, token:string,signedIn=false):Promise<AcquiredPage>{
-        if (request.operation) return this.#operationAccess(number, request.operation, token);
-        const root = !request.parentId && request.ids === undefined;
-        const fields = COMMENT.replace('bodyHTML', 'bodyHTML @include(if:$html)');
+    async page(selected:SelectedDiscussion,request:{read:ReadIntent;selector:Selector;ttl:number;profiles:string[];html:boolean},token:string):Promise<WindowPage>{
+        const intent=request.read,number=selected.number;
+        const order=intent.kind==='roots'?intent.order:'oldest',cursor='cursor'in intent?intent.cursor:'',parentId=intent.kind==='replies'?intent.parentId:undefined,
+          ids='ids'in intent?intent.ids:undefined,replyPrefetch='replyPrefetch'in intent?intent.replyPrefetch:0,root=intent.kind==='roots';
+        const fields = COMMENT.replace(AUTHORITY,'').replace(GRAPH.reactions,PUBLIC_REACTIONS).replace('bodyHTML', 'bodyHTML @include(if:$html)');
         const comment = `${fields} discussion{${IDENTITY}} replies(last:$prefetch){${GRAPH.page} nodes @include(if:$previewReplies){${fields}}}`;
-        const summary = `id number title url locked closed answer{id} ${GRAPH.scope} ${GRAPH.reactions}`;
-        const query = `query Page($owner:String!,$name:String!,$number:Int!,$first:Int,$last:Int,$after:String,$before:String,$prefetch:Int!,$previewReplies:Boolean!,$roots:Boolean!,$ids:[ID!]!,$selected:Boolean!,$parent:ID!,$reply:Boolean!,$replyBefore:String,$signedIn:Boolean!,$html:Boolean!){
-      viewer @include(if:$signedIn){id login avatarUrl url}
+        const summary = `id number title url locked closed answer{id} ${GRAPH.scope} ${PUBLIC_REACTIONS}`;
+        const query = `query Page($owner:String!,$name:String!,$number:Int!,$first:Int,$last:Int,$after:String,$before:String,$prefetch:Int!,$previewReplies:Boolean!,$roots:Boolean!,$ids:[ID!]!,$selected:Boolean!,$parent:ID!,$reply:Boolean!,$replyBefore:String,$html:Boolean!){
       repository(owner:$owner,name:$name){id nameWithOwner isPrivate isArchived discussion(number:$number){${summary} comments(first:$first,last:$last,after:$after,before:$before){${GRAPH.page} nodes @include(if:$roots){${comment}}}}}
       nodes(ids:$ids) @include(if:$selected){... on DiscussionComment{${comment}}}
       parent:node(id:$parent) @include(if:$reply){... on DiscussionComment{${fields} discussion{${IDENTITY}} replies(last:50,before:$replyBefore){${GRAPH.page} nodes{${fields}}}}}
     }`;
-        const preview=v.object({...G.Replies.entries,nodes:request.replyPrefetch>0?G.Replies.entries.nodes:v.optional(G.Replies.entries.nodes,[])});
-        const observed=v.object({...G.Comment.entries,discussion:G.DiscussionIdentity,replies:preview});
-        const roots=v.pipe(v.array(observed),v.maxLength(20)),selected=v.array(v.nullable(observed));
+        const publicReplies=v.object({...G.Replies.entries,nodes:v.pipe(v.array(PublicComment),v.maxLength(100))});
+        const preview=v.object({...publicReplies.entries,nodes:replyPrefetch>0?publicReplies.entries.nodes:v.optional(publicReplies.entries.nodes,[])});
+        const observed=v.object({...PublicComment.entries,discussion:G.DiscussionIdentity,replies:preview});
+        const roots=v.pipe(v.array(observed),v.maxLength(20)),selectedNodes=v.array(v.nullable(observed));
         const connection=v.object({...G.Replies.entries,nodes:root?roots:v.optional(roots,[])});
-        const schema=v.object({viewer:signedIn?Viewer:v.optional(Viewer),repository:v.nullable(v.object({...G.RepositoryHead.entries,discussion:v.nullable(v.object({...G.DiscussionSummary.entries,comments:connection}))})),nodes:request.ids!==undefined?selected:v.optional(selected),parent:request.parentId?v.nullable(G.RootComment):v.optional(v.nullable(G.RootComment))});
-        const data = await this.graph(schema, query, { ...this.#scope(), number, roots: root, first: root && request.order === 'oldest' ? 20 : root ? null : 1, last: root && request.order === 'newest' ? 20 : null, after: root && request.order === 'oldest' && request.cursor ? request.cursor : null, before: root && request.order === 'newest' && request.cursor ? request.cursor : null, replyBefore: request.parentId && request.cursor ? request.cursor : null, prefetch: Math.max(1,request.replyPrefetch), previewReplies:request.replyPrefetch>0, ids: request.ids ?? [], selected: request.ids !== undefined, parent: request.parentId ?? 'unused', reply:Boolean(request.parentId),signedIn,html:request.html},token, request.ids !== undefined);
+        const schema=v.object({repository:v.nullable(v.object({...G.RepositoryHead.entries,discussion:v.nullable(v.object({...G.DiscussionSummary.entries,reactionGroups:v.array(PublicReaction),comments:connection}))})),nodes:ids!==undefined?selectedNodes:v.optional(selectedNodes),parent:parentId?v.nullable(v.object({...observed.entries,replies:publicReplies})):v.optional(v.nullable(v.object({...observed.entries,replies:publicReplies})))});
+        const observedAt=this.store.now();
+        const data=await this.graph(schema,query,{...this.#names(),number,roots: root, first: root && order === 'oldest' ? 20 : root ? null : 1, last: root && order === 'newest' ? 20 : null, after: root && order === 'oldest' && cursor ? cursor : null, before: root && order === 'newest' && cursor ? cursor : null, replyBefore: parentId && cursor ? cursor : null, prefetch: Math.max(1,replyPrefetch), previewReplies:replyPrefetch>0, ids: ids ?? [], selected: ids !== undefined, parent: parentId ?? 'unused', reply:Boolean(parentId),html:request.html},token, ids !== undefined);
         requireCondition(data.repository, 404, 'NOT_FOUND', 'The repository is not accessible.');
         const { discussion: raw, ...repository } = data.repository;
-        if (raw)
-            requireCondition(raw.repository.id === repository.id && !raw.repository.isPrivate && raw.repository.nameWithOwner.toLowerCase() === this.repo, 403, 'PUBLIC_ONLY', 'This discussion is outside the configured repository.');
-        const nodes: Record<string, Comment> = {}, replies: Record<string, Window> = {};
-        const accept = (item: G.RootComment) => {
-            requireCondition(raw && item.discussion.id === raw.id && item.discussion.repository.id === repository.id && !item.discussion.repository.isPrivate && item.discussion.repository.nameWithOwner.toLowerCase() === this.repo && item.discussion.category.id === raw.category.id, 403, 'PERMISSION', 'The requested comment is outside this page.');
-            nodes[item.id] = node(item);
+        this.#scope(repository,raw,selected);
+        const count=(total:number,parent?:string)=>raw?countObservation({selector:request.selector,window:parent?{kind:'replies',parentId:parent}:{kind:'roots'}},total,{id:raw.id,number:raw.number},observedAt,request.ttl):null;
+        const contentHints:Record<string,{markdown:string;html:string}>={},nodes:Record<string,Comment>={},replies:Record<string,Window>={};
+        const accept=(item:v.InferOutput<typeof observed>)=>{
+            requireCondition(raw,403,'PERMISSION','The requested comment is outside this page.');
+            this.#discussion(item.discussion,raw);
+            nodes[item.id]=node(item);if(item.bodyHTML)contentHints[item.id]={markdown:item.body,html:item.bodyHTML};
             if (!item.replyTo) {
-                replies[item.id] = window(item.replies,'newest',!request.parentId&&request.replyPrefetch===0);
+                replies[item.id] = window(item.replies,count(item.replies.totalCount,item.id),'newest',!parentId&&replyPrefetch===0);
                 for (const reply of item.replies.nodes) {
                     requireCondition(reply.replyTo?.id === item.id, 502, 'UPSTREAM_SCHEMA', 'GitHub returned replies for another comment.');
-                    nodes[reply.id] = node({ ...reply, replies: { totalCount: 0, nodes: [], pageInfo: item.replies.pageInfo }, discussion: item.discussion });
+                    if(reply.bodyHTML)contentHints[reply.id]={markdown:reply.body,html:reply.bodyHTML};
+                    nodes[reply.id]=node(reply);
                 }
             }
         };
-        let acquired: Window = { ids: [], total: raw?.comments.totalCount ?? 0, cursor: null };
+        let acquired:Window={ids:[],count:count(raw?.comments.totalCount??0),cursor:null};
         if (root && raw) {
             for (const item of raw.comments.nodes)
                 accept(item);
-            acquired = window(raw.comments, request.order);
+            acquired = window(raw.comments,count(raw.comments.totalCount),order);
         }
-        if (request.ids) {
-            requireCondition(data.nodes?.length === request.ids.length, 502, 'UPSTREAM_SCHEMA', 'GitHub omitted a requested comment.');
+        if (ids) {
+            requireCondition(data.nodes?.length === ids.length, 502, 'UPSTREAM_SCHEMA', 'GitHub omitted a requested comment.');
             for (const [i, item] of data.nodes!.entries())
                 if (item) {
-                    requireCondition(item.id === request.ids[i], 502, 'UPSTREAM_SCHEMA', 'GitHub returned another comment.');
+                    requireCondition(item.id === ids[i], 502, 'UPSTREAM_SCHEMA', 'GitHub returned another comment.');
                     accept(item);
                     if (!acquired.ids.includes(item.id))
                         acquired.ids.push(item.id);
                 }
         }
-        if (request.parentId) {
+        if (parentId) {
             const parent = data.parent;
-            requireCondition(parent && parent.id === request.parentId && !parent.replyTo, 404, 'NOT_FOUND', 'Reply thread not found.');
+            requireCondition(parent && parent.id === parentId && !parent.replyTo, 404, 'NOT_FOUND', 'Reply thread not found.');
             accept(parent);
-            acquired = window(parent.replies, 'newest');
+            acquired = window(parent.replies,count(parent.replies.totalCount,parent.id),'newest');
         }
-        const thread: Discussion | null = raw ? { id: raw.id, number: raw.number, title: raw.title, url: raw.url, locked: raw.locked, closed: raw.closed, answerId: raw.answer?.id ?? null, reactions: reactions(raw.reactionGroups) } : null;
-        return { repository, category:raw?.category,discussion:thread,viewer:data.viewer??null,page: { nodes, window: acquired, replies } };
+        if(intent.kind==='selected')for(const id of acquired.ids)requireCondition(!nodes[id]!.parentId,400,'BAD_INPUT','Ranked windows contain root comments.');
+        return {observedAt,nodes,window:acquired,replies,contentHints,metadata:{thread:thread(raw),archived:repository.isArchived,unavailable:!raw,profiles:request.profiles}};
     }
-    async repositoryHead(token: string): Promise<G.RepositoryHead> {
-        const data = await this.graph(v.object({ repository: v.nullable(G.RepositoryHead) }), `query RepositoryHead($owner:String!,$name:String!){repository(owner:$owner,name:$name){id nameWithOwner isPrivate isArchived}}`, this.#scope(), token);
-        requireCondition(data.repository, 404, 'NOT_FOUND', 'The repository is not accessible.');
-        return data.repository;
-    }
-    async create(widget: Selection & Partial<Pick<Widget, 'description' | 'backLink'>>, repositoryId: string, categoryId: string, token: string): Promise<G.DiscussionAccess> {
-        const page = new URL(widget.backLink || widget.origin);
+    async create(widget: Selection & Partial<Pick<Widget,'description'>>,token:string): Promise<G.DiscussionAccess> {
+        const page=new URL(widget.pageURL);
         page.hash = '';
         page.searchParams.delete('giscus');
-        const body = `# ${widget.term}\n\n${widget.description || ''}\n\n${page.toString()}\n\n<!-- sha1: ${await sha1(widget.term)} -->`;
-        const data = await this.graph(G.CreateResponse, `mutation CreateDiscussion($input:CreateDiscussionInput!) { createDiscussion(input:$input) { discussion { ${ACCESS} } } }`, { input: { repositoryId, categoryId, title: widget.term, body } }, token);
-        return data.createDiscussion.discussion;
+        const body = `# ${widget.selector.kind==='page'?widget.selector.key:''}\n\n${widget.description || ''}\n\n${page.toString()}\n\n<!-- sha1: ${await sha1(widget.selector.kind==='page'?widget.selector.key:'')} -->`;
+        const data = await this.graph(G.CreateResponse, `mutation CreateDiscussion($input:CreateDiscussionInput!) { createDiscussion(input:$input) { discussion { ${ACCESS} } } }`, { input: {repositoryId:this.repositoryId,categoryId:this.categoryId,title:widget.selector.kind==='page'?widget.selector.key:'', body } }, token);
+        const created=data.createDiscussion.discussion;this.#discussion(created);return created;
     }
     /** Scope and permission preflight does not acquire the target's Markdown or rich content. */
-    async #operationAccess(number: number, action: Action, token: string): Promise<AcquiredPage> {
+    async targetAccess(selected:SelectedDiscussion,action:Action,token:string):Promise<CommandTarget> {
         const targetId = action.type === 'comment' ? action.replyToId
             : action.type === 'reaction' ? action.subject.kind === 'comment' ? action.subject.id : '' : action.id;
         const summary = `id number title url locked closed answer{id} ${GRAPH.scope} ${GRAPH.reactions}`;
-        const targetSchema = v.object({ id: NodeID, url: G.Comment.entries.url, replyTo: G.Comment.entries.replyTo,
-            viewerCanUpdate: v.boolean(), viewerCanDelete: v.boolean(), viewerCanMinimize: v.boolean(), viewerCanUnminimize: v.boolean(), discussion: G.DiscussionIdentity });
+        const permission=action.type==='edit'?'viewerCanUpdate':action.type==='delete'?'viewerCanDelete':action.type==='moderate'?action.minimized?'viewerCanMinimize':'viewerCanUnminimize':null;
+        const targetSchema=v.object({id:NodeID,replyTo:G.Comment.entries.replyTo,discussion:G.DiscussionIdentity,...v.partial(v.pick(G.Comment,['viewerCanUpdate','viewerCanDelete','viewerCanMinimize','viewerCanUnminimize'])).entries});
         const data = await this.graph(v.object({ repository: v.nullable(v.object({ ...G.RepositoryHead.entries, discussion: v.nullable(G.DiscussionSummary) })),
             target: v.optional(v.nullable(targetSchema)) }),
-            `query OperationAccess($owner:String!,$name:String!,$number:Int!,$target:ID!,$selected:Boolean!){repository(owner:$owner,name:$name){id nameWithOwner isPrivate isArchived discussion(number:$number){${summary}}} target:node(id:$target) @include(if:$selected){... on DiscussionComment{id url replyTo{id} viewerCanUpdate viewerCanDelete viewerCanMinimize viewerCanUnminimize discussion{${IDENTITY}}}}}`,
-            { ...this.#scope(), number, target: targetId || 'unused', selected: Boolean(targetId) }, token);
+            `query OperationAccess($owner:String!,$name:String!,$number:Int!,$target:ID!,$selected:Boolean!){repository(owner:$owner,name:$name){id nameWithOwner isPrivate isArchived discussion(number:$number){${summary}}} target:node(id:$target) @include(if:$selected){... on DiscussionComment{id replyTo{id} ${permission??''} discussion{${IDENTITY}}}}}`,
+            { ...this.#names(), number:selected.number, target: targetId || 'unused', selected: Boolean(targetId) }, token);
         requireCondition(data.repository, 404, 'NOT_FOUND', 'The repository is not accessible.');
         const { discussion: raw, ...repository } = data.repository;
-        if (raw) requireCondition(raw.repository.id === repository.id && !raw.repository.isPrivate && raw.repository.nameWithOwner.toLowerCase() === this.repo, 403, 'PUBLIC_ONLY', 'This discussion is outside the configured repository.');
-        const target = data.target;
-        if (target) requireCondition(target.id === targetId && raw && target.discussion.id === raw.id && target.discussion.repository.id === repository.id && !target.discussion.repository.isPrivate && target.discussion.category.id === raw.category.id, 403, 'PERMISSION', 'The requested comment is outside this page.');
-        return { repository, category: raw?.category,
-            discussion: raw ? { id: raw.id, number: raw.number, title: raw.title, url: raw.url, locked: raw.locked, closed: raw.closed, answerId: raw.answer?.id ?? null, reactions: reactions(raw.reactionGroups) } : null,
-            viewer: null, page: { nodes: {}, window: { ids: [], cursor: null, total: null }, replies: {} },
-            ...(target ? { target: { id: target.id, url: target.url, parentId: target.replyTo?.id ?? null, viewerCanUpdate: target.viewerCanUpdate, viewerCanDelete: target.viewerCanDelete, viewerCanMinimize: target.viewerCanMinimize, viewerCanUnminimize: target.viewerCanUnminimize } } : {}) };
+        this.#scope(repository,raw,selected);
+        requireCondition(!repository.isArchived,403,'ARCHIVED','The repository is archived.');
+        requireCondition(raw,404,'NOT_FOUND','Discussion not found.');
+        const target=data.target;
+        if(targetId){requireCondition(target&&target.id===targetId,404,'NOT_FOUND','Comment not found.');this.#discussion(target.discussion,raw);}
+        if(action.type==='comment'||action.type==='reaction')requireCondition(!raw.locked,403,'LOCKED','This discussion is locked.');
+        if(permission)requireCondition(parse(v.boolean(),target?.[permission],'upstream'),403,'PERMISSION','You cannot change this comment.');
+        const parentId=action.type==='comment'&&target?target.replyTo?.id||target.id:target?.replyTo?.id||'';
+        return {discussion:thread(raw)!,archived:repository.isArchived,targetId:targetId||raw.id,parentId};
+    }
+    /** Account authority and selections contain no comment interpretation or body acquisition. */
+    async access(selected:SelectedDiscussion,ids:string[],token:string):Promise<AccessResult> {
+      const flags=AUTHORITY;
+      const observations=v.object({id:NodeID,replyTo:G.Comment.entries.replyTo,discussion:G.DiscussionIdentity,
+        viewerDidAuthor:v.boolean(),viewerCanUpdate:v.boolean(),viewerCanDelete:v.boolean(),viewerCanMinimize:v.boolean(),viewerCanUnminimize:v.boolean(),reactionGroups:G.Reactions});
+      const schema=v.object({viewer:Viewer,repository:v.nullable(v.object({...G.RepositoryHead.entries,discussion:v.nullable(G.DiscussionSummary)})),nodes:v.array(v.nullable(observations))});
+      const observedAt=this.store.now();
+      const data=await this.graph(schema,`query ViewerAccess($owner:String!,$name:String!,$number:Int!,$ids:[ID!]!){viewer{id login avatarUrl url} repository(owner:$owner,name:$name){id nameWithOwner isPrivate isArchived discussion(number:$number){id number title url locked closed answer{id} ${GRAPH.scope} ${GRAPH.reactions}}} nodes(ids:$ids){... on DiscussionComment{id replyTo{id} discussion{${IDENTITY}} ${flags} ${GRAPH.reactions}}}}`,{...this.#names(),number:selected.number,ids},token,true);
+      requireCondition(data.repository,404,'NOT_FOUND','The repository is not accessible.');
+      const {discussion:raw,...repository}=data.repository;
+      this.#scope(repository,raw,selected);
+      const permissions:Record<string,Permissions>={},chosen:Record<string,Record<string,boolean>>={};
+      requireCondition(data.nodes.length===ids.length,502,'UPSTREAM_SCHEMA','GitHub omitted account observations.');
+      for(const [i,item] of data.nodes.entries()){
+        if(!item){permissions[ids[i]!]={didAuthor:false,canUpdate:false,canDelete:false,canMinimize:false,canUnminimize:false};chosen[ids[i]!]={};continue;}
+        requireCondition(item.id===ids[i]&&raw,403,'PERMISSION','This account observation is outside the page.');
+        this.#discussion(item.discussion,raw);
+        permissions[item.id]=account(item).permissions![item.id]!;chosen[item.id]=selections(item.reactionGroups);
+      }
+      return {observedAt,principal:data.viewer,permissions,reactions:chosen,threadReactions:Object.fromEntries((raw?.reactionGroups??[]).map(g=>[g.content,g.viewerHasReacted])),
+        thread:thread(raw),
+        archived:repository.isArchived,unavailable:!raw};
     }
     /** Mutation selection returns only confirmed fields owned by this operation. */
-    async contribute(action: Action, discussionId: string, targetId: string, parentId: string, token: string, html = false): Promise<{ id: string; patch?: Patch }> {
+    async contribute(action: Action, discussionId: string, targetId: string, parentId: string, token: string, html = false): Promise<{id:string;patch?:Patch;account?:Omit<AccountPatch,'principal'|'observedAt'>;rootCount?:number;replyCount?:number}> {
         let query: string, input: Record<string, unknown>, field: string, item: string, inputType: string, fields: string;
         switch (action.type) {
             case 'comment':
@@ -366,7 +395,7 @@ export class GitHub {
                 break;
             case 'delete':
                 field = 'deleteDiscussionComment'; item = 'comment'; query = 'DeleteComment'; inputType = 'DeleteDiscussionCommentInput';
-                input = { id: targetId }; fields = 'id body deletedAt author{login avatarUrl url} viewerCanUpdate viewerCanDelete viewerCanMinimize viewerCanUnminimize';
+                input={id:targetId};fields=`id body deletedAt author{login avatarUrl url} ${AUTHORITY} discussion{id number comments(first:1){totalCount}} replyTo{id replies(first:1){totalCount}}`;
                 break;
             case 'reaction':
                 field = action.selected ? 'addReaction' : 'removeReaction'; item = 'subject'; query = action.selected ? 'React' : 'Unreact';
@@ -377,7 +406,7 @@ export class GitHub {
                 field = action.minimized ? 'minimizeComment' : 'unminimizeComment'; item = action.minimized ? 'minimizedComment' : 'unminimizedComment'; query = action.minimized ? 'Minimize' : 'Unminimize';
                 inputType = action.minimized ? 'MinimizeCommentInput' : 'UnminimizeCommentInput';
                 input = { subjectId: targetId, ...(action.minimized ? { classifier: action.reason } : {}) };
-                fields = '... on DiscussionComment{id isMinimized minimizedReason}';
+                fields=`... on DiscussionComment{id isMinimized minimizedReason ${AUTHORITY}}`;
                 break;
         }
         const confirmation = action.type === 'moderate' ? '... on DiscussionComment{id}' : 'id';
@@ -396,34 +425,36 @@ export class GitHub {
                 requireCondition(Array.isArray(groups), 502, 'UPSTREAM_SCHEMA', 'GitHub did not supply reaction observations.');
                 const selected = groups.find(group => Object(group).content === action.reaction);
                 if (!selected) requireCondition(!envelope.errors?.length && groups.every(group => group && typeof group.content === 'string'), 502, 'UPSTREAM_SCHEMA', 'GitHub did not fully observe this reaction.');
-                const group = selected ? reactions([parse(G.ReactionGroup, selected, 'upstream')])[action.reaction]! : { count: 0, selected: false };
-                return { id, patch: { reactions: { [id]: { [action.reaction]: group } } } };
+                const group=selected?parse(G.ReactionGroup,selected,'upstream'):null,count=group?.reactors.totalCount??0,selectedState=group?.viewerHasReacted??false;
+                return {id,patch:{reactions:{[id]:{[action.reaction]:{count}}}},account:action.subject.kind==='discussion'?{threadReactions:{[action.reaction]:selectedState}}:{reactions:{[id]:{[action.reaction]:selectedState}}}};
             }
             if (action.type === 'delete') {
                 if (data.effect.identity) requireCondition(raw, 502, 'UPSTREAM_SCHEMA', 'GitHub did not observe the retained comment.');
                 if (raw) {
-                    const tombstone = parse(v.object({ body: G.Comment.entries.body, deletedAt: G.Comment.entries.deletedAt, author: G.Comment.entries.author,
+                    const tombstone = parse(v.object({ body:G.Comment.entries.body,deletedAt: G.Comment.entries.deletedAt, author: G.Comment.entries.author,
                         viewerCanUpdate: v.boolean(), viewerCanDelete: v.boolean(), viewerCanMinimize: v.boolean(), viewerCanUnminimize: v.boolean() }), raw, 'upstream');
-                    return { id, patch: { nodes: { [id]: tombstone } } };
+                    const {viewerCanUpdate,viewerCanDelete,viewerCanMinimize,viewerCanUnminimize,...publicTombstone}=tombstone;
+                    const authority=parse(PermissionObservation,raw,'upstream'),totals=parse(v.object({discussion:v.object({id:NodeID,comments:v.object({totalCount:G.Replies.entries.totalCount})}),replyTo:v.nullable(v.object({id:NodeID,replies:v.object({totalCount:G.Replies.entries.totalCount})}))}),raw,'upstream');
+                    requireCondition(totals.discussion.id===discussionId,502,'UPSTREAM_SCHEMA','The deletion observation belongs to another discussion.');
+                    return {id,rootCount:totals.discussion.comments.totalCount,...(parentId&&totals.replyTo?{replyCount:totals.replyTo.replies.totalCount}:{}),patch:{nodes:{[id]:publicTombstone}},account:account(authority)};
                 }
                 return { id, patch: { nodes: { [id]: null }, ...(parentId ? { replies: { [parentId]: { remove: [id] } } } : { roots: { remove: [id] } }) } };
             }
             if (action.type === 'moderate') {
                 const state = parse(v.object({ isMinimized: v.boolean(), minimizedReason: v.nullable(v.string()) }), raw, 'upstream');
-                return { id, patch: { nodes: { [id]: state } } };
+                return {id,patch:{nodes:{[id]:state}},account:account(parse(PermissionObservation,raw,'upstream'))};
             }
             if (action.type === 'edit') {
                 const state = parse(v.object({ id: NodeID, body: G.Comment.entries.body, bodyHTML: G.Comment.entries.bodyHTML,
                     lastEditedAt: G.Comment.entries.lastEditedAt, url: G.Comment.entries.url, replyTo: G.Comment.entries.replyTo }), raw, 'upstream');
-                const { replyTo, ...value } = state;
-                return { id, patch: { nodes: { [id]: { ...value, parentId: replyTo?.id ?? null } } } };
+                const {replyTo,bodyHTML,...value}=state;
+                return {id,patch:{nodes:{[id]:{...value,parentId:replyTo?.id??null}},...(bodyHTML?{contentHints:{[id]:{markdown:value.body,html:bodyHTML}}}:{})}};
             }
-            const comment = node(parse(G.Comment, raw, 'upstream'));
+            const source=parse(G.Comment,raw,'upstream'),comment=node(source);
             const counts = parse(v.object({ discussion: v.object({ id: NodeID, number: v.number(), comments: v.object({ totalCount: v.number() }) }),
                 replyTo: v.nullable(v.object({ id: NodeID, replies: v.object({ totalCount: v.number() }) })) }), raw, 'upstream');
             requireCondition(counts.discussion.id === discussionId && comment.parentId === (parentId || null), 502, 'UPSTREAM_SCHEMA', 'GitHub returned a comment observation in another discussion.');
-            return { id, patch: { nodes: { [id]: comment }, roots: { total: counts.discussion.comments.totalCount, ...(!parentId ? { add: [id] } : {}) },
-                ...(parentId ? { replies: { [parentId]: { add: [id], total: counts.replyTo!.replies.totalCount } } } : {}) } };
+            return {id,account:account(source),rootCount:counts.discussion.comments.totalCount,...(parentId?{replyCount:counts.replyTo!.replies.totalCount}:{}),patch:{...(typeof raw!.bodyHTML==='string'?{contentHints:{[id]:{markdown:comment.body,html:raw!.bodyHTML}}}:{}),nodes:{[id]:comment},roots:{...(!parentId?{add:[id]}:{})},...(parentId?{replies:{[parentId]:{add:[id]}}}:{})}};
         } catch (error) {
             // Identity confirms the effect even when its optional display fields cannot be adopted.
             return { id };
@@ -435,7 +466,7 @@ export class GitHub {
     async exchange(parameters: Record<string, string>): Promise<G.OAuthToken> {
         try {
             const response = await githubText('https://github.com/login/oauth/access_token', {
-                method: 'POST', headers: { Accept: 'application/json', 'User-Agent': 'giscusflare/5' },
+                method: 'POST', headers: { Accept: 'application/json', 'User-Agent':'giscusflare' },
                 body: new URLSearchParams({ client_id: this.config.clientId, client_secret: this.keys.clientSecret, ...parameters }),
             }, 16384);
             const raw = parseJSON(response, 'upstream');
@@ -450,6 +481,7 @@ export class GitHub {
         }
     }
     /** Authentication retains immutable identity; Page owns current display. */
+    async viewer(token:string){return (await this.graph(v.object({viewer:Viewer}),'query ViewerIdentity{viewer{id login avatarUrl url}}',{},token)).viewer;}
     async principal(token:string):Promise<string>{
         return (await this.#rest(G.Viewer,'/user',token)).node_id;
     }

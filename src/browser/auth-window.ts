@@ -7,14 +7,14 @@ history.replaceState(history.state, '', location.pathname + location.search);
 const config = jsonElement<AuthWindow>();
 const status = document.getElementById('auth-status')!;
 const back = document.getElementById('auth-return') as HTMLAnchorElement;
-back.href = config.origin;
+back.href = config.returnURL;
 setTimeout(() => { back.hidden = false; }, 1800);
 async function run(): Promise<void> {
   if (!/^[A-Za-z0-9_-]{43}$/.test(proof) || await challenge(proof) !== config.attempt)
     throw new Error('Return to the page and start sign-in from the comments.');
   if (config.mode === 'popup' && !window.opener) throw new Error('Return to the page and start sign-in from the comments.');
   const { attempt: _attempt, ...context } = config;
-  const response = await fetch('/api/v5/auth/prepare', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...context, proof }), credentials: 'same-origin', cache: 'no-store' });
+  const response = await fetch('/api/v6/auth/prepare', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...context, proof }), credentials: 'same-origin', cache: 'no-store' });
   const data = await response.json() as { attempt?: string; authorizeURL?: string; error?: { message?: string } };
   if (!response.ok || data.attempt !== config.attempt || !data.authorizeURL) throw new Error(data.error?.message || 'Could not start sign-in.');
   const authorize = new URL(data.authorizeURL);

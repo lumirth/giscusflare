@@ -10,13 +10,14 @@ import { AppError, requireCondition } from './errors.js';
 import { GitHub } from './github.js';
 import { Store } from './store.js';
 const DAY = 86400000, TEN_MINUTES = 600000;
+export type AuthorizedSession=S.Session&{credentials:NonNullable<S.Session['credentials']>};
 export type CallbackResult = { status: 'ready' | 'denied'; attempt: string; repo: string; returnURL: string; mode: 'popup' | 'redirect'; openerOrigin: string };
-export function stateValue(repo: string, attempt: string): string { return b64(new TextEncoder().encode(repo)) + '.' + attempt; }
-export function stateParts(state: string): { repo: string; attempt: string } {
-  const match = /^([A-Za-z0-9_-]{1,200})\.([A-Za-z0-9_-]{43})$/.exec(state);
-  requireCondition(match?.[1] && match[2], 400, 'OAUTH', 'Invalid authorization state.');
-  const repo = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(unb64(match[1]));
-  return parse(R.AuthStartQuery, { repo, attempt: match[2] });
+export function stateValue(repo:string,attempt:string,registration?:string):string{return b64(new TextEncoder().encode(repo))+'.'+attempt+(registration?'.'+b64(new TextEncoder().encode(registration)):'');}
+export function stateParts(state:string):R.AuthStartQuery {
+  const match=/^([A-Za-z0-9_-]{1,200})\.([A-Za-z0-9_-]{43})(?:\.([A-Za-z0-9_-]{1,8192}))?$/.exec(state);
+  requireCondition(match?.[1]&&match[2],400,'OAUTH','Invalid authorization state.');
+  const decode=(value:string)=>new TextDecoder('utf-8',{fatal:true,ignoreBOM:false}).decode(unb64(value));
+  return parse(R.AuthStartQuery,{repo:decode(match[1]),attempt:match[2],...(match[3]?{registration:decode(match[3])}:{})});
 }
 export function cookieName(origin: string, attempt: string): string { return (origin.startsWith('https:') ? '__Host-' : '') + 'gw-auth-' + attempt.slice(0, 16); }
 export class Auth {
@@ -24,27 +25,28 @@ export class Auth {
   constructor(readonly config: PublicConfig, readonly keys: SecretConfig, readonly repo: string, repositoryId: string, readonly policy: RepositoryPolicy, readonly store: Store, readonly github: GitHub) {
     this.#purpose = `${config.appId}:${config.clientId}:${repositoryId}`;
   }
-  #fields(data: OAuthToken): S.Session['credentials'] {
+  #fields(data: OAuthToken): NonNullable<S.Session['credentials']> {
     const now = this.store.now();
     return { accessToken: data.access_token, accessExpires: now + (data.expires_in ? data.expires_in * 1000 : 30 * DAY),
       refreshToken: data.refresh_token || null, refreshExpires: data.refresh_token_expires_in ? now + data.refresh_token_expires_in * 1000 : 0 };
   }
   async prepare(input: C.Input<'authPrepare'>): Promise<{ attempt: string; authorizeURL: string }> {
     const request = input.request;
-    const origin = parentOrigin(this.policy, request.origin);
+    const origin=request.origin;
     const openerOrigin = request.openerOrigin || this.config.origin;
     requireCondition(openerOrigin === this.config.origin || openerOrigin === origin, 403, 'ORIGIN', 'The sign-in opener must be the service or authorized page.');
     const attempt = await hash(request.proof), githubVerifier = random(), now = this.store.now();
     return this.store.lock('auth:' + attempt, () => this.store.lock('session:' + request.proof, async () => {
     requireCondition(!this.store.get('session:' + request.proof, S.EncryptedRecord), 409, 'OAUTH', 'This session already exists. Start a new sign-in.');
     requireCondition(!this.store.get('auth:' + attempt, S.EncryptedRecord), 409, 'OAUTH', 'This sign-in is already being prepared. Start again.');
-    const url = new URL(request.origin); url.hash = ''; url.searchParams.delete('giscus');
+    requireCondition(new URL(request.returnURL).origin===origin,403,'ORIGIN','The return URL belongs to another website.');
+    const url=new URL(request.returnURL); url.hash = ''; url.searchParams.delete('giscus');
     const record: S.OAuthAttempt = { origin, returnURL: url.toString(), mode: request.mode, openerOrigin,
       sessionID: request.proof, githubVerifier, cookieHash: await hash(input.browserCookie), created: now, expires: now + TEN_MINUTES,
       status: 'pending' };
     await this.store.putSecret('auth:' + attempt, S.OAuthAttempt, record, this.keys.sessionSecret, this.#purpose, record.expires);
     const authorize = new URL('https://github.com/login/oauth/authorize');
-    authorize.search = new URLSearchParams({ client_id: this.config.clientId, redirect_uri: this.config.origin + '/auth/callback', state: stateValue(this.repo, attempt), code_challenge: await hash(githubVerifier), code_challenge_method: 'S256' }).toString();
+    authorize.search = new URLSearchParams({ client_id: this.config.clientId, redirect_uri: this.config.origin + '/auth/callback', state: stateValue(this.repo,attempt,request.registration), code_challenge: await hash(githubVerifier), code_challenge_method: 'S256' }).toString();
     return { attempt, authorizeURL: authorize.toString() };
     }));
   }
@@ -94,40 +96,52 @@ export class Auth {
     requireCondition(data && data.origin === origin && data.expires > this.store.now(), 401, 'SESSION', 'Your session expired or belongs to another website. Sign in again.');
     return data;
   }
-  async session(capability: string, page: string, required: boolean): Promise<S.Session | null> {
-    if (!capability) { requireCondition(!required, 401, 'AUTH_REQUIRED', 'Sign in with GitHub to continue.'); return null; }
-    const origin = parentOrigin(this.policy, page), key = 'session:' + await hash(capability);
-    return this.store.lock(key, async () => {
-      let data = await this.#storedSession(key, origin);
-      if (data.credentials.accessExpires <= this.store.now() + 60000) {
-        if (!data.credentials.refreshToken || data.credentials.refreshExpires <= this.store.now()) { this.store.delete(key); throw new AppError(401, 'SESSION', 'Your GitHub authorization expired. Sign in again.'); }
-        // Retire the rotating credentials durably before the external exchange.
-        // If execution stops after GitHub rotates them, the next request must
-        // reauthenticate rather than replay an already consumed refresh token.
-        this.store.delete(key);
-        try {
-          const refreshed = await this.github.exchange({ grant_type: 'refresh_token', refresh_token: data.credentials.refreshToken });
-          requireCondition(refreshed.refresh_token && refreshed.refresh_token_expires_in, 502, 'UPSTREAM_SCHEMA', 'GitHub did not return a complete refreshed session. Sign in again.');
-          data = { ...data, credentials: this.#fields(refreshed) };
-          await this.store.putSecret(key, S.Session, data, this.keys.sessionSecret, this.#purpose, data.expires);
-        } catch (error) {
-          // An uncertain rotating refresh can make the old refresh token unusable.
-          // A failed or interrupted exchange requires a new sign-in.
-          this.store.delete(key);
-          throw new AppError(401, 'SESSION', 'Your GitHub session could not be renewed. Sign in again.');
-        }
+  async identity(capability:string,origin:string,required=false):Promise<S.Session|null>{
+    if(!capability){requireCondition(!required,401,'AUTH_REQUIRED','Sign in with GitHub to continue.');return null;}
+    const key='session:'+await hash(capability);
+    return this.#storedSession(key,origin);
+  }
+  /** Rotating credentials may be lost; the previously proven local author is not. */
+  async session(capability:string,origin:string,required:boolean):Promise<AuthorizedSession|null>{
+    if(!capability){requireCondition(!required,401,'AUTH_REQUIRED','Sign in with GitHub to continue.');return null;}
+    const key='session:'+await hash(capability);
+    return this.store.lock(key,async()=>{
+      let data=await this.#storedSession(key,origin),credentials=data.credentials;
+      requireCondition(credentials,401,'GITHUB_AUTH','Your GitHub authorization needs a new sign-in.');
+      if(credentials.accessExpires<=this.store.now()+60000){
+        const refreshToken=credentials.refreshToken;
+        const expected=this.store.get(key,S.EncryptedRecord);
+        requireCondition(expected,401,'SESSION','Your local session expired. Sign in again.');
+        const retired=await this.store.putSecret(key,S.Session,{...data,credentials:null},this.keys.sessionSecret,this.#purpose,data.expires,expected);
+        requireCondition(retired,401,'SESSION','Your local session ended. Sign in again.');
+        requireCondition(refreshToken&&credentials.refreshExpires>this.store.now(),401,'GITHUB_AUTH','Your GitHub authorization expired. Sign in again.');
+        try{
+          const refreshed=await this.github.exchange({grant_type:'refresh_token',refresh_token:refreshToken});
+          requireCondition(refreshed.refresh_token&&refreshed.refresh_token_expires_in,502,'UPSTREAM_SCHEMA','GitHub did not return complete rotating credentials.');
+          requireCondition(data.expires>this.store.now(),401,'SESSION','Your local session expired. Sign in again.');
+          credentials=this.#fields(refreshed);data={...data,credentials};
+          requireCondition(await this.store.putSecret(key,S.Session,data,this.keys.sessionSecret,this.#purpose,data.expires,retired),401,'SESSION','Your local session ended. Sign in again.');
+        }catch(error){if(error instanceof AppError&&error.code==='SESSION')throw error;throw new AppError(401,'GITHUB_AUTH','Your GitHub authorization could not be renewed. Sign in again.');}
       }
-      return data;
+      return {...data,credentials};
+    });
+  }
+  /** Retire only the credential that actually failed; keep the proven author. */
+  async retire(capability:string,origin:string,token:string):Promise<void>{
+    const key='session:'+await hash(capability);
+    await this.store.lock(key,async()=>{
+      let data:S.Session|null;
+      try{data=await this.identity(capability,origin);}catch(error){if(error instanceof AppError&&error.code==='SESSION')return;throw error;}
+      const expected=this.store.get(key,S.EncryptedRecord);
+      if(expected&&data?.credentials?.accessToken===token)await this.store.putSecret(key,S.Session,{...data,credentials:null},this.keys.sessionSecret,this.#purpose,data.expires,expected);
     });
   }
   async logout(capability: string, origin: string): Promise<{ ok: true }> {
-    const allowedOrigin = parentOrigin(this.policy, origin);
+    const allowedOrigin=origin;
     if (capability) {
       const key = 'session:' + await hash(capability);
-      await this.store.lock(key, async () => {
-        await this.#storedSession(key, allowedOrigin);
-        this.store.delete(key);
-      });
+      await this.#storedSession(key, allowedOrigin);
+      this.store.delete(key);
     }
     return { ok: true };
   }

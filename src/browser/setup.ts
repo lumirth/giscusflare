@@ -10,22 +10,13 @@ const themeSelect=form.elements.namedItem('theme') as HTMLSelectElement;
 for(const theme of themes)if(![...themeSelect.options].some(option=>option.value===theme))themeSelect.add(new Option(theme.replaceAll('_',' '),theme));
 const mappingSelect = form.elements.namedItem('mapping') as HTMLSelectElement;
 const termInput = form.elements.namedItem('term') as HTMLInputElement;
-const strictInput = form.elements.namedItem('strict') as HTMLInputElement;
-const termField = document.getElementById('mapping-value')!;
 const termLabel = document.getElementById('mapping-value-label')!;
-const strictField = document.getElementById('strict-setting')!;
 const escapeAttribute = (value: string) => value.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 
 function updateMappingFields(): void {
   const mapping = mappingSelect.value;
-  const needsTerm = mapping === 'specific' || mapping === 'number';
-  termField.hidden = !needsTerm;
-  termInput.disabled = !needsTerm;
-  termInput.required = needsTerm;
   termInput.inputMode = mapping === 'number' ? 'numeric' : 'text';
-  termLabel.textContent = mapping === 'number' ? 'Discussion number' : 'Search term';
-  strictField.hidden = mapping === 'number';
-  strictInput.disabled = mapping === 'number';
+  termLabel.textContent = mapping === 'number' ? 'Discussion number' : 'Exact page key';
 }
 mappingSelect.addEventListener('change', updateMappingFields);
 updateMappingFields();
@@ -45,17 +36,18 @@ form.addEventListener('submit', event => {
       const origin = new URL(String(values.get('origin'))).origin;
       const mapping = String(values.get('mapping'));
       const term = String(values.get('term') || '').trim();
-      if (mapping === 'specific' && !term) throw new Error('Enter a search term.');
+      const registration = String(values.get('registration') || '').trim();
+      if (mapping === 'page' && !term) throw new Error('Enter an exact page key.');
       if (mapping === 'number' && !/^[1-9]\d*$/.test(term)) throw new Error('Enter a positive discussion number.');
-      const response = await fetch('/api/v5/config?' + new URLSearchParams({ input: JSON.stringify({ repo, origin }) }), { cache: 'no-store' });
+      const response = await fetch('/api/v6/config?' + new URLSearchParams({ input: JSON.stringify({ repo, origin, ...(registration ? {registration} : {}) }) }), { cache: 'no-store' });
       const data = await response.json() as { repo: string; error?: { message: string } };
       if (!response.ok) throw new Error(data.error?.message || 'Could not check the repository.');
       const attributes: Record<string, string> = {
         src: location.origin + '/client.js',
         'data-repo': data.repo,
-        'data-mapping': mapping,
-        ...(mapping === 'specific' || mapping === 'number' ? { 'data-term': term } : {}),
-        'data-strict': values.has('strict') ? '1' : '0', 'data-reactions-enabled': '1',
+        ...(registration ? { 'data-registration': registration } : {}),
+        ...(mapping === 'page' ? { 'data-page-key': term } : { 'data-discussion-number': term }),
+        'data-reactions-enabled': '1',
         'data-input-position': String(values.get('position')), 'data-theme': String(values.get('theme')),
         'data-lang': 'en', crossorigin: 'anonymous',
       };
@@ -101,7 +93,7 @@ configurationForm.addEventListener('submit', event => {
   event.preventDefault();
   document.getElementById('configuration-result')!.hidden = true;
   try {
-    const values = configurationValues(location.origin, input(configurationForm, 'repo').value.trim(), input(configurationForm, 'website').value, input(configurationForm, 'category').value.trim(), input(configurationForm, 'appId').value.trim(), input(configurationForm, 'clientId').value);
+    const values = configurationValues(location.origin, input(configurationForm, 'repo').value.trim(), input(configurationForm, 'website').value, input(configurationForm, 'category').value.trim(), input(configurationForm, 'appId').value.trim(), input(configurationForm, 'clientId').value, (configurationForm.elements.namedItem('registration') as HTMLTextAreaElement).value);
     const list = document.getElementById('configuration-values')!;
     list.replaceChildren();
     for (const [name, value] of Object.entries(values)) {
@@ -128,7 +120,7 @@ document.getElementById('copy-secret')!.addEventListener('click', async event =>
   try { await navigator.clipboard.writeText(document.getElementById('session-secret')!.textContent!); button.textContent = 'Copied'; }
   catch { button.textContent = 'Select the secret to copy'; }
 });
-void fetch('/api/v5/setup', { cache: 'no-store' }).then(async response => {
+void fetch('/api/v6/setup', { cache: 'no-store' }).then(async response => {
   const state = await response.json() as { configured: boolean };
   document.getElementById('deployment-status')!.textContent = state.configured ? 'Your service is configured. Check a repository below to generate its embed code.' : 'Your service is deployed. Connect GitHub and choose the websites where comments will appear.';
 }).catch(() => { document.getElementById('deployment-status')!.textContent = 'Connect GitHub and configure your service below.'; });

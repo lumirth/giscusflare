@@ -9,6 +9,15 @@
   },
   "include": [
     "src/browser/native.ts",
-    "src/conversation/index.ts"
+    "src/browser/headless.ts",
+    "src/browser/counts.ts",
+    "src/browser/interactions.ts",
+    "src/browser/content.ts",
+    "src/browser/github-content.ts",
+    "src/conversation/index.ts",
+    "src/content/worker.ts",
+    "src/browser/stock-content.ts",
+    "src/content/stock.ts",
+    "src/registration.ts"
   ]
 }

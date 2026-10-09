@@ -1,5 +1,5 @@
 import { mountPresentation, type Page } from "giscusflare/headless";
-import { githubContent } from 'giscusflare/content/github';
+import { stockContent } from 'giscusflare/content/stock';
 import { forumPresentation } from "./forum.js";
 const params = new URLSearchParams(location.search),
   repo = params.get("repo"),
@@ -7,16 +7,15 @@ const params = new URLSearchParams(location.search),
 if (repo && number) {
   const page: Page = {
     repo,
-    number,
-    term: "",
-    strict: false,
-    origin: location.href,
-    backLink: "",
+    selector: { kind: "discussion", number },
+    origin: location.origin,
+    pageURL: location.href,
+    returnURL: location.href,
     description: "",
   };
   mountPresentation(
     document.getElementById("conversation")!,
-    { service: location.origin, contentSource: 'github', content: githubContent(), page,appearance:{theme:"light"} },
+    { service: location.origin, content: stockContent({service: location.origin}), page,appearance:{theme:"light"} },
     forumPresentation,
   );
 } else

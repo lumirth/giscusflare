@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import type {Metadata,CountObservation} from '../contracts/document.js';
 
 export const INPUTS = ['THUMBS_UP', 'THUMBS_DOWN', 'LAUGH', 'HOORAY', 'CONFUSED', 'HEART', 'ROCKET', 'EYES', 'replies', 'upvotes', 'answer'] as const;
 export type Input = typeof INPUTS[number];
@@ -19,7 +20,7 @@ export const RankingOptions = v.strictObject({
 });
 export type RankingOptions = v.InferOutput<typeof RankingOptions>;
 export interface Candidate { id: string; created: number; eligible: boolean; values: Partial<Record<Input, number>> }
-export interface Signature { rootCount: number; newestRootID: string | null }
+export interface Signature {rootCount:number;newestRootID:string|null;target?:{metadata:Metadata;observedAt:number}}
 export interface DiscoveryPage { candidates: Candidate[]; cursor: string | null }
 /** The provider owns parsing, scope and completeness. Ambiguity rejects the entire call. */
 export interface Source {
@@ -27,10 +28,10 @@ export interface Source {
   discover(cursor: string | null, inputs: readonly Input[]): Promise<DiscoveryPage>;
   observe(ids: readonly string[], inputs: readonly Input[]): Promise<(Candidate | null)[]>;
 }
-export type OrderResult =
+export type OrderResult=(
   | { status: 'ready'; ids: string[]; interval: { started: number; completed: number }; nextRefreshAt: number; revision: number }
   | { status: 'preparing'; retryAt: number }
-  | { status: 'paused'; reason: 'budget' | 'upstream' | 'size'; retryAt: number | null };
+  |{status:'paused';reason:'budget'|'upstream'|'size';retryAt:number|null})&{target?:{metadata:Metadata;count:CountObservation;observedAt:number}};
 export interface Sql {
   exec(query: string, ...bindings: (string | number | null)[]): Iterable<Record<string, unknown>> & { readonly rowsRead: number; readonly rowsWritten: number };
 }

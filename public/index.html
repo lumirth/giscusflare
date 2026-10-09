@@ -35,6 +35,8 @@
         <label>Discussion category<input name="category" value="Announcements" required></label>
         <button type="submit">Prepare settings</button>
       </form>
+      <p>Use the registration command in the deployment guide to obtain the repository and category identities once. Paste its public JSON result here; keep the App private key on your computer.</p>
+      <label form="configuration-form">Repository registration<textarea name="registration" form="configuration-form" rows="4" required></textarea></label>
       <p id="configuration-error" role="status"></p>
       <div id="configuration-result" hidden>
         <p>Add each value below as a text variable. Use JSON for <code>REPOSITORIES</code>.</p>
@@ -59,19 +61,19 @@
       <label>Website URL
         <input name="origin" type="url" placeholder="https://your-blog.example" required>
       </label>
+      <label>Open-hosting registration, if required
+        <input name="registration" autocomplete="off">
+      </label>
+      <p>For a repository registered with an open host, paste its registration reference. <a href="https://github.com/lumirth/giscusflare/blob/main/docs/CONFIGURATION.md#offer-open-hosting">Registration instructions</a></p>
       <label>Match pages by
         <select name="mapping">
-          <option value="pathname">Page path</option>
-          <option value="url">Page URL</option>
-          <option value="title">Page title</option>
-          <option value="og:title">Open Graph title</option>
-          <option value="specific">Specific term</option>
-          <option value="number">Discussion number</option>
+          <option value="page">Exact page key</option>
+          <option value="number">Existing discussion number</option>
         </select>
       </label>
-      <label id="mapping-value" hidden>
-        <span id="mapping-value-label">Search term</span>
-        <input name="term" disabled>
+      <label id="mapping-value">
+        <span id="mapping-value-label">Exact page key</span>
+        <input name="term" required>
       </label>
       <label>Color scheme
         <select name="theme">
@@ -86,10 +88,7 @@
           <option value="top">Above comments</option>
         </select>
       </label>
-      <div id="strict-setting">
-        <label class="check"><input name="strict" type="checkbox" aria-describedby="strict-help">Use strict matching</label>
-        <small id="strict-help">Matches the page identifier exactly instead of searching discussion titles.</small>
-      </div>
+
       <button class="primary" type="submit">Generate embed code</button>
     </form>
     <p id="setup-status" role="status"></p>

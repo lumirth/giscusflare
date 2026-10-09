@@ -1,5 +1,5 @@
 import { mountPresentation, createStandardPresentation } from 'giscusflare';
-import { githubContent } from 'giscusflare/content/github';
+import { stockContent } from 'giscusflare/content/stock';
 import { forumPresentation } from '../examples/forum.js';
 
 declare const DEMO_ORIGIN: string;
@@ -10,9 +10,8 @@ let current: keyof typeof presentations = 'standard';
 host.replaceChildren();
 const comments = mountPresentation(host, {
   service: DEMO_ORIGIN,
-  contentSource: 'github',
-  content: githubContent(),
-  page: { repo: 'lumirth/giscusflare', number: DEMO_NUMBER, origin: location.href, backLink: location.href },
+  content: stockContent({ service: DEMO_ORIGIN, styles: [] }),
+  page: { repo: 'lumirth/giscusflare', selector: { kind: 'discussion', number: DEMO_NUMBER }, origin: location.origin, pageURL: location.href, returnURL: location.href },
   appearance: { theme: 'preferred_color_scheme' },
 }, presentations[current]);
 for (const button of document.querySelectorAll<HTMLButtonElement>('[data-design]')) {

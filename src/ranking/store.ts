@@ -103,6 +103,17 @@ export class RankingStore {
     const column = columns[INPUTS.indexOf(reaction)];
     return this.exec(`UPDATE ranking_items SET ${column}=?,version=? WHERE thread=? AND id=? AND removed=0 RETURNING id`, count, version, thread, id).length > 0;
   }
+  /** Correct one cached publication using the same SQL score and ordering policy.
+   * The corpus acquisition interval stays unchanged; only this known fact advances. */
+  correctOrder(thread:string,profile:Profile,records:Scored[],id:string):void{
+    const item=this.order(thread,profile,id)[0],index=records.findIndex(row=>row.id===id);
+    if(index>=0)records.splice(index,1);
+    if(!item)return;
+    const compare=(other:Scored)=>item.score-other.score||(profile.tieBreak==='oldest'?other.created-item.created:item.created-other.created)||(item.id<other.id?1:item.id>other.id?-1:0);
+    let low=0,high=records.length;
+    while(low<high){const middle=(low+high)>>>1;if(compare(records[middle]!)>0)high=middle;else low=middle+1;}
+    records.splice(low,0,item);
+  }
   order(thread: string, profile: Profile, id?: string): Scored[] {
     const weights = Object.entries(profile.weights).filter(([, weight]) => weight !== 0);
     const score = weights.map(([input]) => `CAST(${columns[INPUTS.indexOf(input as typeof INPUTS[number])]} AS REAL)*?`).join('+');

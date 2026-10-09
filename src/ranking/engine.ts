@@ -95,6 +95,7 @@ export class RankingEngine {
         const full = !state.snapshot || !this.#inputs.every(input => state.snapshot!.inputs.includes(input)) || (signature.rootCount !== state.signature?.rootCount || signature.newestRootID !== state.signature?.newestRootID);
         state.job = { mode: full ? 'full' : 'known', cursor: '', started, signature, wake: this.now(), version: ++state.revision };
         this.#save(state);
+        return; // Publish known target facts before independent enumeration continues by alarm.
       }
       for (let steps = 0; steps < 4 && state.job; steps++) {
         const scan: Scan = state.job;
@@ -155,7 +156,7 @@ export class RankingEngine {
       state.job = { ...scan, mode: 'full', cursor: '', signature, version: ++state.revision };
       this.#save(state); return;
     }
-    state.signature = scan.signature;
+    state.signature=signature;
     state.snapshot = { started: scan.started, completed: this.now(), inputs: this.#inputs };
     delete state.job;
     this.#save(state);
@@ -164,6 +165,7 @@ export class RankingEngine {
     const next = this.store.next();
     if (next && next.wake <= this.now()) await this.#run(this.#state(next.thread), await source(next.thread));
   }
+  target(thread:string){const state=this.#state(thread),signature=state.job?.signature??state.signature;return signature?.target?{...signature.target,rootCount:signature.rootCount}:undefined;}
   nextAlarmAt(): number | null { return this.store.next()?.wake ?? null; }
   /** Confirm only the changed reaction in an existing observation; all other inputs retain their age. */
   reaction(thread: string, id: string, reaction: Input, count: number): void {
@@ -176,14 +178,9 @@ export class RankingEngine {
       state.revision = revision;
       this.#save(state);
     });
-    if (changed) for (const definition of Object.values(this.options.profiles)) {
-      if (!definition.weights[reaction]) continue;
-      const key = JSON.stringify([thread, definition]), memo = this.#orders.get(key);
-      if (!memo || 'oversized' in memo) continue;
-      const records = memo.records.filter(item => item.id !== id);
-      records.push(...this.store.order(thread, definition, id));
-      records.sort((a, b) => b.score - a.score || (definition.tieBreak === 'oldest' ? a.created - b.created : b.created - a.created) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-      this.#orders.set(key, { records }, records.reduce((bytes, item) => bytes + item.id.length * 2 + 88, 128));
+    if(changed)for(const definition of Object.values(this.options.profiles)){
+      const order=this.#orders.get(JSON.stringify([thread,definition]));
+      if(definition.weights[reaction]&&order&&'records'in order)this.store.correctOrder(thread,definition,order.records,id);
     }
     this.store.checkpoint();
   }

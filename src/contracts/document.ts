@@ -1,41 +1,62 @@
-import type { Comment as ProviderComment } from './github.js';
-import type { InferOutput } from 'valibot';
-import type { Reaction as ReactionSchema } from './primitives.js';
-import type { PreparedContent } from './content.js';
-
-export type Reaction = InferOutput<typeof ReactionSchema>;
-export type Person = NonNullable<ProviderComment['author']>;
-export type Reactions = Partial<Record<Reaction, { count: number; selected: boolean }>>;
-/** The canonical node shared by service, native view and custom consumers. */
-export interface Comment extends Omit<ProviderComment, 'reactionGroups' | 'replyTo' | 'isAnswer' | 'upvoteCount'> {
-  parentId: string | null;
-  reactions: Reactions;
-  upvotes: number;
-  prepared?: PreparedContent;
+import type {CountTarget} from './count.js';
+/** Portable public records are owned here; provider schemas normalize into them. */
+export type Reaction = 'THUMBS_UP' | 'THUMBS_DOWN' | 'LAUGH' | 'HOORAY' | 'CONFUSED' | 'HEART' | 'ROCKET' | 'EYES';
+export interface Person { login: string; avatarUrl: string; url: string }
+export type Reactions = Partial<Record<Reaction, { count: number }>>;
+export type SelectedReactions = Partial<Record<Reaction, boolean>>;
+export interface Comment {
+  id: string; body: string; url: string; parentId: string | null;
+  createdAt: string; lastEditedAt: string | null; deletedAt: string | null;
+  author: Person | null; authorAssociation: string;
+  isMinimized: boolean; minimizedReason: string | null;
+  reactions: Reactions; upvotes: number;
 }
 export interface Discussion {
-  id: string;
-  number: number;
-  title: string;
-  url: string;
-  locked: boolean;
-  closed: boolean;
-  answerId: string | null;
-  reactions: Reactions;
+  id: string; number: number; title: string; url: string;
+  locked: boolean; closed: boolean; answerId: string | null; reactions: Reactions;
+}
+export interface CountObservation {
+  target: CountTarget;
+  count: number;
+  discussion: { id: string; number: number } | null;
+  observedAt: number;
+  expiresAt: number;
 }
 export interface Window {
   ids: string[];
   cursor: string | null;
-  /** Null means no authoritative observation has been obtained. */
-  total: number | null;
+  /** A provider-observed total; membership remains the captured reading traversal. */
+  count: CountObservation | null;
 }
 export type Viewer = Person & { id: string };
-export interface Metadata {
+export interface Permissions {
+  didAuthor: boolean; canUpdate: boolean; canDelete: boolean; canMinimize: boolean; canUnminimize: boolean;
+}
+export interface ViewerState {
+  principal: Viewer | null;
+  permissions: Record<string, Permissions>;
+  reactions: Record<string, SelectedReactions>;
+  threadReactions: SelectedReactions;
+}
+export interface AccountPatch {
+  principal: string; observedAt: number;
+  permissions?: Record<string, Permissions>;
+  reactions?: Record<string, SelectedReactions>;
+  threadReactions?: SelectedReactions;
+}
+/** Account authority is acquired independently of public reading and content. */
+export interface AccessResult {
+  observedAt: number;
+  principal: Viewer;
+  permissions: Record<string, Permissions>;
+  reactions: Record<string, SelectedReactions>;
+  threadReactions: SelectedReactions;
   thread: Discussion | null;
-  viewer: Viewer | null;
   archived: boolean;
   unavailable: boolean;
-  profiles: string[];
+}
+export interface Metadata {
+  thread: Discussion | null; archived: boolean; unavailable: boolean; profiles: string[];
 }
 export interface PageDocument {
   nodes: Record<string, Comment>;
@@ -43,28 +64,34 @@ export interface PageDocument {
   replies: Record<string, Window>;
   metadata: Metadata;
 }
-/** One acquired root, reply or ranked-ID window. IDs are in reader order. */
+/** One public reading observation. Its age survives reuse unchanged. */
+export interface ContentHint { markdown: string; html: string }
+export interface AcceptedObservation { contentHints?: Record<string, ContentHint>; invalidatedCounts?: { target: CountTarget; observedAt: number }[] }
 export interface WindowPage {
+  contentHints?: Record<string, ContentHint>;
   nodes: Record<string, Comment>;
   window: Window;
   replies?: Record<string, Window>;
   metadata?: Metadata;
+  observedAt: number;
 }
-export interface WindowDelta {
-  add?: string[];
-  remove?: string[];
-  total?: number;
-  cursor?: string | null;
-}
-/** An observation accompanies a confirmed effect; it is never its receipt. */
+export interface WindowDelta { add?: string[]; remove?: string[]; count?: CountObservation; cursor?: string | null }
+/** Narrow provider facts established alongside a confirmed effect, never the receipt itself. */
 export interface Patch {
+  invalidatedCounts?: CountTarget[];
+  contentHints?: Record<string, ContentHint>;
   nodes?: Record<string, Partial<Comment> | null>;
   reactions?: Record<string, Reactions>;
   roots?: WindowDelta;
   replies?: Record<string, WindowDelta>;
   metadata?: Partial<Metadata>;
+  observedAt?: number;
 }
+export type EffectPhase = 'not-issued' | 'confirmed' | 'unknown';
 export interface ContributionResult {
+  phase: 'confirmed';
+  replayed: boolean;
+  account?: AccountPatch;
   id: string;
   number: number;
   parentId?: string;

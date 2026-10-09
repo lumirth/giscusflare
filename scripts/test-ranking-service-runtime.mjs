@@ -42,7 +42,7 @@ async function workload(repositories, roots, visits, mutations, coldRestart = fa
         };
         const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
         const policies = Object.fromEntries(['example/comments', 'example/second', 'example/third'].slice(0, repositories).map(repo => [
-            repo, { origins: ['https://blog.example'], category: 'Announcements', ranking: profile },
+            repo, { repositoryId: 'R_fixture', installationId: 123, categoryId: 'CAT_fixture', origins: ['https://blog.example'], category: 'Announcements', ranking: profile },
         ]));
         runtime = await workerd('scripts/ranking-runtime-worker.ts', {
             outboundService: providerTransport(github.origin),
@@ -66,7 +66,13 @@ async function workload(repositories, roots, visits, mutations, coldRestart = fa
                 assert.equal(response.status, 200);
                 return response.json();
             };
-            const first = await acquire();
+            let first = await acquire();
+            assert.equal(first.status, 'preparing', 'Cold ranking publishes target facts before corpus enumeration');
+            assert.equal(first.target.metadata.thread.id, discussion.id, 'A stopped cold ranking exposes its independently acquired discussion before its order is ready');
+            assert.equal(first.target.count.count, roots, 'The body-free ranking head provides the actual root count without completing the corpus');
+            assert.equal(first.target.count.observedAt, first.target.observedAt, 'Readiness facts retain the age of their provider head');
+            assert.equal(first.target.metadata.thread.body, undefined, 'Ordering readiness does not acquire comment content');
+            for (let step = 0; first.status === 'preparing' && step < 16; step++) { clock = first.retryAt; first = await acquire(); }
             assert.equal(first.status, 'paused');
             assert.equal(first.reason, 'budget');
             assert.ok(first.writes > 0 && first.writes < 1000, 'cold acquisition stops after a bounded scan quantum');
@@ -88,8 +94,9 @@ async function workload(repositories, roots, visits, mutations, coldRestart = fa
                 method: 'POST',
                 body: JSON.stringify({ name: 'service', action: 'service', visits, mutations, targetIDs, continuation: step > 0 }),
             });
-            result = await response.json();
-            assert.equal(response.status, 200, JSON.stringify(result));
+            const text = await response.text();
+            assert.equal(response.status, 200, text);
+            result = JSON.parse(text);
             if (result.status !== 'continuing')
                 break;
         }
@@ -121,7 +128,7 @@ async function workload(repositories, roots, visits, mutations, coldRestart = fa
 }
 try {
     const one = report.workloads.oneRepository = await workload(1, 10000, 10000, 200);
-    assert.equal(one.result.status, 'ready', JSON.stringify(one.result));
+    assert.equal(one.result.status, 'ready');
     assert.equal(one.result.visits, 10000);
     assert.equal(one.result.mutations, 200);
     assert.equal(one.externalEffects, 200, 'independent upstream effects must establish actual completed mutations');
@@ -134,11 +141,13 @@ try {
     assert.ok(one.result.meter.requests <= maxRequestsPerHour);
     report.checks.push('complete warm 10k-root/10k-visit/200-mutation day including due alarms and canonical storage');
     const three = report.workloads.threeRepositorySplit = await workload(3, 3333, 3333, 67);
-    assert.equal(three.result.status, 'paused', JSON.stringify(three.result));
-    assert.equal(three.result.ranking.reason, 'budget');
-    assert.equal(three.result.meter.requests, three.perRepositoryBudget.requests);
-    assert.ok(three.result.ranking.retryAt > three.result.now);
-    report.checks.push('one-of-three representative workload pauses at its divided hourly request allowance');
+    assert.equal(three.result.status, 'ready', 'The representative divided workload completes within its actual allowance');
+    assert.equal(three.externalEffects, 67);
+    assert.deepEqual(three.result.order, three.independentOrder);
+    assert.ok(three.result.meter.requests <= three.perRepositoryBudget.requests);
+    assert.ok(three.result.meter.reads <= three.perRepositoryBudget.reads);
+    assert.ok(three.result.meter.writes <= three.perRepositoryBudget.writes);
+    report.checks.push('one-of-three representative workload completes within its divided allowance and preserves independently observed effects/order');
     const cold = report.workloads.coldRestartContinuation = await workload(1, 500, 0, 0, true);
     assert.deepEqual(cold.result.order, cold.independentOrder, 'restored acquisition reconciles independently changed provider membership');
     assert.ok(cold.result.interval.started < cold.result.interval.completed, 'the published acquisition interval acknowledges allowance windows');

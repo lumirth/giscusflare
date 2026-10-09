@@ -64,7 +64,7 @@ export class RepositoryRankingProof extends DurableObject<ConfigBindings> {
     }
     async #ready() {
         for (let step = 0; step < 1000; step++) {
-            const outcome = await this.#repository.execute('ranking', { request: { config: { repo: 'example/comments', origin: 'https://blog.example/article', number: 1 }, profile: 'popular' }, session: '' }, 'R_fixture');
+            const outcome = await this.#repository.execute('ranking', { request: { config: { repo: 'example/comments', origin: 'https://blog.example', pageURL: 'https://blog.example/article', returnURL: 'https://blog.example/article', selector: { kind: 'discussion', number: 1, id: 'D_1' } }, profile: 'popular' }, session: '' }, { repositoryId: 'R_fixture', installationId: 123, categoryId: 'CAT_fixture', category: 'Announcements', origins: ['https://blog.example'], maxReplyPrefetch: 20, displayCacheMs: 60000, countCacheMs: 300000, defaultCommentOrder: 'oldest', customThemeOrigins: [] });
             await this.#schedule();
             if (!outcome.ok)
                 throw Error(JSON.stringify(outcome.error));
@@ -79,7 +79,7 @@ export class RepositoryRankingProof extends DurableObject<ConfigBindings> {
     }
     async acquire(time: number) {
         this.#now = time;
-        const result = await this.#repository.execute('ranking', { request: { config: { repo: 'example/comments', origin: 'https://blog.example/article', number: 1 }, profile: 'popular' }, session: '' }, 'R_fixture');
+        const result = await this.#repository.execute('ranking', { request: { config: { repo: 'example/comments', origin: 'https://blog.example', pageURL: 'https://blog.example/article', returnURL: 'https://blog.example/article', selector: { kind: 'discussion', number: 1, id: 'D_1' } }, profile: 'popular' }, session: '' }, { repositoryId: 'R_fixture', installationId: 123, categoryId: 'CAT_fixture', category: 'Announcements', origins: ['https://blog.example'], maxReplyPrefetch: 20, displayCacheMs: 60000, countCacheMs: 300000, defaultCommentOrder: 'oldest', customThemeOrigins: [] });
         if (!result.ok) throw Error(JSON.stringify(result.error));
         await this.#schedule();
         return { ...result.value, ...this.#metrics() };
@@ -115,7 +115,7 @@ export class RepositoryRankingProof extends DurableObject<ConfigBindings> {
                 return { status: 'paused', visit: this.#index, ranking, ...this.#metrics() };
             const target = Math.floor((this.#index + 1) * mutations / visits);
             while (this.#applied < target) {
-                const result = await this.#repository.execute('contribute', { request: { config: { repo: 'example/comments', origin: 'https://blog.example/article', number: 1 }, key: '3.' + this.#now + '.' + random(), action: { type: 'reaction', subject: { kind: 'comment', id: targetIDs[this.#applied]! }, reaction: 'THUMBS_UP', selected: true } }, session: this.#session }, 'R_fixture');
+                const result = await this.#repository.execute('contribute', { request: { config: { repo: 'example/comments', origin: 'https://blog.example', pageURL: 'https://blog.example/article', returnURL: 'https://blog.example/article', selector: { kind: 'discussion', number: 1, id: 'D_1' } }, key: '3.' + this.#now + '.' + random(), action: { type: 'reaction', subject: { kind: 'comment', id: targetIDs[this.#applied]! }, reaction: 'THUMBS_UP', selected: true } }, session: this.#session }, { repositoryId: 'R_fixture', installationId: 123, categoryId: 'CAT_fixture', category: 'Announcements', origins: ['https://blog.example'], maxReplyPrefetch: 20, displayCacheMs: 60000, countCacheMs: 300000, defaultCommentOrder: 'oldest', customThemeOrigins: [] });
                 if (!result.ok)
                     throw Error(JSON.stringify(result.error));
                 await this.#schedule();

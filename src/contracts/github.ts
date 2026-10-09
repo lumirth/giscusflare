@@ -46,7 +46,7 @@ export type RepositoryHead = v.InferOutput<typeof RepositoryHead>;
 export type OAuthToken = v.InferOutput<typeof OAuthToken>;
 export type Replies = v.InferOutput<typeof Replies>;
 export const DiscussionCount = v.object({
-    ...Scope.entries, number: PositiveInteger, body: v.optional(Body, ''), comments: v.object({ totalCount: Count }),
+    ...Scope.entries, id:NodeID,number: PositiveInteger, body: v.optional(Body, ''), comments: v.object({ totalCount: Count }),
 });
 export type DiscussionCount = v.InferOutput<typeof DiscussionCount>;
 export type DiscussionIdentity = v.InferOutput<typeof DiscussionIdentity>;

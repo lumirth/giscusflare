@@ -1,7 +1,4 @@
-export function safeURL(value: string): string {
-  try { const url = new URL(value, 'https://github.com'); return ['https:', 'http:', 'mailto:'].includes(url.protocol) && !url.username && !url.password ? url.toString() : ''; }
-  catch { return ''; }
-}
+export { safeURL } from '../content/github-policy.js';
 export function randomProof(): string {
   return encode(crypto.getRandomValues(new Uint8Array(32)));
 }

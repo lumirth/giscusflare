@@ -28,7 +28,7 @@ export function browserWritingStore(
           let entry;
           try { entry = JSON.parse(store.getItem(key) || 'null'); } catch {}
           if (!entry || !(entry.expires === null || Number.isFinite(entry.expires) && entry.expires > now())) { store.removeItem(key);continue; }
-          const saved = recoveredWriting(JSON.stringify({ version: 5, writing: [entry.writing] }))[0];
+          const saved = recoveredWriting([entry.writing])[0];
           if (saved && key === prefix(scope) + saved.id) writing.push(saved);
         }
       } catch { /* Existing in-memory writing remains available when storage is unavailable. */ }

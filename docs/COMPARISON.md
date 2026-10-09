@@ -19,8 +19,8 @@ See [giscus advanced usage](https://github.com/giscus/giscus/blob/main/ADVANCED-
 
 ## Reuse existing discussions
 
-Install your giscusflare App on the same repository. Keep the category, page mapping, strict setting and any explicit discussion numbers. Test a page with an existing conversation before replacing your site's embed.
+Install your giscusflare App on the same repository. Keep the category and choose each known discussion number or its exact existing hash-backed page key. Test a page with an existing conversation before replacing your site's embed.
 
 giscusflare then loads the existing discussion and its comments. Readers authorize your App when they next sign in.
 
-[Integration](INTEGRATION.md) explains the mapping choices.
+[Integration](INTEGRATION.md) explains exact page and discussion selection.

@@ -1,11 +1,14 @@
 import { Writing, contributionFailure as failure, recoveredWriting, writingTargetKey, type WritingTarget, type WritingFailure } from './writing.js';
+import {countKey} from '../contracts/count.js';
+import type { ContentSource } from '../contracts/content.js';
 import { selection } from '../contracts/selection.js';
-import type { ContentPreview, ContentSource } from '../contracts/content.js';
 import type { Selection, ModerationReason } from '../contracts/requests.js';
-import type { Comment, ContributionResult, PageDocument, Patch, Reaction, Reactions, Window, WindowDelta, WindowPage } from '../contracts/document.js';
+import type { AccessResult, AccountPatch, ViewerState, Comment, AcceptedObservation, ContributionResult, CountObservation, PageDocument, Patch, Reaction, Reactions, Window, WindowDelta, WindowPage } from '../contracts/document.js';
 import type { OrderResult } from '../ranking/types.js';
 export interface Transport {
     readonly principal?: string | null;
+    readonly signedIn?: boolean;
+    readonly needsAuthorization?: boolean;
     request<T>(operation: string, body: unknown, signal?: AbortSignal, method?: 'GET' | 'POST'): Promise<T>;
 }
 export type CommentOrder = 'oldest' | 'newest' | {
@@ -13,10 +16,10 @@ export type CommentOrder = 'oldest' | 'newest' | {
 };
 export type AcquisitionPurpose = 'initial' | 'restart' | 'continue' | 'revalidate' | 'change-order';
 export interface Acquisition { purpose: AcquisitionPurpose; started: number }
-export interface ActionAvailability { status: 'available' | 'sign-in' | 'pending' | 'recovery' | 'unavailable'; reason?: string }
+export interface ActionAvailability { status: 'available' | 'sign-in' | 'pending' | 'recovery' | 'unavailable'; reason?: string; cause?: 'authorization' | 'loading' | 'unavailable' | 'archived' | 'locked' | 'missing' | 'permission' }
 export interface ReactionState { permission: ActionAvailability; confirmed: { count: number; selected: boolean }; desired: boolean; selected: boolean; count: number; pending: boolean; recovery?: Failure; recover: ActionAvailability; abandon: boolean }
 export interface SubjectActions { reply: ActionAvailability; edit: ActionAvailability; remove: ActionAvailability; moderate: ActionAvailability; react: ActionAvailability; recover: ActionAvailability; abandon: ActionAvailability }
-export type PageConfig = Selection & { backLink?: string; description?: string };
+export type PageConfig = Selection & { description?: string };
 export type Failure = WritingFailure;
 interface SubjectEffect {
     principal: string | null;
@@ -28,8 +31,7 @@ interface SubjectEffect {
 interface ReactionIntent {
     principal: string;
     id: string;
-    confirmed: { count: number; selected: boolean };
-    acknowledged?: boolean;
+    confirmed: boolean;
     reaction: Reaction;
     selected: boolean;
     issued?: {
@@ -39,16 +41,19 @@ interface ReactionIntent {
     pending?: Promise<void>;
     error?: Failure;
 }
-const emptyWindow = (): Window => ({ ids: [], cursor: null, total: null });
+const emptyWindow = (): Window => ({ ids: [], cursor: null, count: null });
 const emptyDocument = (): PageDocument => ({ nodes: {}, roots: emptyWindow(), replies: {},
-    metadata: { thread: null, viewer: null, archived: false, unavailable: false, profiles: [] } });
+    metadata: { thread: null, archived: false, unavailable: false, profiles: [] } });
 const unique = (ids: string[]) => [...new Set(ids)];
 const operationKey = () => '3.' + Date.now() + '.' + crypto.randomUUID();
 const message = (error: unknown) => error instanceof Error ? error.message : 'Unable to complete the action.';
-function windowPatch(window: Window, change: WindowDelta = {}, prepend = false): Window {
+function observedCount(previous: CountObservation | null, incoming: CountObservation | null | undefined, baseline = previous, replayed = false): CountObservation | null {
+    return incoming && !(replayed && incoming.observedAt === previous?.observedAt) && (!previous || incoming.observedAt > previous.observedAt || incoming.observedAt === previous.observedAt && previous === baseline) ? incoming : previous;
+}
+function windowPatch(window: Window, change: WindowDelta = {}, prepend = false, baseline = window, replayed = false): Window {
     const ids = unique(prepend ? [...(change.add ?? []), ...window.ids] : [...window.ids, ...(change.add ?? [])]);
-    return { ids: change.total === 0 ? [] : ids.filter(id => !change.remove?.includes(id)),
-        total: change.total ?? (window.total === null ? null : window.total + (change.add ?? []).filter(id => !window.ids.includes(id)).length - window.ids.filter(id => change.remove?.includes(id)).length), cursor: change.cursor === undefined ? window.cursor : change.cursor };
+    const count = observedCount(window.count, change.count, baseline.count, replayed);
+    return { ids: ids.filter(id => !change.remove?.includes(id)), count, cursor: change.cursor === undefined ? window.cursor : change.cursor };
 }
 function delay(signal: AbortSignal, ms: number): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -69,12 +74,18 @@ export class PageModel {
     #order: CommentOrder;
     ready = false;
     error = '';
+    viewerError = '';
+    notice = '';
     lastRefresh = 0;
     ranking: OrderResult | null = null;
     writingRevision = 0;
     replyPrefetch = 5;
     contentSource: ContentSource = 'source';
     #identity = new AbortController();
+    #viewer: ViewerState | null = null;
+    #access?: Promise<void>;
+    #facts = new Map<string, {age:number; accepted:number}>();
+    #accepted = 0;
     continuity: { status: 'current' | 'restart-required'; reason?: string } = { status: 'current' };
     #observationOffset = 0;
     #reads = new Map<string, {
@@ -85,29 +96,47 @@ export class PageModel {
     #intents = new Map<string, ReactionIntent>();
     #effects = new Map<string, SubjectEffect>();
     #issued = new Set<Promise<unknown>>();
-    #operations = new Map<string, Promise<unknown>>();
-    #listeners = new Set<(page: PageModel, writing?: Writing) => void>();
+    #listeners = new Set<(page: PageModel, writing?: Writing, content?: AcceptedObservation) => void>();
     constructor(config: PageConfig, private transport: Transport, order: CommentOrder = 'oldest', readonly lifetime = new AbortController()) {
-        this.config = Object.freeze({ ...config });
+        this.config = Object.freeze({ ...config, selector: Object.freeze({...config.selector}) });
         this.#order = typeof order === 'string' ? order : Object.freeze({ ...order });
         this.signal.addEventListener('abort', () => { this.#identity.abort(); this.#cancelReads(); this.#listeners.clear(); }, { once: true });
     }
+    /** An independently acquired count updates only its observed count, never reading membership. */
+    observeCount(observation: CountObservation): void {
+        if (this.signal.aborted || countKey({selector:this.config.selector,window:observation.target.window}) !== countKey(observation.target)) return;
+        const parent = observation.target.window.kind === 'replies' ? observation.target.window.parentId : '';
+        const window = parent ? this.document.replies[parent] ?? (this.document.nodes[parent] ? {...emptyWindow(),cursor:''} : undefined) : this.document.roots;
+        if (!window || window.count && (window.count.observedAt > observation.observedAt || window.count.observedAt === observation.observedAt && window.count.count === observation.count && window.count.expiresAt === observation.expiresAt)) return;
+        this.document = parent ? {...this.document,replies:{...this.document.replies,[parent]:{...window,count:observation}}} : {...this.document,roots:{...window,count:observation}};
+        this.#emit();
+    }
     get order(): CommentOrder { return this.#order; }
     get signal(): AbortSignal { return this.lifetime.signal; }
-    #principal(): string | null { return this.transport.principal !== undefined ? this.transport.principal : this.document.metadata.viewer?.id ?? null; }
-    get canCompose(): boolean { const meta = this.document.metadata; return this.ready && !meta.archived && !meta.unavailable && !meta.thread?.locked; }
+    #principal(): string | null { return this.transport.principal ?? null; }
+    get viewer(): ViewerState | null { return this.#viewer; }
+    get viewerPending(): boolean { return Boolean(this.#access); }
+    get targetReady(): boolean { return this.#facts.has('metadata:archived'); }
+    get composition(): ActionAvailability { return this.#availability('discussion'); }
+    get canCompose(): boolean { return ['available','sign-in'].includes(this.composition.status); }
+    #availability(id: string, participation = true): ActionAvailability {
+        const meta = this.document.metadata;
+        if (!this.targetReady) return {status:'pending',cause:'loading',reason:'Discussion access is loading.'};
+        const cause = meta.unavailable ? 'unavailable' : meta.archived ? 'archived' : id !== 'discussion' && !this.document.nodes[id] ? 'missing' : participation && meta.thread?.locked ? 'locked' : undefined;
+        return cause ? {status:'unavailable',cause,reason:({unavailable:'The discussion is unavailable.',archived:'The repository is archived.',missing:'This comment is unavailable.',locked:'The discussion is locked.'})[cause]} : {status:this.#principal() && !this.transport.needsAuthorization ? 'available' : 'sign-in', ...(this.transport.needsAuthorization ? {cause:'authorization' as const,reason:'Reconnect GitHub before contributing.'} : {})};
+    }
     get hasUnresolvedWriting(): boolean { return [...this.writings.values()].some(writing => writing.protected); }
     get hasWriting(): boolean { return [...this.writings.values()].some(writing => Boolean(writing.text) || writing.protected || writing.actions.undoClear); }
     acquisition(parentId = ''): Acquisition | undefined { return this.#reads.get(parentId)?.state; }
-    subscribe(listener: (page: PageModel, writing?: Writing) => void): () => void {
+    subscribe(listener: (page: PageModel, writing?: Writing, content?: AcceptedObservation) => void): () => void {
         this.#listeners.add(listener);
         return () => { this.#listeners.delete(listener); };
     }
-    #emit(writing?: Writing): void { if (!this.signal.aborted)
+    #emit(writing?: Writing, content?: AcceptedObservation): void { if (!this.signal.aborted)
         for (const listener of this.#listeners)
-            try { listener(this, writing); }
+            try { listener(this, writing, content); }
             catch (error) { console.error('A conversation subscriber failed.', error); } }
-    notify(writing?: Writing): void { this.document = { ...this.document }; this.#emit(writing); }
+    notify(writing?: Writing, content?: AcceptedObservation): void { this.document = { ...this.document }; this.#emit(writing, content); }
     #writing(redraw = false, writing?: Writing): void { this.writingRevision++; if (redraw)
         this.notify(writing);
     else
@@ -123,71 +152,161 @@ export class PageModel {
     #cancelReads(): void { for (const read of this.#reads.values())
         read.abort.abort(); this.#reads.clear(); }
     changeIdentity(): void {
-        this.#identity.abort();
-        this.#identity = new AbortController();
-        this.#cancelReads();
+        this.#identity.abort(); this.#identity = new AbortController(); this.#access = undefined; this.#viewer = null; this.viewerError = '';
+        for (const writing of this.writings.values()) writing.identityChanged();
         for (const intent of this.#intents.values()) if (intent.issued && !intent.pending) intent.error = { status: 'uncertain', message: 'Sign in as the original author to recover this reaction.' };
         for (const effect of this.#effects.values()) if (!effect.pending) effect.error = { status: 'uncertain', message: 'Sign in as the original author to recover this action.' };
-        this.ranking = null;
-        for (const writing of this.writings.values()) writing.identityChanged();
-        this.document = emptyDocument();
-        this.ready = false;
-        this.error = '';
-        this.lastRefresh = 0;
-        this.continuity = { status: 'current' };
-        this.#observationOffset = 0;
-        this.#emit();
+        this.notify();
+    }
+    #acceptAccount(access: AccessResult | AccountPatch, replayed = false, acceptance = this.#accepted): void {
+        const principal = typeof access.principal === 'string' ? access.principal : access.principal.id;
+        if (principal !== this.#principal()) return;
+        const old = this.#viewer, viewer: ViewerState = {principal: typeof access.principal === 'string' ? old?.principal ?? null : access.principal,
+            permissions: {...old?.permissions}, reactions: {...old?.reactions}, threadReactions: {...old?.threadReactions}};
+        const accept = (scope: string) => !(replayed && access.observedAt === this.#facts.get(scope)?.age) && this.#fact(scope, access.observedAt, acceptance);
+        for (const [id, permissions] of Object.entries(access.permissions ?? {})) if (accept('account:' + principal + ':permissions:' + id)) viewer.permissions[id] = permissions;
+        const selections = (id: string, incoming: import('../contracts/document.js').SelectedReactions, current: import('../contracts/document.js').SelectedReactions = {}) => {
+            const values = {...current};
+            for (const [reaction, value] of Object.entries(incoming)) if (accept('account:' + principal + ':reaction:' + id + ':' + reaction)) Object.assign(values, {[reaction]: value});
+            return values;
+        };
+        for (const [id, reactions] of Object.entries(access.reactions ?? {})) viewer.reactions[id] = selections(id, reactions, old?.reactions[id]);
+        if (access.threadReactions) viewer.threadReactions = selections('discussion', access.threadReactions, old?.threadReactions);
+        this.#viewer = viewer;this.viewerError = '';this.#resumeReactions();
+    }
+    async refreshViewer(missingOnly = false): Promise<void> {
+        if (!this.#principal() || !this.targetReady || this.transport.needsAuthorization || this.signal.aborted) return;
+        if (this.#access) return missingOnly ? this.#access.then(() => { if (!this.viewerError) return this.refreshViewer(true); }) : this.#access;
+        const identity = this.#identity, signal = AbortSignal.any([this.signal, identity.signal]);
+        const ids = Object.keys(this.document.nodes).filter(id => !missingOnly || !this.#viewer?.permissions[id] || !this.#viewer.reactions[id]);
+        if (missingOnly && this.#viewer?.principal && !ids.length) return;
+        const work = this.#track(Promise.resolve().then(async () => {
+            for (let offset = 0; offset < Math.max(1, ids.length); offset += 100) {
+                const reading = this.document, acceptance = this.#accepted;
+                const access = await this.#request<AccessResult>('access', { ids: ids.slice(offset, offset + 100) }, signal, 'POST');
+                if (signal.aborted) return;
+                const content = this.#accept({patch:{metadata:{thread:access.thread,archived:access.archived,unavailable:access.unavailable},observedAt:access.observedAt},baseline:reading,acceptance});
+                this.#acceptAccount(access, false, acceptance);this.notify(undefined, content);
+            }
+        }).catch(error => { if (!signal.aborted) { this.viewerError = message(error); this.notify(); } }).finally(() => {
+            if (this.#access === work) { this.#access = undefined;this.#emit(); }
+        }));
+        this.#access = work; return work;
+    }
+    #fact(scope: string, observedAt: number, acceptance = this.#accepted): boolean {
+        if (!Number.isFinite(observedAt)) return false;
+        const previous = this.#facts.get(scope);
+        if (previous && (observedAt < previous.age || observedAt === previous.age && previous.accepted > acceptance)) return false;
+        this.#facts.set(scope, {age:observedAt, accepted:++this.#accepted});return true;
     }
     #request<T>(operation: string, input: Record<string, unknown>, signal?: AbortSignal, method: 'GET' | 'POST' = 'GET'): Promise<T> {
-        return this.transport.request(operation, { ...input, ...(['page', 'contribute', 'preview'].includes(operation) ? { content: this.contentSource } : {}), config: selection(this.config) }, signal, method);
+        return this.transport.request(operation, { ...input, ...(['page', 'contribute'].includes(operation) ? {content: this.contentSource} : {}), config: selection(this.config) }, signal, method);
     }
     bootstrap(page: WindowPage): void {
         if (this.ready || this.acquisition())
             return;
-        this.#replace(page);
-        this.document = { ...this.document, metadata: { ...this.document.metadata, viewer: null } };
-        this.#emit();
+        this.#emit(undefined, this.#replace(page));
     }
-    #replace(page: WindowPage, baseline = this.document): void {
+    #replace(page: WindowPage, baseline = this.document, acceptance = this.#accepted): AcceptedObservation | undefined {
         for (const [parent, read] of this.#reads) if (parent) { read.abort.abort(); this.#reads.delete(parent); }
-        this.#adopt(page, baseline, '', true);
+        const content = this.#accept({ page, baseline, replacing: true, acceptance });
         this.ready = true;
-        this.error = '';
-        this.lastRefresh = Date.now();
+        this.error = '';this.notice = '';
+        this.lastRefresh = Math.max(this.lastRefresh, page.observedAt);
         this.continuity = { status: 'current' };
-        this.#observationOffset = 0;
+        this.#observationOffset = 0;return content;
     }
-    #adopt(page: WindowPage, baseline: PageDocument, parentId = '', replacing = false, observedIds?: string[]): void {
-        const current = this.document, nodes = replacing ? { ...page.nodes } : { ...current.nodes };
-        for (const [id, node] of Object.entries(page.nodes))
-            if ((!parentId || id !== parentId || !current.nodes[id]) && current.nodes[id] === baseline.nodes[id]) nodes[id] = node;
-        for (const [id, node] of Object.entries(current.nodes)) if (node !== baseline.nodes[id]) nodes[id] = node;
-        const removed = (observedIds ?? []).filter(id => !page.nodes[id] && current.nodes[id] === baseline.nodes[id] && current.replies[id] === baseline.replies[id]);
-        for (const id of Object.keys(baseline.nodes)) if (!current.nodes[id]) delete nodes[id];
-        for (const id of Object.keys(nodes)) if (removed.includes(id) || removed.includes(nodes[id]!.parentId ?? '')) delete nodes[id];
-        const replies = replacing ? { ...page.replies } : { ...current.replies };
-        for (const [id, acquired] of Object.entries(page.replies ?? {})) {
-            const old = current.replies[id];
-            if (replacing) {
-                const added = old?.ids.filter(child => !baseline.replies[id]?.ids.includes(child)) ?? [];
-                replies[id] = { ...acquired, ids: unique([...acquired.ids, ...added]), total: old !== baseline.replies[id] ? old?.total ?? acquired.total : acquired.total };
-            } else replies[id] = old ? { ...old, total: old === baseline.replies[id] ? acquired.total : old.total } : acquired;
+    /** Every incoming fact uses the same scope and age rule; traversal is a separate owned field. */
+    #accept(input: { page?: WindowPage; patch?: Patch; baseline?: PageDocument; parentId?: string; replacing?: boolean; observedIds?: string[]; replayed?: boolean; acceptance?:number }): AcceptedObservation | undefined {
+        const { page, patch, parentId = '', replacing = false, observedIds } = input;
+        const baseline = input.baseline ?? this.document, current = this.document, acceptance = input.acceptance ?? this.#accepted;
+        const observedAt = page?.observedAt ?? patch?.observedAt;
+        if (observedAt === undefined || !Number.isFinite(observedAt)) return;
+        const accept = (scope: string): boolean => !(input.replayed && observedAt === this.#facts.get(scope)?.age) && this.#fact(scope, observedAt, acceptance);
+        const reactions = (id: string, value: Reactions | undefined, incoming: Reactions): Reactions => {
+            const next = {...value};
+            for (const [reaction, group] of Object.entries(incoming)) if (accept('reaction:' + id + ':' + reaction)) Object.assign(next, {[reaction]: group});
+            return next;
+        };
+        const nodes = { ...current.nodes };
+        const incoming = page?.nodes ?? patch?.nodes ?? {};
+        const inserted = new Set([...(patch?.roots?.add ?? []), ...Object.values(patch?.replies ?? {}).flatMap(window => window.add ?? [])]);
+        const removed: string[] = [];
+        for (const [id, value] of Object.entries(incoming)) {
+            if (value === null) { if (accept('exists:' + id)) { delete nodes[id]; removed.push(id); } continue; }
+            const exists = accept('exists:' + id);
+            if (!nodes[id] && !exists) continue;
+            const previous = nodes[id], next = { ...previous } as Comment;
+            if (previous && inserted.has(id)) continue;
+            const revision = value.lastEditedAt ?? value.createdAt;
+            const olderBody = previous && revision && Date.parse(revision) < Date.parse(previous.lastEditedAt ?? previous.createdAt);
+            for (const [field, fact] of Object.entries(value)) {
+                if (field === 'reactions') {
+                    next.reactions = reactions(id, previous?.reactions, fact as Reactions); continue;
+                }
+                if (olderBody && ['body', 'lastEditedAt'].includes(field)) continue;
+                if (accept('node:' + id + ':' + field)) Object.assign(next, { [field]: fact });
+            }
+            nodes[id] = next;
         }
-        if (parentId) {
-            const old = current.replies[parentId] ?? emptyWindow();
-            replies[parentId] = { ...page.window, ids: unique([...page.window.ids, ...old.ids]), total: old === baseline.replies[parentId] ? page.window.total : old.total };
+        for (const id of observedIds ?? []) if (!page?.nodes[id] && accept('exists:' + id)) { delete nodes[id]; removed.push(id); }
+        for (const [id, node] of Object.entries(nodes)) if (removed.includes(node.parentId ?? '') && accept('exists:' + id)) { delete nodes[id]; removed.push(id); }
+        let metadata = current.metadata;
+        const meta = page?.metadata ?? patch?.metadata;
+        if (meta) {
+            metadata = { ...metadata };
+            for (const [field, fact] of Object.entries(meta)) {
+                if (field === 'thread' && fact) {
+                    const sameThread = (fact as typeof metadata.thread)?.id === metadata.thread?.id;
+                    if (!accept('metadata:thread') && !sameThread) continue;
+                    const thread = { ...metadata.thread } as NonNullable<typeof metadata.thread>;
+                    for (const [name, value] of Object.entries(fact)) {
+                        if (name === 'reactions') {
+                            thread.reactions = reactions((fact as typeof thread).id, thread.reactions, value as Reactions);
+                        } else if (accept('metadata:thread:' + name)) Object.assign(thread, { [name]: value });
+                    }
+                    metadata.thread = thread;
+                } else if (accept('metadata:' + field)) Object.assign(metadata, { [field]: fact });
+            }
         }
+        for (const [id, groups] of Object.entries(patch?.reactions ?? {})) {
+            if (id === metadata.thread?.id) metadata = { ...metadata, thread: { ...metadata.thread, reactions: reactions(id, metadata.thread.reactions, groups) } };
+            else if (nodes[id]) nodes[id] = { ...nodes[id]!, reactions: reactions(id, nodes[id]!.reactions, groups) };
+        }
+        const replies = replacing ? Object.fromEntries(Object.entries(current.replies).filter(([id, window]) => window !== baseline.replies[id])) : { ...current.replies };
+        const acquireWindow = (key: string, old: Window, acquired: Window, replace: boolean): Window => {
+            const added = replace ? old.ids.filter(id => !((key ? baseline.replies[key] : baseline.roots)?.ids ?? []).includes(id)) : [];
+            const ids = replace ? unique([...acquired.ids, ...added]) : unique(key ? [...acquired.ids, ...old.ids] : [...old.ids, ...acquired.ids]);
+            const prior = (key ? baseline.replies[key] : baseline.roots)?.count;
+            return { ids, cursor: acquired.cursor, count: observedCount(old.count, acquired.count, prior) };
+        };
+        if (page?.replies) for (const [id, window] of Object.entries(page.replies)) {
+            const old = current.replies[id] ?? emptyWindow();
+            replies[id] = replacing || !current.replies[id] || current.replies[id].cursor === '' ? acquireWindow(id, old, window, true) : { ...old, count: observedCount(old.count, window.count, baseline.replies[id]?.count) };
+        }
+        let roots = current.roots;
+        if (page) {
+            if (parentId) replies[parentId] = acquireWindow(parentId, replies[parentId] ?? emptyWindow(), page.window, false);
+            else if (observedIds) roots = { ...roots, count: observedCount(roots.count, page.window.count, baseline.roots.count) };
+            else roots = acquireWindow('', roots, page.window, replacing);
+        }
+        const membership = (change: WindowDelta): WindowDelta => ({ ...change, ...(change.remove ? {remove: change.remove.filter(id => observedAt >= (this.#facts.get('exists:' + id)?.age ?? -Infinity) && !(observedAt === this.#facts.get('exists:' + id)?.age && this.#facts.get('exists:' + id)!.accepted > acceptance))} : {}) });
+        if (patch?.roots) roots = windowPatch(roots, membership(patch.roots), this.order === 'newest', baseline.roots, input.replayed);
+        if (patch?.replies) for (const [id, change] of Object.entries(patch.replies)) replies[id] = windowPatch(replies[id] ?? {...emptyWindow(),cursor:''}, membership(change), false, baseline.replies[id], input.replayed);
+        roots = { ...roots, ids: roots.ids.filter(id => nodes[id]) };
         for (const [id, window] of Object.entries(replies)) {
-            if (removed.includes(id)) delete replies[id];
-            else { const ids = window.ids.filter(child => nodes[child]); if (ids.length !== window.ids.length) replies[id] = { ...window, ids }; }
+            if (!nodes[id]) delete replies[id]; else replies[id] = { ...window, ids: window.ids.filter(child => nodes[child]) };
         }
-        const roots = observedIds ? { ...current.roots, ids: current.roots.ids.filter(id => nodes[id]), total: current.roots === baseline.roots ? page.window.total : current.roots.total }
-            : parentId ? current.roots : { ...page.window,
-                ids: replacing ? unique([...page.window.ids, ...current.roots.ids.filter(id => !baseline.roots.ids.includes(id))]) : unique([...current.roots.ids, ...page.window.ids]),
-                total: current.roots === baseline.roots ? page.window.total : current.roots.total };
-        const rootIds = roots.ids.filter(id => nodes[id]);
-        this.document = { nodes, roots: rootIds.length === roots.ids.length ? roots : { ...roots, ids: rootIds }, replies, metadata: !parentId && current.metadata === baseline.metadata ? page.metadata ?? current.metadata : current.metadata };
-        this.#adoptReactions();
+        if (replacing) {
+            const retained = new Set([...roots.ids, ...Object.entries(replies).flatMap(([parent, window]) => [parent, ...window.ids]), ...Object.keys(current.nodes).filter(id => current.nodes[id] !== baseline.nodes[id])]);
+            for (const id of Object.keys(nodes)) if (!retained.has(id)) delete nodes[id];
+        }
+        this.document = { nodes, roots, replies, metadata };
+        this.#resumeReactions();
+        const contentHints = Object.fromEntries(Object.entries(page?.contentHints ?? patch?.contentHints ?? {}).filter(([id, hint]) => (!inserted.has(id) || !current.nodes[id]) && nodes[id]?.body === hint.markdown && observedAt >= (this.#facts.get('node:' + id + ':body')?.age ?? -Infinity) && this.#fact('content:' + id, observedAt, acceptance)));
+        const ambiguous = input.replayed ? [patch?.roots?.count, ...Object.values(patch?.replies ?? {}).map(delta => delta.count)].filter((count): count is CountObservation => Boolean(count && (count.target.window.kind === 'roots' ? current.roots.count : current.replies[count.target.window.parentId]?.count)?.observedAt === count.observedAt && (count.target.window.kind === 'roots' ? current.roots.count : current.replies[count.target.window.parentId]?.count)?.count !== count.count)) : [];
+        const invalidatedCounts = [...(patch?.invalidatedCounts ?? []), ...ambiguous.map(count => count.target)].map(target => ({target, observedAt}));
+        return { contentHints, invalidatedCounts };
     }
     #acquire(parentId: string, purpose: AcquisitionPurpose, observedIds?: string[]): Promise<boolean> {
         this.signal.throwIfAborted();
@@ -197,26 +316,27 @@ export class PageModel {
         if (continuing && (this.continuity.status === 'restart-required' || (parentId ? this.document.replies[parentId]?.cursor : this.document.roots.cursor) === null)) return Promise.resolve(false);
         if (!parentId && !observing && !continuing) this.#cancelReads();
         else current?.abort.abort();
-        const baseline = this.document;
-        const abort = new AbortController(), signal = AbortSignal.any([this.signal, this.#identity.signal, abort.signal]);
+        const abort = new AbortController(), signal = AbortSignal.any([this.signal, abort.signal]);
         const work = this.#track(Promise.resolve().then(async () => {
             try {
                 signal.throwIfAborted();
+                let baseline = this.document, acceptance = this.#accepted;
                 if (observing) {
                     // Observe a bounded portion of the existing document, never start a new traversal.
                     const loaded = Object.keys(this.document.nodes);
                     const ids = observedIds ? unique(observedIds).filter(id => this.document.nodes[id]).slice(0, 100)
                         : [...loaded.slice(this.#observationOffset), ...loaded.slice(0, this.#observationOffset)].slice(0, 100);
-                    const page = await this.#request<WindowPage>('page', { ids, observe: true, replyPrefetch: 0 }, signal);
+                    const page = await this.#request<WindowPage>('page', { read: {kind: 'observe', ids}, fresh: true }, signal);
                     signal.throwIfAborted();
                     if (this.document.metadata.thread?.id !== page.metadata?.thread?.id || page.metadata?.unavailable) {
-                        this.document = { ...this.document, metadata: page.metadata ?? this.document.metadata };
+                        this.#accept({ patch: {metadata: page.metadata, observedAt: page.observedAt} });
                         this.continuity = { status: 'restart-required', reason: 'The discussion changed or is unavailable. Restart deliberately to acquire a new reading order.' };
                     } else {
-                        this.#adopt(page, baseline, '', false, ids);
+                        const content = this.#accept({ page, baseline, observedIds: ids, acceptance });
+                        this.#emit(undefined, content);
                         this.#observationOffset = loaded.length ? (this.#observationOffset + ids.length) % loaded.length : 0;
                     }
-                    this.lastRefresh = Date.now();
+                    this.lastRefresh = Math.max(this.lastRefresh, page.observedAt);
                     this.#emit();
                     return true;
                 }
@@ -229,7 +349,10 @@ export class PageModel {
                             const ranking = await this.#request<OrderResult>('ranking', { profile: this.order.profile }, signal);
                             signal.throwIfAborted();
                             this.ranking = ranking;
-                            this.notify();
+                            const target = ranking.target;
+                            const accepted = target ? this.#accept({patch:{metadata:target.metadata,roots:{count:target.count},observedAt:target.observedAt},baseline}) : undefined;
+                            this.notify(undefined, accepted);
+                            if (target) void this.refreshViewer(true);
                             if (ranking.status === 'paused') throw new Error('This order is unavailable right now. You can keep reading chronologically.');
                             if (ranking.status === 'ready') break;
                             if (ranking.retryAt > deadline) throw new Error('This order is still being prepared. Try again later.');
@@ -239,18 +362,20 @@ export class PageModel {
                     if (this.ranking?.status !== 'ready') throw new Error('This order is still being prepared. Try again later.');
                     ids = this.ranking.ids.slice(Number(cursor) || 0, (Number(cursor) || 0) + 20);
                 }
-                const page = await this.#request<WindowPage>('page', { order: typeof this.order === 'string' ? this.order : 'oldest', cursor, ...(parentId ? { parentId } : {}), ids, replyPrefetch: this.replyPrefetch }, signal);
+                baseline = this.document;acceptance = this.#accepted;
+                const page = await this.#request<WindowPage>('page', { read: parentId ? {kind: 'replies', parentId, cursor} : ids ? {kind: 'selected', ids, replyPrefetch: this.replyPrefetch} : {kind: 'roots', order: this.order, cursor, replyPrefetch: this.replyPrefetch}, fresh: ['restart','change-order'].includes(purpose) }, signal);
                 signal.throwIfAborted();
                 if (ids && this.ranking?.status === 'ready') page.window.cursor = Number(cursor) + ids.length < this.ranking.ids.length ? String(Number(cursor) + ids.length) : null;
-                if (!parentId && !continuing) this.#replace(page, baseline);
+                let content: AcceptedObservation | undefined;
+                if (!parentId && !continuing) content = this.#replace(page, baseline, acceptance);
                 else if (this.document.metadata.thread?.id !== page.metadata?.thread?.id) {
                     this.continuity = { status: 'restart-required', reason: 'The discussion changed. Restart to acquire its comments.' };
-                    this.document = { ...this.document, metadata: page.metadata ?? this.document.metadata };
+                    this.#accept({ patch: {metadata: page.metadata, observedAt: page.observedAt} });
                     return false;
                 } else {
-                    this.#adopt(page, baseline, parentId);
+                    content = this.#accept({ page, baseline, parentId, acceptance });
                 }
-                this.#emit();
+                this.#emit(undefined, content);
                 return true;
             } catch (error) {
                 if (!signal.aborted) {
@@ -260,7 +385,7 @@ export class PageModel {
                 }
                 return false;
             } finally {
-                if (this.#reads.get(parentId)?.abort === abort) { this.#reads.delete(parentId); this.notify(); }
+                if (this.#reads.get(parentId)?.abort === abort) { this.#reads.delete(parentId); void this.refreshViewer(!observing); this.notify(); }
             }
         }));
         this.#reads.set(parentId, { state: { purpose, started: Date.now() }, abort, work });
@@ -280,10 +405,6 @@ export class PageModel {
         await this.#acquire('', 'change-order');
     }
     async loadReplies(parentId: string): Promise<void> { await this.#acquire(parentId, 'continue'); }
-    preview(body: string, signal = this.signal, draft?: string): Promise<ContentPreview> {
-        this.signal.throwIfAborted();
-        return this.#track(this.#request<ContentPreview>('preview', { body, draft }, AbortSignal.any([this.signal, signal]), 'POST'));
-    }
     activeWriting(target: WritingTarget = { kind: 'comment' }): Writing | undefined {
         return this.#writings.get(this.#activeWriting.get(writingTargetKey(target)) ?? '');
     }
@@ -295,9 +416,10 @@ export class PageModel {
                 changed: redraw => this.#writing(redraw, writing),
                 initialText: target => target.kind === 'edit' ? this.document.nodes[target.id]?.body ?? '' : '',
                 principal: () => this.#principal(),
+                authorized: () => !this.transport.needsAuthorization,
                 eligible: target => target.kind === 'comment' ? this.canCompose : ['available', 'sign-in'].includes(this.actions(target.id)[target.kind].status),
                 contribute: issued => {
-                    if (issued.principal !== this.#principal()) return Promise.reject(Object.assign(new Error('The original author must recover this submission.'), { code: 'WRITE_UNCERTAIN' }));
+                    if (issued.principal !== this.#principal()) return Promise.reject(Object.assign(new Error('The original author must recover this submission.'), { phase: 'not-issued' }));
                     return this.#contribute(issued.target.kind === 'edit' ? 'edit' : 'comment', {
                     key: issued.key, body: issued.body,
                     ...(issued.target.kind === 'edit' ? { id: issued.target.id } : { replyToId: issued.target.kind === 'reply' ? issued.target.id : '' }) });
@@ -314,66 +436,39 @@ export class PageModel {
         return writing;
     }
     get selectedWriting(): readonly string[] { return [...this.#activeWriting.values()]; }
-    saveWriting(): string {
+    saveWriting(): { records: import('./writing.js').SavedWriting[]; selected: string[] } {
         const writing = [...this.writings.values()].filter(writing => writing.text || writing.protected || writing.actions.undoClear);
-        return JSON.stringify({ version: 5, writing: writing.map(writing => writing.save()), selected: [...this.#activeWriting.values()].filter(id => writing.some(value => value.id === id)) });
+        return { records: writing.map(writing => writing.save()), selected: [...this.#activeWriting.values()].filter(id => writing.some(value => value.id === id)) };
     }
-    recoverWriting(raw: string): void {
-        const recovered = recoveredWriting(raw);
+    recoverWriting(records: readonly import('./writing.js').SavedWriting[], selected: readonly string[] = []): void {
+        const authored = new Map([...this.#activeWriting].filter(([, id]) => { const writing = this.#writings.get(id)!; return writing.touched || writing.text || writing.protected || writing.actions.undoClear; }));
+        const recovered = recoveredWriting(records);
         for (const saved of recovered) if (!this.#writings.has(saved.id)) this.#createWriting(saved.target, saved);
-        try { for (const id of JSON.parse(raw).selected ?? []) if (typeof id === 'string') this.selectWriting(id); } catch {}
+        for (const id of selected) { const writing = this.#writings.get(id); if (writing && !authored.has(writingTargetKey(writing.target))) this.#activeWriting.set(writingTargetKey(writing.target), id); }
+        for (const [target, id] of authored) this.#activeWriting.set(target, id);
         this.#writing(true);
     }
-    #apply(patch: Patch, operation = '', baseline = this.document): void {
-        const nodes = { ...this.document.nodes }, missing = Object.entries(patch.nodes ?? {}).filter(([, node]) => !node).map(([id]) => id);
-        const removed = unique([...missing, ...Object.keys(nodes).filter(id => missing.includes(nodes[id]!.parentId ?? ''))]);
-        for (const [id, node] of Object.entries(patch.nodes ?? {})) if (node) {
-            const previous = nodes[id], changed = { ...node };
-            // Creation owns insertion, never a later observation of the same identity.
-            if (operation === 'comment' && previous) continue;
-            const revision = node.lastEditedAt ?? node.createdAt;
-            const newer = previous && revision && Date.parse(revision) > Date.parse(previous.lastEditedAt ?? previous.createdAt);
-            const bodyChanged = previous && (previous.body !== baseline.nodes[id]?.body || previous.lastEditedAt !== baseline.nodes[id]?.lastEditedAt);
-            if (previous && (revision && Date.parse(previous.lastEditedAt ?? previous.createdAt) > Date.parse(revision) || operation === 'edit' && bodyChanged && !newer)) {
-                delete changed.body; delete changed.bodyHTML; delete changed.prepared; delete changed.lastEditedAt;
-            }
-            nodes[id] = { ...previous, ...(changed.body !== undefined && changed.body !== previous?.body ? { prepared: undefined, bodyHTML: undefined } : {}), ...changed } as Comment;
-        }
-        for (const id of removed) delete nodes[id];
-        const replies = { ...this.document.replies };
-        for (const id of removed) delete replies[id];
-        for (const parent of new Set([...(removed.length ? Object.keys(replies) : []), ...Object.keys(patch.replies ?? {})])) {
-            const current = replies[parent] ?? emptyWindow();
-            replies[parent] = windowPatch(current, { ...patch.replies?.[parent], ...(operation === 'comment' && current.total !== baseline.replies[parent]?.total && current.total !== null ? { total: current.total } : {}), remove: [...removed, ...(patch.replies?.[parent]?.remove ?? [])] });
-        }
-        let metadata = patch.metadata ? { ...this.document.metadata, ...patch.metadata } : this.document.metadata;
-        for (const [id, groups] of Object.entries(patch.reactions ?? {})) {
-            if (id === metadata.thread?.id) metadata = { ...metadata, thread: { ...metadata.thread, reactions: { ...metadata.thread.reactions, ...groups } } };
-            else if (nodes[id]) nodes[id] = { ...nodes[id]!, reactions: { ...nodes[id]!.reactions, ...groups } };
-        }
-        this.document = { nodes, roots: patch.roots || removed.length ? windowPatch(this.document.roots, { ...patch.roots, ...(operation === 'comment' && this.document.roots.total !== baseline.roots.total && this.document.roots.total !== null ? { total: this.document.roots.total } : {}), remove: [...removed, ...(patch.roots?.remove ?? [])] }, this.order === 'newest') : this.document.roots, replies, metadata };
-    }
     #contribute(operation: string, input: Record<string, unknown>, principal = this.#principal()): Promise<ContributionResult> {
-        this.signal.throwIfAborted();
-        const id = String(input.id ?? ''), parent = this.document.nodes[id]?.parentId;
-        const scopes = operation === 'reaction' ? [] : operation === 'comment' ? [input.replyToId ? 'replies:' + (this.document.nodes[String(input.replyToId)]?.parentId || input.replyToId) : 'roots']
-            : operation === 'delete' ? ['node:' + id, parent ? 'replies:' + parent : 'roots', 'replies:' + id] : ['node:' + id];
-        const keys = scopes.map(scope => principal + '\0' + scope), previous = keys.map(key => this.#operations.get(key)?.catch(() => undefined));
-        const work = this.#track(Promise.all(previous).then(async () => {
-            this.signal.throwIfAborted();
-            if (!principal || principal !== this.#principal()) throw Object.assign(new Error('Sign in as the original author to continue this contribution.'), { code: 'WRITE_UNCERTAIN' });
-            const { key, ...action } = input, baseline = this.document;
-            const result = await this.#request<ContributionResult>('contribute', { key: key ?? operationKey(), action: { type: operation, ...action },
-                ...(operation === 'comment' ? { creation: { backLink: this.config.backLink, description: this.config.description } } : {}) }, undefined, 'POST');
-            if (principal === this.#principal() && !this.signal.aborted) {
-                if (result.patch) this.#apply({ ...result.patch, metadata: this.document.metadata.thread ? undefined : result.patch.metadata }, operation, baseline);
-                this.error = result.patch ? '' : 'Saved on GitHub. Refresh to load the current discussion.';
-                this.notify();
+        if (this.signal.aborted || !principal || principal !== this.#principal()) return Promise.reject(Object.assign(new Error('Sign in as the original author to continue this contribution.'), { phase: 'not-issued' }));
+        const { key, ...action } = input, baseline = this.document, acceptance = this.#accepted;
+        let work:Promise<ContributionResult>;
+        try { work = this.#request<ContributionResult>('contribute', { key: key ?? operationKey(), action: { type: operation, ...action },
+            ...(operation === 'comment' ? { creation: { description: this.config.description } } : {}) }, undefined, 'POST'); }
+        catch (cause) { return Promise.reject(Object.assign(cause instanceof Error ? cause : new Error(message(cause)), {phase:'not-issued'})); }
+        return this.#track(work.then(result => {
+            if (result.phase !== 'confirmed' || typeof result.id !== 'string' || !Number.isSafeInteger(result.number)) throw Object.assign(new Error('The service did not confirm this contribution.'), {phase:'unknown'});
+            if (!this.signal.aborted) {
+                const content = result.patch ? this.#accept({ patch: result.patch, baseline, replayed: result.replayed, acceptance }) : undefined;
+                const reflected = operation === 'comment' || operation === 'edit' ? result.patch?.nodes?.[result.id]?.body !== undefined : Boolean(result.patch?.nodes || result.patch?.reactions);
+                this.notice = reflected ? '' : 'Saved on GitHub. Refresh to load the current discussion.';
+                if (result.account) this.#acceptAccount(result.account, result.replayed, result.replayed ? acceptance : Infinity);
+                this.notify(undefined, content);
             }
             return result;
-        }).finally(() => { for (const key of keys) if (this.#operations.get(key) === work) this.#operations.delete(key); }));
-        for (const key of keys) this.#operations.set(key, work);
-        return work;
+        }, cause => {
+            if (cause && typeof cause === 'object' && !('phase' in cause)) Object.assign(cause, { phase: 'unknown' });
+            throw cause;
+        }));
     }
     #effect(operation: SubjectEffect['operation'], input: Record<string, unknown> & { id: string }): Promise<ContributionResult> {
         this.signal.throwIfAborted();
@@ -385,6 +480,7 @@ export class PageModel {
             if (retained.operation !== operation || JSON.stringify(issued) !== JSON.stringify(input)) return Promise.reject(new Error('Resolve the pending action before changing its intent.'));
             return retained.pending ?? this.#issueEffect(effectKey, retained);
         }
+        if (this.transport.needsAuthorization) return Promise.reject(Object.assign(new Error('Reconnect GitHub before contributing.'), {phase:'not-issued'}));
         const effect: SubjectEffect = { principal: this.#principal(), operation, input: { ...input, key: operationKey() } };
         this.#effects.set(effectKey, effect);
         return this.#issueEffect(effectKey, effect);
@@ -411,17 +507,13 @@ export class PageModel {
     moderateComment(id: string, minimized: boolean, reason: ModerationReason = 'OFF_TOPIC'): Promise<ContributionResult> { return this.#effect('moderate', { id, minimized, reason }); }
     #subject(id: string): string { return id === 'discussion' || id === this.document.metadata.thread?.id ? 'discussion' : id; }
     #intentKey(id: string, reaction: Reaction, principal = this.#principal()): string { return principal + '\0' + id + '\0' + reaction; }
-    #confirmed(id: string): Reactions { return id === 'discussion' ? this.document.metadata.thread?.reactions ?? {} : this.document.nodes[id]?.reactions ?? {}; }
-    #canAdopt(intent: ReactionIntent): boolean { return intent.principal === this.#principal() && Boolean(intent.id === 'discussion' ? this.document.metadata.thread : this.document.nodes[intent.id]); }
-    #adoptReactions(): void {
-        for (const [key, intent] of this.#intents) if (intent.acknowledged && this.#canAdopt(intent)) {
-            const id = intent.id === 'discussion' ? this.document.metadata.thread!.id : intent.id;
-            const previous = this.#confirmed(intent.id)[intent.reaction];
-            if (previous?.count !== intent.confirmed.count || previous.selected !== intent.confirmed.selected) this.#apply({ reactions: { [id]: { [intent.reaction]: intent.confirmed } } });
-            intent.acknowledged = false;
-            if (!intent.pending && !intent.issued && intent.selected === intent.confirmed.selected) this.#intents.delete(key);
-        }
-        for (const [key, intent] of this.#intents) if (intent.principal === this.#principal() && !intent.pending && intent.error?.status === 'failed' && intent.selected !== intent.confirmed.selected) {
+    #confirmed(id: string): Partial<Record<Reaction, {count: number; selected: boolean}>> {
+        const groups = id === 'discussion' ? this.document.metadata.thread?.reactions ?? {} : this.document.nodes[id]?.reactions ?? {};
+        const selected = id === 'discussion' ? this.#viewer?.threadReactions : this.#viewer?.reactions[id];
+        return Object.fromEntries(Object.entries(groups).map(([reaction, group]) => [reaction, { count: group.count, selected: selected?.[reaction as Reaction] ?? false }]));
+    }
+    #resumeReactions(): void {
+        for (const [key, intent] of this.#intents) if (intent.principal === this.#principal() && !intent.pending && intent.error?.status === 'failed' && intent.selected !== intent.confirmed) {
             intent.error = undefined; void this.#react(key, intent).catch(() => {});
         }
     }
@@ -430,35 +522,35 @@ export class PageModel {
     }
     reaction(subjectId: string, reaction: Reaction): ReactionState {
         const id = this.#subject(subjectId), intent = this.#reactionIntent(id, reaction);
-        const confirmed = intent?.acknowledged ? intent.confirmed : this.#confirmed(id)[reaction] ?? { count: 0, selected: false };
+        const confirmed = this.#confirmed(id)[reaction] ?? { count: 0, selected: false };
         const desired = intent?.selected ?? confirmed.selected;
         return { permission: this.actions(id).react, confirmed: { ...confirmed }, desired, selected: desired,
             count: Math.max(0, confirmed.count + Number(desired) - Number(confirmed.selected)), pending: Boolean(intent?.pending), recovery: intent?.error,
             recover: intent?.error?.status !== 'uncertain' ? { status: 'unavailable' } : intent.pending ? { status: 'pending' } : intent.principal === this.#principal() ? { status: 'available' } : { status: 'sign-in', reason: 'Sign in as the original author to recover this reaction.' },
             abandon: Boolean(intent?.error?.status === 'uncertain' && !intent.pending) };
     }
-    reactions(subjectId: string): Reactions {
+    reactions(subjectId: string): Partial<Record<Reaction, {count: number; selected: boolean}>> {
         const id = this.#subject(subjectId), groups = { ...this.#confirmed(id) };
         for (const intent of this.#intents.values()) if (intent.id === id && intent.principal === this.#principal()) { const { count, selected } = this.reaction(id, intent.reaction); groups[intent.reaction] = { count, selected }; }
         return groups;
     }
     actions(subjectId = 'discussion'): SubjectActions {
-        const { metadata, nodes } = this.document, id = this.#subject(subjectId), node = nodes[id];
+        const { nodes, metadata } = this.document, id = this.#subject(subjectId), node = nodes[id], permissions = this.#viewer?.permissions[id];
         const effect = this.#effects.get(this.#principal() + '\0' + id);
         const pending = Boolean(effect?.pending), uncertain = effect?.error?.status === 'uncertain';
         const unavailable = (reason: string): ActionAvailability => ({ status: 'unavailable', reason });
         const available = (): ActionAvailability => ({ status: this.#principal() ? 'available' : 'sign-in' });
-        const base = !this.ready ? unavailable('The discussion is loading.') : metadata.unavailable ? unavailable('The discussion is unavailable.')
-            : metadata.archived ? unavailable('The repository is archived.') : id !== 'discussion' && !node ? unavailable('This comment is unavailable.') : undefined;
-        const permission = (allowed: boolean, operation?: SubjectEffect['operation']): ActionAvailability => effect && effect.operation === operation ? (effect.pending ? { status: 'pending' } : { status: 'recovery', reason: effect.error?.message }) : base ?? (effect?.pending ? { status: 'pending' } : allowed ? available() : unavailable('This action is not permitted.'));
-        const participation = base ?? (metadata.thread?.locked ? unavailable('The discussion is locked.') : available());
+        const authority = this.#availability(id, false);
+        const base = authority.status === 'available' || authority.status === 'sign-in' ? undefined : authority;
+        const permission = (allowed: boolean, operation?: SubjectEffect['operation']): ActionAvailability => effect && effect.operation === operation ? (effect.pending ? { status: 'pending' } : { status: 'recovery', reason: effect.error?.message }) : base ?? (effect?.pending ? { status: 'pending' } : allowed ? authority : unavailable('This action is not permitted.'));
+        const participation = this.#availability(id);
         const writingAction = (writing: Writing | undefined, action: ActionAvailability): ActionAvailability => writing?.pending ? { status: 'pending' } : writing?.protected ? { status: 'recovery', reason: writing.error?.message } : action;
         return {
             reply: writingAction(this.activeWriting(id === 'discussion' ? { kind: 'comment' } : { kind: 'reply', id }), participation),
-            edit: writingAction(this.activeWriting({ kind: 'edit', id }), permission(Boolean(node?.viewerCanUpdate))),
-            remove: permission(Boolean(node?.viewerCanDelete), 'delete'),
-            moderate: permission(Boolean(node && (node.isMinimized ? node.viewerCanUnminimize : node.viewerCanMinimize)), 'moderate'),
-            react: participation,
+            edit: writingAction(this.activeWriting({ kind: 'edit', id }), permission(Boolean(permissions?.canUpdate))),
+            remove: permission(Boolean(permissions?.canDelete), 'delete'),
+            moderate: permission(Boolean(node && (node.isMinimized ? permissions?.canUnminimize : permissions?.canMinimize)), 'moderate'),
+            react: id === 'discussion' && !metadata.thread ? unavailable('This discussion does not exist.') : participation.status === 'available' && (!this.#viewer || id !== 'discussion' && !this.#viewer.reactions[id]) ? { status: 'pending', reason: 'Account reactions are loading.' } : participation,
             recover: !uncertain ? unavailable('No action needs recovery.') : pending ? { status: 'pending' } : available(),
             abandon: !uncertain ? unavailable('No unresolved action exists.') : pending ? { status: 'pending' } : { status: 'available' },
         };
@@ -468,7 +560,8 @@ export class PageModel {
         const principal = this.#principal();
         if (!principal) return Promise.reject(new Error('Sign in before choosing a reaction.'));
         const id = this.#subject(subjectId), key = this.#intentKey(id, reaction, principal);
-        const intent: ReactionIntent = this.#intents.get(key) ?? { principal, id, reaction, selected, confirmed: { ...this.#confirmed(id)[reaction] ?? { count: 0, selected: false } } };
+        if (this.transport.needsAuthorization && !this.#intents.get(key)?.issued) return Promise.reject(Object.assign(new Error('Reconnect GitHub before contributing.'), {phase:'not-issued'}));
+        const intent: ReactionIntent = this.#intents.get(key) ?? { principal, id, reaction, selected, confirmed: this.#confirmed(id)[reaction]?.selected ?? false };
         intent.selected = selected;
         if (intent.error?.status !== 'uncertain') intent.error = undefined;
         this.#intents.set(key, intent);
@@ -482,17 +575,16 @@ export class PageModel {
         intent.pending = this.#track(Promise.resolve().then(async () => {
             try {
                 while (!this.signal.aborted && this.#intents.get(key) === intent && intent.principal === this.#principal()) {
-                    if (!intent.issued && intent.confirmed.selected === intent.selected) break;
+                    if (!intent.issued && intent.confirmed === intent.selected) break;
                     intent.issued ??= { selected: intent.selected, key: operationKey() };
                     const issued = intent.issued;
-                    const result = await this.#contribute('reaction', { subject: intent.id === 'discussion' ? { kind: 'discussion' } : { kind: 'comment', id: intent.id }, reaction: intent.reaction, ...issued }, intent.principal);
-                    const actualId = intent.id === 'discussion' ? result.id : intent.id;
-                    intent.confirmed = result.patch?.reactions?.[actualId]?.[intent.reaction] ?? { selected: issued.selected, count: Math.max(0, intent.confirmed.count + Number(issued.selected) - Number(intent.confirmed.selected)) };
-                    intent.acknowledged = true; intent.error = undefined; recovering = false; intent.issued = undefined;
-                    this.#adoptReactions();
+                    await this.#contribute('reaction', { subject: intent.id === 'discussion' ? { kind: 'discussion' } : { kind: 'comment', id: intent.id }, reaction: intent.reaction, ...issued }, intent.principal);
+                    intent.confirmed = issued.selected;
+                    intent.error = undefined; recovering = false; intent.issued = undefined;
+                    this.#resumeReactions();
                 }
-                if (intent.selected !== intent.confirmed.selected) throw Object.assign(new Error('Sign in as the original author to finish the requested reaction.'), { code: 'AUTHOR_CHANGED', status: 401 });
-                if (this.#canAdopt(intent)) this.#intents.delete(key);
+                if (intent.selected !== intent.confirmed) throw Object.assign(new Error('Sign in as the original author to finish the requested reaction.'), { code: 'AUTHOR_CHANGED', status: 401, phase: 'not-issued' });
+                this.#intents.delete(key);
             } catch (error) {
                 if (this.#intents.get(key) === intent) {
                     intent.error = failure(error);
@@ -502,7 +594,7 @@ export class PageModel {
                 throw error;
             } finally {
                 intent.pending = undefined;
-                this.#adoptReactions(); this.notify();
+                this.#resumeReactions(); this.notify();
             }
         }));
         return intent.pending;

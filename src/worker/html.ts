@@ -5,7 +5,7 @@ export function escape(value: string): string { return value.replace(/[&<>"']/g,
 export function safeJSON(value: unknown): string { return JSON.stringify(value).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029'); }
 export function security(response: Response, ancestors = "'none'", styleOrigins: string[] = []): Response {
   const headers = new Headers(response.headers);
-  headers.set('Cache-Control', 'no-store'); headers.set('X-Content-Type-Options', 'nosniff'); headers.set('Referrer-Policy', 'no-referrer');
+  headers.set('X-Content-Type-Options', 'nosniff'); headers.set('Referrer-Policy', 'no-referrer');
   headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   headers.set('Cross-Origin-Resource-Policy', 'cross-origin');
   headers.set('Content-Security-Policy', `default-src 'none'; script-src 'self'; style-src 'self' ${styleOrigins.join(' ')}; img-src https:; font-src 'self' ${styleOrigins.join(' ')}; connect-src 'self'; base-uri 'none'; object-src 'none'; form-action 'self'; frame-ancestors ${ancestors}`);
@@ -26,5 +26,5 @@ export function json(value: unknown, status = 200, headers: HeadersInit = {}): R
 
 export function authHTML(message: string, script: string, config: unknown): Response {
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><link rel="icon" type="image/png" sizes="64x64" href="/brand/favicon.png"><title>GitHub sign-in · giscusflare</title><link rel="stylesheet" href="/auth.css"></head><body><main class="auth-page"><div class="auth-loading" aria-hidden="true"></div><p id="auth-status" role="status">${escape(message)}</p><a id="auth-return" hidden>Return to comments</a></main><noscript>JavaScript is needed to complete sign-in.</noscript><script id="gw-config" type="application/json">${safeJSON(config)}</script><script type="module" src="${escape(script)}"></script></body></html>`;
-  return new Response(html, {headers: {'Content-Type': 'text/html; charset=utf-8'}});
+  return new Response(html,{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}});
 }

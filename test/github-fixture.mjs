@@ -1,4 +1,5 @@
 /** Stateful GitHub responses for local tests. */
+import { createHash } from 'node:crypto';
 import { validateGitHubQuery } from './github-schema.mjs';
 const AUTHOR = { login: 'reader', avatarUrl: 'https://avatars.githubusercontent.com/u/1', url: 'https://github.com/reader' };
 const reactions = ['THUMBS_UP','THUMBS_DOWN','LAUGH','HOORAY','CONFUSED','HEART','ROCKET','EYES'];
@@ -37,7 +38,7 @@ export class FakeGitHub {
   setLogin(principal,login) { this.profile(principal);this.principals.get(principal).login=login; }
   addThread(title, options={}) {
     const number=this.discussions.length+1;
-    const value={id:'D_'+number,number,title,body:title,bodyHTML:render(title),url:`https://github.com/example/comments/discussions/${number}`,locked:false,closed:false,answer:null,repository:{id:'R_fixture',nameWithOwner:'example/comments',isPrivate:false},category:{id:'CAT_fixture',name:'Announcements'},comments:[],votes:{},...options};
+    const value={id:'D_'+number,number,title,body:title+'\n<!-- sha1: '+createHash('sha1').update(title).digest('hex')+' -->',bodyHTML:render(title),url:`https://github.com/example/comments/discussions/${number}`,locked:false,closed:false,answer:null,repository:{id:'R_fixture',nameWithOwner:'example/comments',isPrivate:false},category:{id:'CAT_fixture',name:'Announcements'},comments:[],votes:{},...options};
     this.discussions.push(value); return value;
   }
   addComment(d,body,{author='reader',replyTo=null,html=render(body)}={}) {
@@ -69,14 +70,14 @@ export class FakeGitHub {
     if(url.pathname==='/repos/'+this.meta.nameWithOwner+'/installation'){check(token.split('.').length===3,'app JWT');return response({id:123});}
     if(url.pathname==='/app/installations/123/access_tokens'){const b=JSON.parse(payload);check(b.repositories.join()===this.meta.nameWithOwner.split('/')[1]&&(b.permissions.discussions==='write'||b.permissions.metadata==='read'),'restricted app permission scope');this.installations++;return response({token:'ghs_fixture',expires_at:new Date(this.now()+3600000).toISOString(),repositories:[{node_id:this.meta.id,full_name:this.meta.nameWithOwner,private:this.meta.isPrivate}]});}
     if(url.pathname==='/user'){check(user,'user token');const profile=this.profile(user);return response({node_id:profile.id,login:profile.login,avatar_url:profile.avatarUrl,html_url:profile.url});}
-    if(url.pathname==='/markdown'){check(user,'authenticated preview');return new Response(render(JSON.parse(payload).text),{headers:{'Content-Type':'text/html'}});}
+    if(url.pathname==='/markdown'){check(user||token==='ghs_fixture','registered or reader interpretation');return new Response(render(JSON.parse(payload).text),{headers:{'Content-Type':'text/html'}});}
     check(url.pathname==='/graphql'&&request.method==='POST','known endpoint');
     const {query,variables:x}=JSON.parse(payload);
     validateGitHubQuery(query,x);
     const operation=/^(?:query|mutation) (\w+)/.exec(query)?.[1]||(x.discussion?'RankDiscovery':x.ids0?'RankObservation':undefined);call.operation=operation;call.variables=x;call.query=query;
     let data;
     switch(operation){
-      case 'RankHead': {const d=this.discussions.find(d=>d.id===x.discussion),page=d?connection(d.comments,{last:1}):null;data={node:d?{...this.identity(d),comments:{totalCount:page.totalCount,nodes:page.nodes.map(c=>({id:c.id}))}}:null};break;}
+      case 'RankHead': {const d=this.discussions.find(d=>d.id===x.discussion),page=d?connection(d.comments,{last:1}):null;data={node:d?{...this.discussion(d,user),repository:{...this.identity(d).repository,isArchived:this.meta.isArchived},comments:{totalCount:page.totalCount,nodes:page.nodes.map(c=>({id:c.id}))}}:null};break;}
       case 'RankDiscovery': {
         const d=this.discussions.find(d=>d.id===x.discussion);
         const compact=c=>({id:c.id,createdAt:c.createdAt,isMinimized:c.isMinimized,
@@ -98,7 +99,14 @@ export class FakeGitHub {
         });break;
       }
       case 'RepositoryHead':
-      case 'Repository': check(x.owner+'/'+x.name===this.meta.nameWithOwner,'scoped metadata');data={repository:clone(this.meta)};break;
+      case 'Repository': check(x.owner+'/'+x.name===this.meta.nameWithOwner,'scoped metadata');data={...(x.signedIn?{viewer:this.profile(user)}:{}),repository:clone(this.meta)};break;
+      case 'ViewerAccess': {
+        check(x.owner+'/'+x.name===this.meta.nameWithOwner,'scoped account metadata');
+        const d=this.discussions.find(d=>d.number===x.number);
+        data={viewer:this.profile(user),repository:{id:this.meta.id,nameWithOwner:this.meta.nameWithOwner,isPrivate:this.meta.isPrivate,isArchived:this.meta.isArchived,
+          discussion:d?this.discussion(d,user):null},nodes:x.ids.map(id=>{const t=this.locate(id);return t&&t.node!==t.d?{...this.comment(t.node,user),discussion:this.identity(t.d)}:null;})};
+        break;
+      }
       case 'OperationAccess': {
         check(x.owner+'/'+x.name===this.meta.nameWithOwner,'scoped operation metadata');
         const d=this.discussions.find(d=>d.number===x.number);
@@ -110,23 +118,21 @@ export class FakeGitHub {
         }
         break;
       }
-      case 'ResolvePage': {
-        check(x.query.startsWith('repo:example/comments category:"Announcements" '),'quoted scoped search');
-        const term=JSON.parse(/in:(?:body|title) ("(?:\\.|[^"\\])*")/.exec(x.query)?.[1]||'""');
-        const nodes=this.hideSearch?[]:this.discussions.filter(d=>x.query.includes('in:body')?d.body.includes(term):d.title.includes(term));
-        data={...(x.signedIn?{viewer:this.profile(user)}:{}),repository:clone(this.meta),search:{nodes:nodes.slice(0,10).map(d=>({...this.identity(d),...(x.strict?{body:d.body}:{})}))}};break;
-      }
       case 'CommentCounts': {
-        data={repository:clone(this.meta)};
+        data={...(x.signedIn?{viewer:this.profile(user)}:{}),repository:clone(this.meta)};
         for(const [key,number] of Object.entries(x).filter(([key])=>/^n[0-9]+$/.test(key))){
           const d=this.discussions.find(d=>d.number===number);
           data.repository['p'+key.slice(1)]=d?{...this.discussion(d,user),comments:{totalCount:d.comments.length}}:null;
         }
-        for(const [key,query] of Object.entries(x).filter(([key])=>/^q[0-9]+$/.test(key))){
-          check(query.startsWith('repo:example/comments category:"Announcements" '),'scoped count search');
+        for(const [key,id] of Object.entries(x).filter(([key])=>/^p[0-9]+$/.test(key))){
+          const located=this.locate(id);
+          data[key]=located&&located.node!==located.d?{id:located.node.id,replyTo:located.node.replyTo,discussion:{...this.identity(located.d),body:located.d.body},replies:{totalCount:located.node.replies.length}}:null;
+        }
+        for(const [key,query] of Object.entries(x).filter(([key])=>/^s[0-9]+$/.test(key))){
+          check(query.startsWith('repo:example/comments in:body '),'scoped count search');
           const term=JSON.parse(query.slice(query.indexOf('in:')+(query.includes('in:body')?8:9),query.lastIndexOf(' sort:')));
           const nodes=this.hideSearch?[]:this.discussions.filter(d=>query.includes('in:body')?d.body.includes(term):d.title.includes(term));
-          data['p'+key.slice(1)]={nodes:nodes.slice(0,10).map(d=>({...this.discussion(d,user),comments:{totalCount:d.comments.length}}))};
+          data[key]={nodes:nodes.slice(0,10).map(d=>({...this.discussion(d,user),comments:{totalCount:d.comments.length}}))};
         }
         break;
       }
@@ -163,7 +169,7 @@ export class FakeGitHub {
     if(query.includes('effect:')){
       const payload=Object.values(data)[0],changed=payload.comment??payload.subject??null;
       if(changed){
-        if(operation==='AddComment'){
+        if(['AddComment','EditComment','DeleteComment','Minimize','Unminimize'].includes(operation)){
           const target=this.locate(changed.id);
           changed.discussion={...this.identity(target.d),comments:{totalCount:target.d.comments.length}};
           if(changed.replyTo){const parent=this.locate(changed.replyTo.id).node;changed.replyTo={id:parent.id,replies:{totalCount:parent.replies.length}};}

@@ -3,6 +3,7 @@
   "name": "giscusflare",
   "main": "src/worker/entry.ts",
   "compatibility_date": "2026-09-25",
+  "services": [{ "binding": "CONTENT", "service": "giscusflare-content" }],
   "assets": {
     "directory": "./dist/assets",
     "binding": "ASSETS",

@@ -1,18 +1,14 @@
 # Add comments to a website
 
-After [deploying your service](../DEPLOY.md), use its setup page to generate an iframe embed. For a site that bundles JavaScript, you can instead [mount comments directly in the page](#native-rendering).
+[Deploy and register your discussion repository](../DEPLOY.md), then use the setup page to generate an iframe embed or install the matching browser package for native rendering.
 
 ## Iframe
-
-Paste the generated script where comments should appear:
 
 ```html
 <script
   src="https://your-comments.workers.dev/client.js"
   data-repo="you/comments"
-  data-category="Announcements"
-  data-mapping="pathname"
-  data-strict="1"
+  data-page-key="post:hello-world"
   data-theme="preferred_color_scheme"
   data-loading="lazy"
   crossorigin="anonymous"
@@ -20,44 +16,27 @@ Paste the generated script where comments should appear:
 </script>
 ```
 
-Use your actual service address and repository. The setup output also includes verified repository and category IDs.
-
-The loader uses an existing `.giscus` container or creates one after the script. `data-container` selects a container by its ID. The iframe resizes as the conversation changes.
+Use your service address and registered repository. The loader uses an existing `.giscus` container or creates one after the script; `data-container` selects a container by ID. It resizes the iframe as its installed layout changes. Other appearance settings are `data-lang`, `data-reactions-enabled`, `data-input-position` and `data-emit-metadata`.
 
 ## Page identity
 
-Choose how each website page finds its GitHub discussion. `pathname` uses the page path. Use `specific` with a permanent post ID if URLs may change, or `number` to show an existing discussion.
+`data-page-key` is an exact, permanent website page key. Keep it unchanged when a post's address or title changes. Without an explicit key, the loader uses the canonical pathname without its leading slash, or `index` for the home page. A first contribution can create the corresponding discussion; reading alone does not create one.
 
-| Mapping | Discussion lookup |
-| --- | --- |
-| `pathname` | Path without its leading slash or final file extension; the home page uses `index` |
-| `url` | Page URL without its fragment or `giscus` query parameter |
-| `title` | Document title |
-| `og:title` | Open Graph title |
-| `specific` | The supplied `data-term` |
-| `number` | The existing discussion number supplied in `data-term` |
+To display an existing discussion, use `data-discussion-number="123"` instead of a page key. Optional `data-discussion-id` verifies its immutable GitHub ID. Explicit discussion selection never creates a replacement when the discussion disappears. For an existing giscus site, use the known discussion number or the exact existing hash-backed page key and verify the selected discussion before switching embeds. There is no fuzzy title matching or strictness switch.
 
-A stable identifier is useful when pages move. For example, `data-mapping="specific" data-term="post:hello-world"` keeps the conversation attached to that post when its URL or title changes.
-
-Strict matching searches for the identifier's hash in the discussion body. Number mapping selects one existing discussion and never creates a replacement. For an existing giscus site, preserve its mapping and strict setting until you have verified the same discussion loads.
+The website origin authorizes embedding. The canonical page URL resolves relative content links and supplies the discussion backlink; the return URL sends authentication back to the current page. The return URL belongs to the authorized website origin; the rendering URL can preserve a separate canonical address, including in local previews. Open-hosting embeds additionally include the `data-registration` reference returned by POST `/api/v6/registration` for the configured hosting category. Paste it into setup’s embed generator or native page options; see [open hosting](CONFIGURATION.md#offer-open-hosting).
 
 ## Native rendering
 
-Install the package archive from the chosen [GitHub release](https://github.com/lumirth/giscusflare/releases), then commit your lockfile and rebuild your website:
+Install an archive from the chosen [release](https://github.com/lumirth/giscusflare/releases), commit its lockfile and use the matching service version:
 
 ```sh
-npm install https://github.com/lumirth/giscusflare/releases/download/v5.0.0/giscusflare-5.0.0.tgz
+npm install https://github.com/lumirth/giscusflare/releases/download/v6.0.0/giscusflare-6.0.0.tgz
 ```
-
-Use matching Worker and browser versions. For a local source build, run `npm ci && npm run build`, run `npm pack`, and install the resulting archive in your website project.
-
-Add a container where comments should appear:
 
 ```html
 <div id="comments"></div>
 ```
-
-Mount the interface from your website's JavaScript:
 
 ```js
 import { mountComments } from 'giscusflare';
@@ -67,43 +46,52 @@ const comments = mountComments(document.querySelector('#comments'), {
   service: 'https://your-comments.workers.dev',
   page: {
     repo: 'you/comments',
-    origin: location.href,
-    term: 'post:hello-world',
-    strict: true,
+    selector: { kind: 'page', key: 'post:hello-world' },
+    origin: location.origin,
+    pageURL: new URL(location.pathname, location.origin).href,
+    returnURL: location.href,
   },
 });
 ```
 
-Use `comments.conversation` for state and contribution commands. Use a different `term` for each post. Call `comments.dispose()` when removing the component. For client-side navigation, call `comments.replacePage(nextPage)` with the next page's identity. To change themes, call `comments.conversation.updateAppearance({ theme: 'dark' })`.
-
-Style the container in your page to set its width and outer spacing. See [customization](EXTENDING.md) to replace components or build a different interface, and the [API reference](API.md) for options and methods.
+`mountComments` selects the stock rich-content profile and standard presentation. `comments.conversation` exposes shared reading, account, writing and contribution behavior. Call `dispose()` on removal, `replacePage(nextPage)` for client-side navigation, or `conversation.updateAppearance({ theme: 'dark' })` for a theme change. A page replacement creates a new conversation; rebind subscriptions to its returned owner.
 
 ## Choose content delivery
 
-The default native mount uses GitHub HTML with the built-in safe renderer and code/math features. To use content prepared by your deployed host, choose both the delivery mode and the DOM renderer:
+Select a complete content profile instead of pairing unrelated renderer and transport settings:
 
 ```js
-import { mountComments } from 'giscusflare';
-import { preparedHTML } from 'giscusflare/content';
+import { preparedContent } from 'giscusflare/content';
 
 const comments = mountComments(target, {
-  service: 'https://your-comments.workers.dev',
-  page: { repo: 'you/comments', origin: location.href, term: 'post:hello-world' },
-  contentSource: 'prepared',
-  content: preparedHTML(),
+  service,
+  page,
+  content: preparedContent(),
 });
 ```
 
-The Worker must provide the trusted producer. It prepares published bodies and anonymous previews; canonical GitHub Markdown stays available. The selected content owns its styles and resource references. See [customization](EXTENDING.md#prepare-content-in-your-deployment) for the producer setup. A browser Markdown renderer instead selects `contentSource: 'source'` with its own `content` function.
+`preparedContent()` uses your service's separately deployed, commenter-safe producer. `stockContent({ service })` selects the standard GitHub interpretation, required styles and controls. `browserContent(renderer)` deliberately interprets canonical Markdown in the browser. See [customization](EXTENDING.md) for producer deployment and feature replacement.
+
+## Counts on listings
+
+```js
+import { createCounts } from 'giscusflare/counts';
+
+const counts = createCounts({ service, repo: 'you/comments', origin: location.origin });
+const stop = counts.subscribe('post:hello-world', observation => {
+  badge.textContent = String(observation.count);
+});
+// On removal: stop(); counts.dispose();
+```
+
+A string subscription selects the exact page’s root count. Pass a typed `CountTarget` to select explicit discussions or a parent’s reply count; `countKey(target)` supplies their shared map identity. The lightweight capability owns batching, expiry, newer-observation precedence and optional same-tab storage. Conversations automatically publish accepted root observations to the same scoped owner. A failed request establishes neither zero nor a new observation. Hosts only paint labels and badges.
 
 ## Content Security Policy
 
-For iframe embedding, allow the service in your website's `script-src`, `style-src` and `frame-src`. Native rendering needs the service in `connect-src`. Images, code, math, styles and modules in a native presentation follow your website's policy. Prepared resources must be allowed by `style-src` and `script-src` as appropriate.
-
-Add these origins to your existing policy. The service iframe's policy does not apply to content installed directly in your page.
+Iframe embedding needs the service in `script-src`, `style-src` and `frame-src`; native rendering needs it in `connect-src`. Profile styles, modules, images and optional browser compilers follow the website's own CSP. The service iframe's policy does not apply to DOM installed directly in your page.
 
 ## Reading and writing recovery
 
-Confirmed contributions apply their operation-owned changes immediately. Returning to a stale tab or reconnecting can observe loaded content without resetting reading progress. Deliberate restart or order changes start a new traversal. Public cache lifetime still applies; open tabs do not poll on a timer.
+Background observations retain loaded traversal; deliberate restart or sorting starts a new one. Counts, readable bodies, optional enhancements and account access have independent availability. Open tabs refresh on configured focus/reconnect events rather than polling.
 
-Browser recovery retains independent writing records, including several records for one destination. Recovery controls let the reader select a record explicitly. Ordinary records expire after five minutes by default; unresolved issued submissions remain protected through ordinary retention and sign-out. They preserve original target, body, key and author until a known outcome or explicit abandonment. Storage is best effort. Disable it with `data-writing-recovery="off"` on the iframe script or `writingRecovery: false` in JavaScript. [API options](API.md) cover triggers, retention and recovery selection.
+Writing records retain independent intent IDs and immutable destinations. Issued unresolved submissions keep their original author, body and key through reload and sign-out. Readers choose saved records explicitly and retry as the original author. Optional storage can fail without destroying current in-memory writing. Disable persistence with `data-writing-recovery="off"` or `writingRecovery: false`. See the [API](API.md) for recovery and action commands.

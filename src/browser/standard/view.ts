@@ -3,11 +3,12 @@ import { repeat } from "lit-html/directives/repeat.js";
 import type { Presentation, Comment, Discussion } from "../headless.js";
 import { strings, message } from "../i18n.js";
 import { icon } from "./icon.js";
-import { createComposer, composer as boundComposer } from "./composer.js";
+import { composer as boundComposer } from "./composer.js";
 import { reactions } from "./reactions.js";
 import { header } from "./header.js";
 import { actions } from "./actions.js";
 import { body } from "./body.js";
+import { resource } from "./resource.js";
 import type { Writing } from "../../conversation/writing.js";
 import type { StandardParts, StandardContext } from "./contracts.js";
 
@@ -18,22 +19,30 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
     const root = document.createElement('section');root.className = 'gsc-main';
     const hadClass = target.classList.contains('giscusflare'),
       previousTheme = target.getAttribute('data-theme'), previousDir = target.getAttribute('dir');
-    const readable = new Set<string>();
-    let error = '', disposed = false, drawing = false, scheduled = false, initiallyPresented = false,
-      main: { id: string; element: HTMLElement; lifetime: AbortController } | undefined, stop: (() => void) | undefined;
+    let error = '', disposed = false, drawing = false, scheduled = false,
+      stop: (() => void) | undefined;
     const scheduleDraw = () => {
       if (scheduled || disposed) return;
       scheduled = true; queueMicrotask(() => { scheduled = false; if (!disposed) draw(); });
     };
+    const layout = () => {
+      if (!disposed && !scope.signal.aborted && runtime.ready && !root.querySelector('.gsc-comment[hidden],.gsc-reply[hidden]')) runtime.readingLayout.publish();
+    };
     const context: StandardContext = { runtime, scope, contentReady(id, ready) {
-      if (disposed || readable.has(id) === ready) return;
-      if (ready) readable.add(id); else readable.delete(id);
-      scheduleDraw();
+      if (disposed) return;
+      const card = root.querySelector<HTMLElement>('#' + CSS.escape('comment-' + id));
+      if (!card) return;
+      const comment = runtime.document.nodes[id];
+      const force = Boolean(comment?.deletedAt || comment?.isMinimized || runtime.activeWriting({kind:'edit',id})?.open);
+      const hidden = !force && !ready;
+      if (card.hidden !== hidden) { card.hidden = hidden; scheduleDraw(); }
+      else if (hidden && !root.querySelector('.gsc-loading')) scheduleDraw();
+      layout();
     }, report(cause) {
       error = cause instanceof Error ? cause.message : String(cause);draw();
     } };
     scope.own(() => {
-      disposed = true;stop?.();main?.lifetime.abort();
+      disposed = true;stop?.();
       try { render(nothing, root); } finally {
         root.remove();
         if (!hadClass) target.classList.remove('giscusflare');
@@ -42,16 +51,7 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
       }
     });
     target.append(root);target.classList.add('giscusflare');
-    const composer = (writing: Writing) => {
-      if (parts.composer) return parts.composer(context, writing);
-      if (writing.target.kind !== 'comment') return boundComposer(context, writing);
-      if (main?.id !== writing.id) {
-        main?.lifetime.abort();
-        const lifetime = new AbortController();
-        main = { id: writing.id, lifetime, element: createComposer(context, writing, AbortSignal.any([scope.signal, lifetime.signal])) };
-      }
-      return main.element;
-    };
+    const composer = (writing: Writing) => (parts.composer || boundComposer)(context, writing);
     const react = (subject: Comment | Discussion | null, position: 'top' | 'bottom') =>
       (parts.reactions || reactions)(context, { subject, position });
     const attempt = (work: () => Promise<unknown>) => () => {
@@ -75,21 +75,21 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
                     ? html`<em class="color-text-secondary"
                         >${t.deletedComment}</em
                       >`
-                    : c.isMinimized
-                      ? html`<details>
-                          <summary class="color-text-secondary">
-                            ${t.hidden}${c.minimizedReason ? " · " + c.minimizedReason : ""}
-                          </summary>
-                          ${body(context, c)}
-                        </details>`
-                      : body(context, c)
+                    : html`<details ?open=${!c.isMinimized}>
+                        <summary class="color-text-secondary" ?hidden=${!c.isMinimized}>
+                          ${t.hidden}${c.minimizedReason ? " · " + c.minimizedReason : ""}
+                        </summary>
+                        ${body(context, c)}
+                      </details>`
                 }
               </div>`;
       }
-      const displayable = (c: Comment) => Boolean(c.deletedAt || c.isMinimized ||
-        runtime.activeWriting({ kind: 'edit', id: c.id })?.open || readable.has(c.id));
+      const visibility = (c: Comment) => resource(scope, card => {
+        const published = card.querySelector<HTMLElement>('[data-content-ready]')?.dataset.contentReady === 'true';
+        card.hidden = !(published || c.deletedAt || c.isMinimized || runtime.activeWriting({kind:'edit',id:c.id})?.open);
+      });
       function reply(c: Comment) {
-        return html`<article class="gsc-reply" id=${"comment-" + c.id} ?hidden=${!displayable(c)}>
+        return html`<article class="gsc-reply" id=${"comment-" + c.id} ${visibility(c)}>
           <div class="gsc-tl-line"></div>
           <div class="flex">
             <div class="gsc-reply-author-avatar">
@@ -116,12 +116,12 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
         const doc = runtime.document, window = doc.replies[c.id],
           t = strings(runtime.appearance.lang),
           replies = (window?.ids || []).map(id => doc.nodes[id]).filter((node): node is Comment => Boolean(node)),
-          count = window?.total ?? replies.length,
+          count = window?.count?.count ?? replies.length,
           hidden = Math.max(0, count - replies.length),
           replying = Boolean(runtime.activeWriting({ kind: 'reply', id: c.id })?.open);
-        return html`<article class="gsc-comment" id=${"comment-" + c.id} ?hidden=${!displayable(c)}>
+        return html`<article class="gsc-comment" id=${"comment-" + c.id} ${visibility(c)}>
           <div
-            class=${"color-bg-primary w-full min-w-0 rounded-md border " + (c.viewerDidAuthor ? "gsc-comment-author-is-viewer" : "")}
+            class=${"color-bg-primary w-full min-w-0 rounded-md border " + (runtime.viewer?.permissions[c.id]?.didAuthor ? "gsc-comment-author-is-viewer" : "")}
           >
             <div class="gsc-header-with-actions">
               ${(parts.header || header)(context, c)}${actions(context, target, c)}
@@ -177,17 +177,16 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
           lang = runtime.appearance.lang, t = strings(lang), discussion = metadata.thread,
           comments = roots.ids.map(id => doc.nodes[id]).filter((node): node is Comment => Boolean(node)),
           destination = discussion?.url || 'https://github.com/' + runtime.config.repo + '/discussions',
-          problem = error || runtime.error || runtime.session.error || runtime.recovery.error,
+          problem = error || runtime.error || runtime.viewerError || runtime.session.error || runtime.recovery.error,
+          retry = runtime.error ? () => runtime.restart() : runtime.viewerError ? () => runtime.refreshViewer() : runtime.session.error ? () => runtime.session.verify() : undefined,
           saved = runtime.recovery.records(),
-          writable = runtime.canCompose,
+          composition = runtime.composition, mainWriting = runtime.writing(),
           restartAvailable = runtime.continuity.status === 'restart-required' ||
-            [roots, ...Object.values(doc.replies)].some(window => window.cursor === null && window.total !== null && window.total > window.ids.length),
+            [roots, ...Object.values(doc.replies)].some(window => window.cursor === null && window.count !== null && window.count.count > window.ids.length),
           total = Object.values(discussion?.reactions || {}).reduce((sum, group) => sum + group.count, 0),
-          replyCount = comments.reduce((sum, node) => sum + (doc.replies[node.id]?.total ?? doc.replies[node.id]?.ids.length ?? 0), 0),
-          visible = comments.flatMap(node => [node, ...(doc.replies[node.id]?.ids || []).map(id => doc.nodes[id]).filter((reply): reply is Comment => Boolean(reply))]);
-        const preparing = !visible.every(displayable);
-        if (runtime.ready && !preparing) initiallyPresented = true;
-        const initial = !initiallyPresented && !problem;
+          replyCount = comments.reduce((sum, node) => sum + (doc.replies[node.id]?.count?.count ?? doc.replies[node.id]?.ids.length ?? 0), 0);
+        const preparing = Boolean(root.querySelector('.gsc-comment[hidden],.gsc-reply[hidden]'));
+        const initial = !runtime.ready && !runtime.error;
         if (root.lang !== lang) root.lang = lang;
         if (root.getAttribute('aria-label') !== t.comments) root.setAttribute('aria-label', t.comments);
         if (target.dataset.theme !== runtime.appearance.theme) target.dataset.theme = runtime.appearance.theme;
@@ -195,11 +194,11 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
         const direction = /^(ar|he|fa|ur)(-|$)/.test(lang) ? 'rtl' : 'ltr';
         if (target.dir !== direction) target.dir = direction;
         const selected = (profile: string) => typeof runtime.order === 'object' && runtime.order.profile === profile;
-        const commentsView = html`<section class="gsc-comments" ?hidden=${initial}>
+        const commentsView = html`<section class="gsc-comments">
           <div class="gsc-header">
             <div class="gsc-left-header">
               <a class="gsc-comments-count link-primary" href=${destination} target="_blank" rel="noopener noreferrer">
-                ${message(lang, 'comments', roots.total ?? comments.length, roots.total === null ? '+' : '')}
+                ${roots.count ? message(lang, 'comments', roots.count.count) : t.comments}
               </a>
               ${replyCount ? html`<span>·</span><span>${message(lang, 'replies', replyCount, roots.cursor ? '+' : '')}</span>` : nothing}
               <em class="text-sm color-text-secondary">– powered by
@@ -232,15 +231,16 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
                 if (writing) runtime.interactions.focus(writing.id);
               })}>${record.issued ? 'Unresolved submission' : record.target.kind === 'comment' ? 'Comment' : record.target.kind === 'reply' ? 'Reply' : 'Edit'}: ${record.text.slice(0, 80)}</button>`)}
           </section>` : nothing}
-          ${runtime.appearance.reactionsEnabled && !initial ? html`<section class="gsc-reactions">
+          ${runtime.appearance.reactionsEnabled && Boolean(discussion) ? html`<section class="gsc-reactions">
             <h4 class="gsc-reactions-count"><a class="link-primary" href=${destination} target="_blank" rel="noopener noreferrer">${message(lang, 'reactions', total)}</a></h4>
             <div class="gsc-discussion-reactions">${react(discussion || null, 'bottom')}</div>
           </section>` : nothing}
-          ${problem ? html`<div class="flash flash-error" role="alert">${problem}<button class="ml-2 color-text-link" type="button"
-            @click=${() => { error = '';void runtime.restart(); }}>${t.retry}</button></div>` : nothing}
-          ${runtime.ready && !writable ? html`<p class="flash">${metadata.unavailable ? t.discussionUnavailable : metadata.archived ? t.archived : t.locked}</p>` : nothing}
+          ${problem ? html`<div class="flash flash-error" role="alert">${problem}${retry ? html`<button class="ml-2 color-text-link" type="button" @click=${attempt(retry)}>${t.retry}</button>` : nothing}</div>` : nothing}
+          ${runtime.notice ? html`<p class="flash">${runtime.notice}<button class="ml-2 color-text-link" type="button" @click=${attempt(() => runtime.restart())}>${t.retry}</button></p>` : nothing}
+          ${composition.status === 'unavailable' ? html`<p class="flash">${composition.cause === 'unavailable' ? t.discussionUnavailable : composition.cause === 'archived' ? t.archived : composition.cause === 'locked' ? t.locked : composition.reason}</p>` : nothing}
           ${commentsView}
-          <div class="gsc-main-composer" ?hidden=${runtime.actions().reply.status === 'unavailable'}>${composer(runtime.writing())}</div>`, root);
+          <div class="gsc-main-composer" ?hidden=${composition.status === 'unavailable' && !mainWriting.text && !mainWriting.protected && !mainWriting.actions.undoClear}>${composer(mainWriting)}</div>`, root);
+        queueMicrotask(layout);
       } finally { drawing = false; }
     }
     let renderedDocument = runtime.document;

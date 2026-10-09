@@ -34,13 +34,13 @@ export const providerTransport = origin => async (request) => {
     return fetch(origin, { method: request.method, headers, redirect: 'manual', ...(request.body ? { body: await request.arrayBuffer() } : {}) });
 };
 /** The real Worker and SQLite repository, with one independent simulated provider. */
-export async function nativeService({ origin, blog, seed = true, assets = publicAssets(), repositories, entry = 'src/worker/entry.ts' }) {
+export async function nativeService({ origin, blog, seed = true, assets = publicAssets(), repositories, openHosting, entry = 'src/worker/entry.ts', contentEntry = 'dist/stock-content-worker.mjs' }) {
     const github = await githubServer({ seed });
     let runtime;
     try {
         const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
         runtime = await workerd(entry, {
-            serviceBindings: { ASSETS: assets },
+            serviceBindings: { ASSETS: assets, CONTENT: { name: 'content' } },
             outboundService: providerTransport(github.origin),
             durableObjects: { REPOSITORY_STORE: { className: 'Repository', useSQLite: true } },
             ratelimits: Object.fromEntries([['READ_LIMITER', 120], ['WRITE_LIMITER', 30], ['AUTH_LIMITER', 6]].map(([name, limit], i) => [name, { namespace_id: String(84101 + i), simple: { limit, period: 60 } }])),
@@ -48,9 +48,10 @@ export async function nativeService({ origin, blog, seed = true, assets = public
                 PUBLIC_ORIGIN: origin, GITHUB_APP_ID: '12345', GITHUB_CLIENT_ID: 'Iv1.fixture',
                 GITHUB_CLIENT_SECRET: 'fixture-client-secret', GITHUB_PRIVATE_KEY: privateKey.export({ type: 'pkcs1', format: 'pem' }).toString(),
                 SESSION_SECRET: randomBytes(32).toString('base64url'),
-                REPOSITORIES: repositories || { 'example/comments': { origins: [blog], category: 'Announcements', defaultCommentOrder: 'oldest', customThemeOrigins: ['https://themes.example'] } },
+                ...(openHosting ? {OPEN_HOSTING:openHosting} : {}),
+                REPOSITORIES: repositories || { 'example/comments': { repositoryId: 'R_fixture', installationId: 123, categoryId: 'CAT_fixture', origins: [blog], category: 'Announcements', defaultCommentOrder: 'oldest', customThemeOrigins: ['https://themes.example'] } },
             },
-        });
+        }, {}, [{ name: 'content', entry: contentEntry }]);
         return { github: github.upstream, versions: runtime.versions, fetch: runtime.fetch,
             restart: entry => runtime.restart(entry),
             async dispose() { try {

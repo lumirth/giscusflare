@@ -20,7 +20,7 @@ The standard widget uses unchanged SVG assets from `@primer/octicons` 19.27.0. G
 
 ## Dependencies
 
-Runtime dependencies include Hono, Valibot, DOMPurify, Lit HTML, MathJax and Octicons. TypeScript, esbuild, PostCSS and Wrangler support the build. Each dependency retains its package license.
+Runtime dependencies include Hono, Valibot, parse5, Lit HTML, MathJax and Octicons. TypeScript, esbuild, PostCSS and Wrangler support the build. Each dependency retains its package license.
 
 Lit HTML uses the BSD-3-Clause license. Review the installed packages' license files when redistributing a build.
 

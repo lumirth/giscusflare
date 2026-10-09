@@ -1,5 +1,4 @@
 // A framework-neutral presentation consuming the same page document as the default UI.
-import { mountContent } from 'giscusflare/content';
 import { createEditor, type Presentation, type Writing } from 'giscusflare/headless';
 const emojis = {
   THUMBS_UP: '👍', THUMBS_DOWN: '👎', LAUGH: '😄', HOORAY: '🎉',
@@ -62,7 +61,7 @@ export const forumPresentation: Presentation = (target, page, scope) => {
     editorHost.append(editor.form);
     return editor;
   };
-  const articles = new Map<string, { element: HTMLElement; body: HTMLElement; content: ReturnType<typeof mountContent> }>();
+  const articles = new Map<string, { element: HTMLElement; body: HTMLElement; content: ReturnType<typeof page.content.mount> }>();
   scope.own(() => { for (const article of articles.values()) article.content.dispose(); });
   const draw = () => {
     const { document: doc } = page;
@@ -83,13 +82,11 @@ export const forumPresentation: Presentation = (target, page, scope) => {
       if (!retained) {
         const element = node('article'), body = node('div');
         element.className = 'forum-post'; element.dataset.comment = id; body.className = 'forum-body';
-        retained = { element, body, content: mountContent(body, page.content, { signal: scope.signal }) }; articles.set(id, retained);
+        retained = { element, body, content: page.content.mount(body, comment, { signal: scope.signal, onReady: ready => { element.hidden = !ready; queueMicrotask(() => { if (!scope.signal.aborted && page.ready && [...articles].every(([id, article]) => article.content.ready || page.document.nodes[id]?.deletedAt)) page.readingLayout.publish(); }); } }) }; articles.set(id, retained);
       }
       const { element, body } = retained;
-      body.hidden = false;
-      if (comment.deletedAt) { retained.content.clear(); body.textContent = 'Comment deleted.'; }
-      else void retained.content.update({ markdown: comment.body, html: comment.bodyHTML, prepared: comment.prepared, purpose: 'comment', repo: page.config.repo, pageURL: page.config.origin,
-        comment: { id: comment.id, url: comment.url, parentId: comment.parentId } }).catch(() => {});
+      body.hidden = false; element.hidden = !retained.content.ready;
+      if (comment.deletedAt) { retained.content.clear(); body.textContent = 'Comment deleted.'; element.hidden = false; }
       const byline = node('header'), avatar = node('span', (comment.author?.login || '?').slice(0, 1).toUpperCase());
       byline.className = 'forum-byline'; avatar.className = 'forum-avatar'; avatar.setAttribute('aria-hidden', 'true');
       const date = node('a', new Date(comment.createdAt).toLocaleString()) as HTMLAnchorElement;

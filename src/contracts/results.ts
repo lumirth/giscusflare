@@ -7,5 +7,5 @@ export interface ReadValue<T> {
     expires: number;
 }
 /** Durable external confirmation, independent of every later observation. */
-export const EffectResult = v.strictObject({ id: NodeID, number: PositiveInteger, parentId: v.optional(NodeID), patch: v.optional(v.custom<Patch>(value => Boolean(value && typeof value === 'object' && !Array.isArray(value)))) });
+export const EffectResult = v.strictObject({ id: NodeID, number: PositiveInteger, parentId:v.optional(NodeID),account:v.optional(v.custom<import('./document.js').AccountPatch>(value=>Boolean(value&&typeof value==='object'&&!Array.isArray(value)))),patch: v.optional(v.custom<Patch>(value => Boolean(value && typeof value === 'object' && !Array.isArray(value)))) });
 export type EffectResult = v.InferOutput<typeof EffectResult>;
