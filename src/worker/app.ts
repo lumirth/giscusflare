@@ -46,7 +46,7 @@ app.get('/api/v5/setup',c=>{
   try{configuration(c.env);secrets(c.env);configured=true;}catch{/* First deployment opens setup. */}
   return security(json({configured,origin:new URL(c.req.url).origin}));
 });
-app.get('/healthz',c=>security(json({status:'ok',version:'5.0.0'})));
+app.get('/healthz',c=>security(json({status:'ok',version:'5.0.1'})));
 app.use('*', async (c, next) => {
   if(!/^\/(?:api\/|auth\/|(?:[a-z-]+\/)?widget(?:$|\/))/.test(c.req.path)){await next();return;}
   const config = configuration(c.env); c.set('config', config);

@@ -324,13 +324,17 @@ export class PageModel {
         try { for (const id of JSON.parse(raw).selected ?? []) if (typeof id === 'string') this.selectWriting(id); } catch {}
         this.#writing(true);
     }
-    #apply(patch: Patch): void {
+    #apply(patch: Patch, operation = '', baseline = this.document): void {
         const nodes = { ...this.document.nodes }, missing = Object.entries(patch.nodes ?? {}).filter(([, node]) => !node).map(([id]) => id);
         const removed = unique([...missing, ...Object.keys(nodes).filter(id => missing.includes(nodes[id]!.parentId ?? ''))]);
         for (const [id, node] of Object.entries(patch.nodes ?? {})) if (node) {
             const previous = nodes[id], changed = { ...node };
+            // Creation owns insertion, never a later observation of the same identity.
+            if (operation === 'comment' && previous) continue;
             const revision = node.lastEditedAt ?? node.createdAt;
-            if (revision && previous && Date.parse(previous.lastEditedAt ?? previous.createdAt) > Date.parse(revision)) {
+            const newer = previous && revision && Date.parse(revision) > Date.parse(previous.lastEditedAt ?? previous.createdAt);
+            const bodyChanged = previous && (previous.body !== baseline.nodes[id]?.body || previous.lastEditedAt !== baseline.nodes[id]?.lastEditedAt);
+            if (previous && (revision && Date.parse(previous.lastEditedAt ?? previous.createdAt) > Date.parse(revision) || operation === 'edit' && bodyChanged && !newer)) {
                 delete changed.body; delete changed.bodyHTML; delete changed.prepared; delete changed.lastEditedAt;
             }
             nodes[id] = { ...previous, ...(changed.body !== undefined && changed.body !== previous?.body ? { prepared: undefined, bodyHTML: undefined } : {}), ...changed } as Comment;
@@ -338,14 +342,16 @@ export class PageModel {
         for (const id of removed) delete nodes[id];
         const replies = { ...this.document.replies };
         for (const id of removed) delete replies[id];
-        for (const parent of new Set([...(removed.length ? Object.keys(replies) : []), ...Object.keys(patch.replies ?? {})]))
-            replies[parent] = windowPatch(replies[parent] ?? emptyWindow(), { ...patch.replies?.[parent], remove: [...removed, ...(patch.replies?.[parent]?.remove ?? [])] });
+        for (const parent of new Set([...(removed.length ? Object.keys(replies) : []), ...Object.keys(patch.replies ?? {})])) {
+            const current = replies[parent] ?? emptyWindow();
+            replies[parent] = windowPatch(current, { ...patch.replies?.[parent], ...(operation === 'comment' && current.total !== baseline.replies[parent]?.total && current.total !== null ? { total: current.total } : {}), remove: [...removed, ...(patch.replies?.[parent]?.remove ?? [])] });
+        }
         let metadata = patch.metadata ? { ...this.document.metadata, ...patch.metadata } : this.document.metadata;
         for (const [id, groups] of Object.entries(patch.reactions ?? {})) {
             if (id === metadata.thread?.id) metadata = { ...metadata, thread: { ...metadata.thread, reactions: { ...metadata.thread.reactions, ...groups } } };
             else if (nodes[id]) nodes[id] = { ...nodes[id]!, reactions: { ...nodes[id]!.reactions, ...groups } };
         }
-        this.document = { nodes, roots: patch.roots || removed.length ? windowPatch(this.document.roots, { ...patch.roots, remove: [...removed, ...(patch.roots?.remove ?? [])] }, this.order === 'newest') : this.document.roots, replies, metadata };
+        this.document = { nodes, roots: patch.roots || removed.length ? windowPatch(this.document.roots, { ...patch.roots, ...(operation === 'comment' && this.document.roots.total !== baseline.roots.total && this.document.roots.total !== null ? { total: this.document.roots.total } : {}), remove: [...removed, ...(patch.roots?.remove ?? [])] }, this.order === 'newest') : this.document.roots, replies, metadata };
     }
     #contribute(operation: string, input: Record<string, unknown>, principal = this.#principal()): Promise<ContributionResult> {
         this.signal.throwIfAborted();
@@ -356,11 +362,11 @@ export class PageModel {
         const work = this.#track(Promise.all(previous).then(async () => {
             this.signal.throwIfAborted();
             if (!principal || principal !== this.#principal()) throw Object.assign(new Error('Sign in as the original author to continue this contribution.'), { code: 'WRITE_UNCERTAIN' });
-            const { key, ...action } = input;
+            const { key, ...action } = input, baseline = this.document;
             const result = await this.#request<ContributionResult>('contribute', { key: key ?? operationKey(), action: { type: operation, ...action },
                 ...(operation === 'comment' ? { creation: { backLink: this.config.backLink, description: this.config.description } } : {}) }, undefined, 'POST');
             if (principal === this.#principal() && !this.signal.aborted) {
-                if (result.patch) this.#apply({ ...result.patch, metadata: this.document.metadata.thread ? undefined : result.patch.metadata });
+                if (result.patch) this.#apply({ ...result.patch, metadata: this.document.metadata.thread ? undefined : result.patch.metadata }, operation, baseline);
                 this.error = result.patch ? '' : 'Saved on GitHub. Refresh to load the current discussion.';
                 this.notify();
             }

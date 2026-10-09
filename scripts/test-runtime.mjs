@@ -156,7 +156,7 @@ try {
         get principal() { return clientIdentity.id; },
         async request(operation, input, _signal, method = 'GET') {
             if (operation === 'contribute') issuedRequests.push(input);
-            const response = await (method === 'POST' ? post(operation, input, clientIdentity.capability) : read(operation, input, clientIdentity.capability));
+            const response = await (method === 'POST' ? post(operation, input, clientIdentity.capability, { 'CF-Connecting-IP': '192.0.2.191' }) : read(operation, input, clientIdentity.capability));
             const value = await response.json();
             if (!response.ok) throw Object.assign(new Error(value.error.message), value.error, { status: response.status });
             const at = responseGates.findIndex(gate => gate.operation === operation && gate.matches(input));
@@ -194,6 +194,28 @@ try {
     assert.equal(first.votes.EYES.includes('reader'), true, 'Retiring a client account does not undo its already committed provider effect');
     clientIdentity = { capability: renamed, id: 'U_reader' }; client.changeIdentity(); await client.start(); await client.loadMore();
     assert.equal(client.reaction(first.id, 'EYES').confirmed.selected, true, 'The original author can observe the confirmed provider state again');
+    const providerClock = service.github.now, publicationTime = Math.floor(Date.now() / 1000) * 1000;
+    const delayedCreation = holdResponse('contribute', input => input.action.type === 'comment' && input.action.body === 'Original delayed publication' && !input.action.replyToId);
+    service.github.now = () => publicationTime;
+    try {
+        const publication = client.writing().show(); publication.update('Original delayed publication');
+        const publishing = publication.submit(), creationReceipt = await delayedCreation.seen;
+        await json(await contribute({ type: 'edit', id: creationReceipt.id, body: 'Newer canonical publication' }, renamed));
+        await json(await contribute({ type: 'reaction', subject: { kind: 'comment', id: creationReceipt.id }, reaction: 'HEART', selected: true }, renamed));
+        await json(await post('contribute', { config, key: key(), action: { type: 'comment', body: 'Another author contribution while publication delivery is delayed' } }, other, { 'CF-Connecting-IP': '192.0.2.190' }));
+        await client.restart(); await client.loadMore(); await client.loadMore();
+        const canonical = discussion.comments.find(comment => comment.id === creationReceipt.id);
+        assert.equal(canonical.createdAt, canonical.lastEditedAt, 'The independent provider can edit a contribution within its timestamp resolution');
+        assert.equal(client.document.nodes[creationReceipt.id].body, canonical.body, 'Fresh reading observes the provider edit before the older creation receipt is delivered');
+        assert.equal(client.reaction(creationReceipt.id, 'HEART').confirmed.selected, true);
+        assert.equal(client.document.roots.total, discussion.comments.length, 'Fresh reading observes contributions made after the held receipt');
+        delayedCreation.release(); assert.equal((await publishing).status, 'saved');
+        const current = await json(await read('page', { config, observe: true, ids: [creationReceipt.id], replyPrefetch: 0 }, renamed));
+        assert.equal(client.document.nodes[creationReceipt.id].body, current.nodes[creationReceipt.id].body, 'A late creation receipt cannot replace already observed canonical writing');
+        assert.equal(client.reaction(creationReceipt.id, 'HEART').confirmed.selected, true, 'Creation acknowledgement cannot erase a subsequently observed reaction');
+        assert.equal(client.document.roots.total, current.window.total, 'Creation acknowledgement cannot reduce the established contribution total');
+    }
+    finally { delayedCreation.release(); service.github.now = providerClock; }
     const retainedWriting = new Map(client.document.roots.ids.filter(id => id !== ack.id).map((id, index) => [id, 'My retained reply for conversation ' + (index + 1)]));
     for (const [id, text] of retainedWriting) client.writing({ kind: 'reply', id }).show().update(text);
     const writing = client.writing({ kind: 'reply', id: ack.id }).show();
@@ -250,7 +272,7 @@ try {
     assert.equal(restored.abandonReaction(first.id, 'LAUGH'), true);
     assert.equal(first.votes.LAUGH.includes('reader'), true, 'Deliberate abandonment releases local recovery without reversing the external effect');
     restored.lifetime.abort();
-    report.checks.push({ workflow: 'real client writing recovery retains writing across two loaded windows, reply targets, immutable author and issued identity through dismissal, reload, account collision, denied recovery and uncertain provider receipts', status: 'passed' });
+    report.checks.push({ workflow: 'real client preserves independent reactions and accepted same-second edits/counts across delayed receipts, and retains all authored reply targets/immutable author/issued identity through dismissal, reload, account collision and uncertain recovery', status: 'passed' });
     await json(await post('logout', { repo: config.repo, origin: config.origin }, renamed));
     assert.equal((await read('page', { config }, renamed)).status, 401);
     report.checks.push({ workflow: 'ambiguous remote commit survives native restart and account rename without replay or ownership transfer; logout revokes', status: 'passed' });
