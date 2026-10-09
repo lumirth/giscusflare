@@ -65,6 +65,6 @@ Update these together:
 - The GitHub App's callback URL to `https://comments.example.com/auth/callback`.
 - The service address in your website's embed code or JavaScript configuration.
 
-See [operations](docs/OPERATIONS.md#update) when updating your deployment.
+See [operations](docs/OPERATIONS.md#update-and-restore) when updating your deployment.
 
 Cloudflare documents [Deploy to Cloudflare](https://developers.cloudflare.com/workers/platform/deploy-buttons/) and [custom domains](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/). GitHub documents the [App registration parameters](https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-using-url-parameters) used by setup.

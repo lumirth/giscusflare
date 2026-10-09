@@ -1,6 +1,7 @@
 import type { Comment as ProviderComment } from './github.js';
 import type { InferOutput } from 'valibot';
 import type { Reaction as ReactionSchema } from './primitives.js';
+import type { PreparedContent } from './content.js';
 
 export type Reaction = InferOutput<typeof ReactionSchema>;
 export type Person = NonNullable<ProviderComment['author']>;
@@ -10,6 +11,7 @@ export interface Comment extends Omit<ProviderComment, 'reactionGroups' | 'reply
   parentId: string | null;
   reactions: Reactions;
   upvotes: number;
+  prepared?: PreparedContent;
 }
 export interface Discussion {
   id: string;
@@ -56,7 +58,8 @@ export interface WindowDelta {
 }
 /** An observation accompanies a confirmed effect; it is never its receipt. */
 export interface Patch {
-  nodes?: Record<string, Comment | null>;
+  nodes?: Record<string, Partial<Comment> | null>;
+  reactions?: Record<string, Reactions>;
   roots?: WindowDelta;
   replies?: Record<string, WindowDelta>;
   metadata?: Partial<Metadata>;

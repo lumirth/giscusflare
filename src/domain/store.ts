@@ -26,6 +26,14 @@ export class Store {
     if (expires > 0) this.#expiryRevision++;
     this.sql.exec('INSERT INTO records(key,value,expires) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,expires=excluded.expires WHERE records.value != excluded.value OR records.expires != excluded.expires', key, JSON.stringify(validated), expires);
   }
+  /** Bound a derived namespace without reading its artifact bodies into memory. */
+  bound(prefix: string, maximumBytes: number, maximumRecords: number): void {
+    let bytes = 0, records = 0;
+    for (const row of this.sql.exec('SELECT key,length(CAST(value AS BLOB)) AS bytes FROM records WHERE key>=? AND key<? ORDER BY expires DESC,key', prefix, prefix + '\uffff')) {
+      bytes += Number(row.bytes); records++;
+      if (bytes > maximumBytes || records > maximumRecords) this.delete(String(row.key));
+    }
+  }
   async secret<S extends Schema>(key: string, schema: S, secret: string, context: string): Promise<v.InferOutput<S> | null> {
     const record = this.get(key, EncryptedRecord);
     return record ? decrypt(schema, record, secret, context + ':' + key) : null;

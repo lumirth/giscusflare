@@ -8,15 +8,14 @@ import type { Writing } from "../../conversation/writing.js";
 import type { StandardContext } from "./contracts.js";
 
 export function createComposer({ runtime, report }: StandardContext, contribution: Writing, signal: AbortSignal): HTMLElement {
-  const name = contribution.id;
   let acquired = false;
   const icons = { typography: icon('typography'), markdown: icon('markdown'), signOut: icon('sign-out'), github: icon('mark-github') };
   return createEditor(runtime, contribution, { signal, render(editor) {
     const { form, textarea, previewElement } = editor;
     if (!acquired) {
       acquired = true;
-      form.className = 'color-bg-primary color-border-primary gsc-comment-box' + (name.startsWith('reply:') ? ' gsc-comment-box-is-reply' : '');
-      previewElement.className = 'markdown color-border-primary gsc-comment-box-preview';
+      form.className = 'color-bg-primary color-border-primary gsc-comment-box' + (contribution.target.kind === 'reply' ? ' gsc-comment-box-is-reply' : '');
+      previewElement.className = 'color-border-primary gsc-comment-box-preview';
       let automaticHeight = '';
       textarea.addEventListener('input', () => {
         if (textarea.style.height && textarea.style.height !== automaticHeight) return;
@@ -28,7 +27,7 @@ export function createComposer({ runtime, report }: StandardContext, contributio
       editor.signal.addEventListener('abort', () => render(nothing, form), { once: true });
     }
     const lang = runtime.appearance.lang, t = strings(lang), writing = editor.mode === 'write',
-      signedIn = runtime.session.signedIn, reply = name.startsWith('reply:'), edit = name.startsWith('edit:');
+      signedIn = runtime.session.signedIn, reply = contribution.target.kind === 'reply', edit = contribution.target.kind === 'edit';
     const label = reply ? t.reply : t.comments,
       placeholder = signedIn ? (reply ? message(lang, 'writeAReply') : t.placeholder) : message(lang, 'signInToComment');
     if (textarea.getAttribute('aria-label') !== label) textarea.setAttribute('aria-label', label);
@@ -81,8 +80,10 @@ export function createComposer({ runtime, report }: StandardContext, contributio
 class Composer extends AsyncDirective {
   #element?: HTMLElement;
   #release?: () => void;
+  #writing?: string;
   render(context: StandardContext, contribution: Writing) {
     context.scope.signal.throwIfAborted();
+    if (this.#writing !== contribution.id) { this.#release?.(); this.#writing = contribution.id; }
     if (!this.#element) {
       const abort = new window.AbortController();
       this.#release = context.scope.own(() => { abort.abort();this.#element = undefined; });

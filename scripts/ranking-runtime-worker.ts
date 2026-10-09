@@ -115,7 +115,7 @@ export class RepositoryRankingProof extends DurableObject<ConfigBindings> {
                 return { status: 'paused', visit: this.#index, ranking, ...this.#metrics() };
             const target = Math.floor((this.#index + 1) * mutations / visits);
             while (this.#applied < target) {
-                const result = await this.#repository.execute('contribute', { request: { config: { repo: 'example/comments', origin: 'https://blog.example/article', number: 1 }, key: '3.' + this.#now + '.' + random(), action: { type: 'reaction', id: targetIDs[this.#applied]!, reaction: 'THUMBS_UP', add: true } }, session: this.#session }, 'R_fixture');
+                const result = await this.#repository.execute('contribute', { request: { config: { repo: 'example/comments', origin: 'https://blog.example/article', number: 1 }, key: '3.' + this.#now + '.' + random(), action: { type: 'reaction', subject: { kind: 'comment', id: targetIDs[this.#applied]! }, reaction: 'THUMBS_UP', selected: true } }, session: this.#session }, 'R_fixture');
                 if (!result.ok)
                     throw Error(JSON.stringify(result.error));
                 await this.#schedule();

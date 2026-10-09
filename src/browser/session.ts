@@ -1,12 +1,14 @@
 import { challenge, randomProof } from './dom.js';
 import type { Widget } from '../contracts/requests.js';
+import type { SavedWriting } from '../conversation/writing.js';
 import type { Transport } from '../conversation/page.js';
 
 export class ApiError extends Error {
   constructor(message: string, readonly status: number, readonly code: string) { super(message); }
 }
-export interface Login { capability: string; attempt: string; created: number; version: 4; status?: 'ready' | 'denied' }
+export interface Login { capability: string; attempt: string; created: number; version: 5; status?: 'ready' | 'denied' }
 export interface SessionHost {
+  restoreWriting?(id: string): Promise<SavedWriting | undefined>;
   /** Parent bridge or native-page storage receives only the service capability. */
   emit(value: Record<string, unknown>): void;
   navigate(url: string): void | Promise<void>;
@@ -45,7 +47,7 @@ export class BrowserSession implements Transport {
     if (!/^[a-z]+(?:\/[a-z]+)?$/.test(path)) throw new Error('Invalid API operation.');
     const token = this.#token;
     const read = method === 'GET';
-    const response=await fetch(this.service+'/api/v4/'+path+(read?'?'+new URLSearchParams({input:JSON.stringify(body)}):''),{
+    const response=await fetch(this.service+'/api/v5/'+path+(read?'?'+new URLSearchParams({input:JSON.stringify(body)}):''),{
       method:read?'GET':'POST',headers:{...(read?{}:{'Content-Type':'application/json'}),...(token?{Authorization:'Bearer '+token}:{})},
       ...(read?{}:{body:JSON.stringify(body)}),credentials:'omit',cache:'no-store',signal:signal ? AbortSignal.any([this.lifetime, signal]) : this.lifetime,
     });
@@ -65,7 +67,7 @@ export class BrowserSession implements Transport {
     if (this.lifetime.aborted) return;
     if (this.#login) this.host.emit({ clearPending: this.#login.attempt });
     this.#retire();
-    const flow: AuthFlow = { capability: randomProof(), attempt: '', created: Date.now(), version: 4,
+    const flow: AuthFlow = { capability: randomProof(), attempt: '', created: Date.now(), version: 5,
       popup: mode === 'redirect' ? null : window.open('about:blank', 'giscusflare-' + crypto.randomUUID(), 'popup,width=620,height=760') };
     this.#login = flow;this.error = '';
     let proof: string;
@@ -93,7 +95,7 @@ export class BrowserSession implements Transport {
     }
   };
   async adopt(login: Login): Promise<void> {
-    if (this.lifetime.aborted || login.version !== 4 || !Number.isFinite(login.created) || !capability.test(login.capability) || !capability.test(login.attempt)) return;
+    if (this.lifetime.aborted || login.version !== 5 || !Number.isFinite(login.created) || !capability.test(login.capability) || !capability.test(login.attempt)) return;
     if (this.#login && this.#login !== login && this.#login.attempt !== login.attempt) return;
     const flow = this.#login ?? { ...login };this.#login = flow;
     if (Date.now() - login.created >= 600000 || login.created > Date.now()) { this.#failed('Sign-in expired. Start again.', flow);return; }

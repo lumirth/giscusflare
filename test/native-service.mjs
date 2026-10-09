@@ -34,12 +34,12 @@ export const providerTransport = origin => async (request) => {
     return fetch(origin, { method: request.method, headers, redirect: 'manual', ...(request.body ? { body: await request.arrayBuffer() } : {}) });
 };
 /** The real Worker and SQLite repository, with one independent simulated provider. */
-export async function nativeService({ origin, blog, seed = true, assets = publicAssets(), repositories }) {
+export async function nativeService({ origin, blog, seed = true, assets = publicAssets(), repositories, entry = 'src/worker/entry.ts' }) {
     const github = await githubServer({ seed });
     let runtime;
     try {
         const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
-        runtime = await workerd('src/worker/entry.ts', {
+        runtime = await workerd(entry, {
             serviceBindings: { ASSETS: assets },
             outboundService: providerTransport(github.origin),
             durableObjects: { REPOSITORY_STORE: { className: 'Repository', useSQLite: true } },
@@ -52,7 +52,7 @@ export async function nativeService({ origin, blog, seed = true, assets = public
             },
         });
         return { github: github.upstream, versions: runtime.versions, fetch: runtime.fetch,
-            restart: () => runtime.restart(),
+            restart: entry => runtime.restart(entry),
             async dispose() { try {
                 await runtime.dispose();
             }

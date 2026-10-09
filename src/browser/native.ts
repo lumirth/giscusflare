@@ -14,8 +14,8 @@ export type {
 } from "./standard/contracts.js";
 export function mountComments(
   target: HTMLElement,
-  options: Omit<ConversationOptions, "content"> & { content?: ConversationOptions["content"] },
+  options: Omit<ConversationOptions, "content" | "contentSource"> & { content?: ConversationOptions["content"]; contentSource?: ConversationOptions["contentSource"] },
   parts: StandardParts = {},
 ) {
-  return mountPresentation(target, { ...options, content: options.content ?? githubContent() }, createStandardPresentation(parts));
+  return mountPresentation(target, { ...options, contentSource: options.contentSource ?? (options.content ? 'source' : 'github'), content: options.content ?? githubContent() }, createStandardPresentation(parts));
 }

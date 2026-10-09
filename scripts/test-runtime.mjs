@@ -1,18 +1,31 @@
 import assert from 'node:assert/strict';
 import { randomBytes, createHash } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { resolve, join } from 'node:path';
 import { nativeService } from '../test/native-service.mjs';
-import { loadModule } from '../test/modules.mjs';
 import { evidence } from '../test/evidence.mjs';
 const origin = 'http://127.0.0.1:18790', blog = 'http://127.0.0.1:18791';
 const config = { repo: 'example/comments', origin: blog + '/article', term: 'article' };
 const random = () => randomBytes(32).toString('base64url'), hash = value => createHash('sha256').update(value).digest('base64url');
 const key = () => '3.' + Date.now() + '.' + random();
 const report = evidence('native-service-workflows');
-const service = await nativeService({ origin, blog });
+const consumer = await mkdtemp(resolve('dist/qualification-consumer-'));
+const entry = join(consumer, 'worker.ts');
+const writeConsumer = revision => writeFile(entry, `import worker, { createRepository } from 'giscusflare/worker';
+const version = ${JSON.stringify(revision)};
+export default worker;
+export const Repository = createRepository({ content: { revision: version, prepare(input) {
+  const source = input.markdown.replace(/[&<>\"]/g, value => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '\"':'&quot;'}[value]));
+  return { html: '<article><p>' + source + '</p></article>', revision: version + ':' + crypto.randomUUID(), resources: { styles: [], scripts: [] } };
+} } });
+`);
+await writeConsumer('native-host-1');
+let service;
+try { service = await nativeService({ origin, blog, entry }); }
+catch (error) { await rm(consumer, { recursive: true, force: true }); throw error; }
 report.runtime = service.versions;
-const read = (name, input, cap = '') => service.fetch(origin + '/api/v4/' + name + '?' + new URLSearchParams({ input: JSON.stringify(input) }), { headers: { Origin: origin, ...(cap ? { Authorization: 'Bearer ' + cap } : {}) } });
-const post = (name, input, cap = '', headers = {}) => service.fetch(origin + '/api/v4/' + name, { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json', ...(cap ? { Authorization: 'Bearer ' + cap } : {}), ...headers }, body: JSON.stringify(input) });
+const read = (name, input, cap = '') => service.fetch(origin + '/api/v5/' + name + '?' + new URLSearchParams({ input: JSON.stringify(input) }), { headers: { Origin: origin, ...(cap ? { Authorization: 'Bearer ' + cap } : {}) } });
+const post = (name, input, cap = '', headers = {}) => service.fetch(origin + '/api/v5/' + name, { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json', ...(cap ? { Authorization: 'Bearer ' + cap } : {}), ...headers }, body: JSON.stringify(input) });
 const json = async (response, status = 200) => { const result = await response.json(); assert.equal(response.status, status, JSON.stringify(result)); return result; };
 let signInIndex = 0;
 async function signIn(principal = 'reader') {
@@ -58,31 +71,40 @@ try {
     const cap = await signIn();
     const creation = { type: 'comment', body: 'A native contribution' }, submission = key();
     const providerFetch = service.github.fetch.bind(service.github);
-    service.github.fetch = async request => {
-        const query = request.method === 'POST' ? (await request.clone().json()).query : '';
-        const response = await providerFetch(request);
-        if (query?.startsWith('mutation')) { service.github.failNext = 503; service.github.fetch = providerFetch; }
-        return response;
-    };
-    const ack = await json(await post('contribute', { config, key: submission, action: creation, html: true,
+    const ack = await json(await post('contribute', { config, key: submission, action: creation, content: 'github',
         creation: { description: 'Original article title', backLink: config.origin + '#original' } }, cap));
-    assert.equal(ack.patch, undefined, 'a failed observation cannot reopen a confirmed external effect');
-    const htmlReplay = await json(await post('contribute', { config, key: submission, action: creation, html: true }, cap));
+    assert.equal(ack.patch.nodes[ack.id].body, creation.body, 'The contribution delivers its operation-owned canonical writing');
+    const htmlReplay = await json(await post('contribute', { config, key: submission, action: creation, content: 'github' }, cap));
     assert.ok(htmlReplay.patch.nodes[ack.id].bodyHTML.includes(creation.body), 'A confirmed receipt can observe requested provider HTML');
-    const replay = await json(await post('contribute', { config: { ...config, origin: config.origin + '#updated-heading' }, key: submission, action: creation, html: false,
+    const replay = await json(await post('contribute', { config: { ...config, origin: config.origin + '#updated-heading' }, key: submission, action: creation, content: 'source',
         creation: { description: 'Updated article title', backLink: config.origin + '#updated-heading' } }, cap));
     assert.equal(replay.id, ack.id, 'Changing delivery URL, article preparation and presentation retains the confirmed contribution');
     assert.equal(replay.patch.nodes[ack.id].body, creation.body, 'receipt replay observes current content without another effect');
-    assert.equal(replay.patch.nodes[ack.id].bodyHTML, undefined, 'A Markdown consumer can recover the same receipt without provider HTML');
     assert.equal((await json(await post('contribute', { config, key: submission, action: { ...creation, body: 'Different writing' } }, cap), 409)).error.code, 'CONFLICT', 'A retained key cannot authorize different writing');
     assert.equal((await json(await post('contribute', { config: { ...config, term: 'other-article' }, key: submission, action: creation }, cap), 409)).error.code, 'CONFLICT', 'A retained key cannot authorize another discussion selection');
     const discussion = service.github.discussions[0], root = discussion.comments.find(comment => comment.id === ack.id);
     assert.equal(discussion.comments.filter(comment => comment.body === creation.body).length, 1, 'receipt replay has one external effect');
+    const optionalCreation = { type: 'comment', body: 'Confirmed despite an unavailable display field' }, optionalKey = key();
+    service.github.fetch = async request => {
+        const query = request.method === 'POST' ? (await request.clone().json()).query : '';
+        const response = await providerFetch(request);
+        if (!query?.startsWith('mutation AddComment')) return response;
+        const envelope = await response.json();
+        envelope.data.effect.display = null;
+        envelope.errors = [{ message: 'A display field could not be returned', path: ['effect', 'display', 'bodyHTML'] }];
+        return new Response(JSON.stringify(envelope), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    };
+    const optionalAck = await json(await contribute(optionalCreation, cap, optionalKey));
+    service.github.fetch = providerFetch;
+    assert.equal(optionalAck.patch?.nodes?.[optionalAck.id]?.createdAt, undefined, 'Malformed optional display data is not adopted as canonical content');
+    const optionalReplay = await json(await contribute(optionalCreation, cap, optionalKey));
+    assert.equal(optionalReplay.id, optionalAck.id, 'An optional field error does not turn a confirmed receipt into uncertainty');
+    assert.equal(discussion.comments.filter(comment => comment.body === optionalCreation.body).length, 1, 'Confirmed receipt recovery cannot repeat the independently observed provider effect');
     const reply = await json(await contribute({ type: 'comment', body: 'A native reply', replyToId: ack.id }, cap));
     assert.equal(root.replies.find(comment => comment.id === reply.id)?.body, 'A native reply');
     await json(await contribute({ type: 'edit', id: ack.id, body: 'Revised contribution' }, cap));
     assert.equal(root.body, 'Revised contribution');
-    await json(await contribute({ type: 'reaction', id: ack.id, reaction: 'HEART', add: true }, cap));
+    await json(await contribute({ type: 'reaction', subject: { kind: 'comment', id: ack.id }, reaction: 'HEART', selected: true }, cap));
     assert.ok(root.votes.HEART.includes('reader'));
     const moderator = await signIn('maintainer');
     await json(await contribute({ type: 'moderate', id: ack.id, minimized: true, reason: 'OFF_TOPIC' }, moderator));
@@ -94,6 +116,18 @@ try {
     assert.equal(readback.window.total, discussion.comments.length);
     assert.equal((await json(await read('page', { config, ids: [ack.id] }, cap))).nodes[ack.id].body, 'Revised contribution');
     assert.equal((await json(await read('counts', { repo: config.repo, origin: config.origin, strict: false, terms: ['article', 'missing'] }))).counts.article, discussion.comments.length);
+    const prepared = await json(await read('page', { config, ids: [ack.id], content: 'prepared' }, cap));
+    assert.equal(prepared.nodes[ack.id].body, root.body, 'Host preparation preserves canonical provider writing');
+    assert.ok(prepared.nodes[ack.id].prepared.html.includes(root.body), 'A public configured Worker prepares published content');
+    await service.restart();
+    const coldPrepared = await json(await read('page', { config, ids: [ack.id], content: 'prepared' }, cap));
+    assert.equal(coldPrepared.nodes[ack.id].prepared.revision, prepared.nodes[ack.id].prepared.revision, 'A cold Worker reuses the already compiled host artifact');
+    await writeConsumer('native-host-2'); await service.restart(entry);
+    const revisedPrepared = await json(await read('page', { config, ids: [ack.id], content: 'prepared' }, cap));
+    assert.notEqual(revisedPrepared.nodes[ack.id].prepared.revision, coldPrepared.nodes[ack.id].prepared.revision, 'A new deployed producer revision cannot reuse the old artifact');
+    assert.ok(revisedPrepared.nodes[ack.id].prepared.revision.startsWith('native-host-2:'));
+    const previewSource = 'A prepared preview <keeps its source>', preview = await json(await post('preview', { config, body: previewSource, content: 'prepared', draft: crypto.randomUUID() }));
+    assert.ok(preview.prepared.html.includes('A prepared preview &lt;keeps its source&gt;'), 'Unsigned preview uses the same safe host producer under workerd');
     report.checks.push({ workflow: 'authorize a future capability, contribute/replay, edit, reply, react, moderate and remove with independent provider effects', status: 'passed' });
     const uncertain = { type: 'comment', body: 'Committed before the connection was lost' }, uncertainKey = key();
     service.github.failAfterMutation = true;
@@ -109,9 +143,15 @@ try {
     const other = await signIn('visitor');
     assert.equal((await json(await contribute(uncertain, other, uncertainKey), 409)).error.code, 'CONFLICT');
     assert.equal(discussion.comments.filter(comment => comment.body === uncertain.body).length, 1);
-    const { PageModel } = await loadModule('src/conversation/page.ts');
+    const { PageModel } = await import('giscusflare/model');
     let clientIdentity = { capability: renamed, id: 'U_reader' };
-    const issuedRequests = [];
+    const issuedRequests = [], responseGates = [];
+    const holdResponse = (operation, matches) => {
+        let arrived, release;
+        const seen = new Promise(resolve => { arrived = resolve; }), held = new Promise(resolve => { release = resolve; });
+        responseGates.push({ operation, matches, arrived, held });
+        return { seen, release };
+    };
     const transport = {
         get principal() { return clientIdentity.id; },
         async request(operation, input, _signal, method = 'GET') {
@@ -119,6 +159,8 @@ try {
             const response = await (method === 'POST' ? post(operation, input, clientIdentity.capability) : read(operation, input, clientIdentity.capability));
             const value = await response.json();
             if (!response.ok) throw Object.assign(new Error(value.error.message), value.error, { status: response.status });
+            const at = responseGates.findIndex(gate => gate.operation === operation && gate.matches(input));
+            if (at !== -1) { const [gate] = responseGates.splice(at, 1); gate.arrived(value); await gate.held; }
             return value;
         },
     };
@@ -127,10 +169,36 @@ try {
     clientSelection.term = 'another-article'; // A caller can reuse its options without retargeting an acquired discussion.
     await client.loadMore();
     assert.deepEqual(client.document.roots.ids, discussion.comments.slice(0, 40).map(comment => comment.id), 'Two acquired windows expose real provider contribution destinations');
+    const oldRead = holdResponse('page', input => input.observe && input.ids?.includes(first.id));
+    const freshness = client.revalidate(0, [first.id]); await oldRead.seen;
+    const delayedHeart = holdResponse('contribute', input => input.action.type === 'reaction' && input.action.reaction === 'HEART');
+    const heart = client.setReaction(first.id, 'HEART', true); await delayedHeart.seen;
+    await client.setReaction(first.id, 'ROCKET', true);
+    assert.equal(first.votes.ROCKET.includes('reader'), true, 'An independent reaction reaches the provider while another response is held');
+    assert.equal(client.reaction(first.id, 'ROCKET').confirmed.selected, true);
+    const latestHeart = client.setReaction(first.id, 'HEART', false);
+    assert.equal(client.reaction(first.id, 'HEART').selected, false, 'A rapid choice projects the newest intent while its earlier acknowledgement is delayed');
+    delayedHeart.release(); await Promise.all([heart, latestHeart]);
+    oldRead.release(); await freshness;
+    assert.equal(first.votes.HEART.includes('reader'), false, 'The provider reaches the latest requested reaction state');
+    assert.equal(client.reaction(first.id, 'HEART').confirmed.selected, false, 'A delayed reaction receipt cannot replace the newer desired state');
+    assert.equal(client.reaction(first.id, 'ROCKET').confirmed.selected, true, 'Another reaction and an older full read cannot erase a newer confirmed group');
+    const oldIdentityRead = holdResponse('page', input => input.observe && input.ids?.includes(first.id));
+    const previousReading = client.revalidate(0, [first.id]); await oldIdentityRead.seen;
+    const oldAuthorEffect = holdResponse('contribute', input => input.action.type === 'reaction' && input.action.reaction === 'EYES');
+    const previousAuthor = client.setReaction(first.id, 'EYES', true); await oldAuthorEffect.seen;
+    clientIdentity = { capability: other, id: 'U_visitor' }; client.changeIdentity(); await client.start();
+    oldAuthorEffect.release(); oldIdentityRead.release(); await Promise.allSettled([previousAuthor, previousReading]);
+    assert.equal(client.document.metadata.viewer.id, 'U_visitor', 'An old reading response cannot restore the previous account');
+    assert.equal(client.reaction(first.id, 'EYES').selected, false, 'An old author receipt cannot project that author selection into the current account');
+    assert.equal(first.votes.EYES.includes('reader'), true, 'Retiring a client account does not undo its already committed provider effect');
+    clientIdentity = { capability: renamed, id: 'U_reader' }; client.changeIdentity(); await client.start(); await client.loadMore();
+    assert.equal(client.reaction(first.id, 'EYES').confirmed.selected, true, 'The original author can observe the confirmed provider state again');
     const retainedWriting = new Map(client.document.roots.ids.filter(id => id !== ack.id).map((id, index) => [id, 'My retained reply for conversation ' + (index + 1)]));
     for (const [id, text] of retainedWriting) client.writing({ kind: 'reply', id }).show().update(text);
     const writing = client.writing({ kind: 'reply', id: ack.id }).show();
     writing.update('Recovered reply belongs to the immutable original author');
+    const writingIssuanceStart = issuedRequests.length;
     service.github.failAfterMutation = true;
     assert.equal((await writing.submit()).status, 'failed');
     assert.equal(writing.error.status, 'uncertain');
@@ -146,7 +214,11 @@ try {
     assert.equal(recovered.text, 'Recovered reply belongs to the immutable original author');
     assert.deepEqual(recovered.target, { kind: 'reply', id: ack.id });
     assert.equal((await recovered.submit()).status, 'blocked', 'Restored closed writing remains closed');
-    recovered.show(); clientIdentity = { capability: other, id: 'U_visitor' }; restored.changeIdentity(); await restored.start();
+    recovered.show(); clientIdentity = { capability: other, id: 'U_visitor' };
+    const beforeAccountRefresh = issuedRequests.length;
+    assert.equal((await recovered.submit()).status, 'blocked', 'Current authentication governs protected writing before the older display profile is refreshed');
+    assert.equal(issuedRequests.length, beforeAccountRefresh, 'A stale author label cannot issue another author recovery request');
+    restored.changeIdentity(); await restored.start();
     assert.equal((await recovered.submit()).status, 'blocked', 'An account with the former author login cannot recover that author writing');
     assert.equal(recovered.actions.clear, false, 'Changing accounts cannot discard an unresolved issuance');
     clientIdentity = { capability: renamed, id: 'U_reader' }; restored.changeIdentity(); await restored.start();
@@ -154,7 +226,7 @@ try {
     await recovered.submit();
     assert.equal(recovered.error.status, 'uncertain', 'An ambiguous provider receipt stays visible through recovery');
     assert.deepEqual(issuedRequests.at(-1).action, { type: 'comment', body: 'Recovered reply belongs to the immutable original author', replyToId: ack.id }, 'Restored uncertainty retries the exact authored body and intended destination');
-    assert.equal(issuedRequests.at(-1).key, issuedRequests[0].key, 'Restored writing retains the original receipt identity');
+    assert.equal(issuedRequests.at(-1).key, issuedRequests[writingIssuanceStart].key, 'Restored writing retains the original receipt identity');
     assert.equal(root.replies.filter(reply => reply.body === recovered.text).length, 1, 'Client recovery never changes a reply into a root or duplicates its provider effect');
     assert.equal(discussion.comments.some(comment => comment.body === recovered.text), false);
     assert.equal(recovered.abandon(), true, 'The original author can explicitly reconcile an unresolved submission');
@@ -162,20 +234,20 @@ try {
     service.github.failAfterMutation = true;
     await restored.setReaction(first.id, 'LAUGH', true).catch(() => {});
     const reactionIssuance = issuedRequests.at(-1);
-    assert.equal(restored.actions(first.id).react.status, 'recovery');
+    assert.equal(restored.reaction(first.id, 'LAUGH').recovery.status, 'uncertain');
     clientIdentity = { capability: 'x'.repeat(43), id: 'U_reader' };
-    await restored.retryAction(first.id).catch(() => {});
-    assert.equal(restored.actions(first.id).react.status, 'recovery', 'Rejected recovery cannot erase an earlier uncertain effect');
+    await restored.retryReaction(first.id, 'LAUGH').catch(() => {});
+    assert.equal(restored.reaction(first.id, 'LAUGH').recovery.status, 'uncertain', 'Rejected recovery cannot erase an earlier uncertain effect');
     const recoveryRequests = issuedRequests.length;
     clientIdentity = { capability: other, id: 'U_visitor' }; restored.changeIdentity(); await restored.start();
-    await restored.retryAction(first.id).catch(() => {});
+    await restored.retryReaction(first.id, 'LAUGH').catch(() => {});
     assert.equal(issuedRequests.length, recoveryRequests, 'Another account cannot issue recovery work');
     clientIdentity = { capability: renamed, id: 'U_reader' }; restored.changeIdentity(); await restored.start();
-    await restored.retryAction(first.id).catch(() => {});
+    await restored.retryReaction(first.id, 'LAUGH').catch(() => {});
     assert.deepEqual(issuedRequests.at(-1).action, reactionIssuance.action);
     assert.equal(issuedRequests.at(-1).key, reactionIssuance.key, 'Action recovery preserves the original effect identity');
     assert.equal(first.votes.LAUGH.filter(principal => principal === 'reader').length, 1, 'Uncertain action recovery has one independently observed provider effect');
-    assert.equal(restored.abandonAction(first.id), true);
+    assert.equal(restored.abandonReaction(first.id, 'LAUGH'), true);
     assert.equal(first.votes.LAUGH.includes('reader'), true, 'Deliberate abandonment releases local recovery without reversing the external effect');
     restored.lifetime.abort();
     report.checks.push({ workflow: 'real client writing recovery retains writing across two loaded windows, reply targets, immutable author and issued identity through dismissal, reload, account collision, denied recovery and uncertain provider receipts', status: 'passed' });
@@ -192,6 +264,7 @@ catch (error) {
 }
 finally {
     await service.dispose();
+    await rm(consumer, { recursive: true, force: true });
     report.completedAt = new Date().toISOString();
     await mkdir('test-results/evidence', { recursive: true });
     await writeFile('test-results/evidence/native-runtime.json', JSON.stringify(report, null, 2) + '\n');

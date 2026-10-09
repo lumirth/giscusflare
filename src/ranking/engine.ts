@@ -2,7 +2,7 @@ import * as v from 'valibot';
 import { LRU } from '../domain/lru.js';
 import { AppError } from '../domain/errors.js';
 import { RankingStore, type Scored } from './store.js';
-import { RankingOptions, requiredInputs, type Fact, type Input, type OrderResult, type Signature, type Source, type Storage } from './types.js';
+import { RankingOptions, requiredInputs, type Input, type OrderResult, type Signature, type Source, type Storage } from './types.js';
 
 interface Scan {
   mode: 'full' | 'known';
@@ -165,28 +165,26 @@ export class RankingEngine {
     if (next && next.wake <= this.now()) await this.#run(this.#state(next.thread), await source(next.thread));
   }
   nextAlarmAt(): number | null { return this.store.next()?.wake ?? null; }
-  /** Confirmed facts update SQL directly. A returning acquisition cannot replace a newer row version. */
-  correct(thread: string, fact: Fact): void {
-    const state = this.#state(thread);
-    if (!state.snapshot && !state.job) return;
-    const next = { ...state, revision: state.revision + 1 };
-    try {
-      this.store.storage.transactionSync(() => {
-        this.store.correct(thread, fact, next.revision, state.job?.version ?? state.revision);
-        this.#save(next);
-      });
-      state.revision = next.revision; state.snapshot = next.snapshot;
-      for (const profile of Object.values(this.options.profiles)) {
-        const key = JSON.stringify([thread, profile]), memo = this.#orders.get(key);
-        if (!memo) continue;
-        if ('oversized' in memo) { this.#orders.clear(); continue; }
-        const records = memo.records.filter(item => item.id !== fact.id);
-        records.push(...this.store.order(thread, profile, fact.id));
-        records.sort((a, b) => b.score - a.score || (profile.tieBreak === 'oldest' ? a.created - b.created : b.created - a.created) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-        const bytes = records.reduce((n, item) => n + item.id.length + 3, 2) - (records.length ? 1 : 0);
-        this.#orders.set(key, bytes > this.options.maxOrderBytes ? { oversized: true } : { records }, bytes > this.options.maxOrderBytes ? 128 : records.reduce((n, item) => n + item.id.length * 2 + 88, 128));
-      }
-      this.store.checkpoint();
-    } catch (error) { this.#orders.clear(); throw error; }
+  /** Confirm only the changed reaction in an existing observation; all other inputs retain their age. */
+  reaction(thread: string, id: string, reaction: Input, count: number): void {
+    if (!this.#inputs.includes(reaction)) return;
+    const state = this.#state(thread), revision = state.revision + 1;
+    let changed = false;
+    this.store.storage.transactionSync(() => {
+      changed = this.store.reaction(thread, id, reaction, count, revision);
+      if (!changed) return;
+      state.revision = revision;
+      this.#save(state);
+    });
+    if (changed) for (const definition of Object.values(this.options.profiles)) {
+      if (!definition.weights[reaction]) continue;
+      const key = JSON.stringify([thread, definition]), memo = this.#orders.get(key);
+      if (!memo || 'oversized' in memo) continue;
+      const records = memo.records.filter(item => item.id !== id);
+      records.push(...this.store.order(thread, definition, id));
+      records.sort((a, b) => b.score - a.score || (definition.tieBreak === 'oldest' ? a.created - b.created : b.created - a.created) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      this.#orders.set(key, { records }, records.reduce((bytes, item) => bytes + item.id.length * 2 + 88, 128));
+    }
+    this.store.checkpoint();
   }
 }

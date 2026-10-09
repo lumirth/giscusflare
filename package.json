@@ -1,6 +1,6 @@
 {
   "name": "giscusflare",
-  "version": "4.0.0",
+  "version": "5.0.0",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -51,7 +51,10 @@
       "import": "./dist/browser/native.js"
     },
     "./styles.css": "./dist/assets/native.css",
-    "./worker": "./dist/worker.mjs",
+    "./worker": {
+      "types": "./package/worker.d.mts",
+      "import": "./dist/worker.mjs"
+    },
     "./headless": {
       "types": "./dist/types/browser/headless.d.ts",
       "import": "./dist/browser/headless.js"
@@ -73,7 +76,11 @@
       "types": "./dist/types/browser/github-content.d.ts",
       "import": "./dist/browser/github-content.js"
     },
-    "./content.css": "./dist/assets/content.css"
+    "./content.css": "./dist/assets/content.css",
+    "./model": {
+      "types": "./dist/types/conversation/index.d.ts",
+      "import": "./dist/browser/model.js"
+    }
   },
   "files": [
     "dist/browser",

@@ -41,12 +41,12 @@ app.onError((error, c) => {
   if (!(error instanceof AppError)) console.error(JSON.stringify({ event: 'internal_error', id }));
   return security(json({ error: safe, requestId: id }, safe.status, safe.retryAfter ? { 'Retry-After': String(safe.retryAfter) } : {}));
 });
-app.get('/api/v4/setup',c=>{
+app.get('/api/v5/setup',c=>{
   let configured=false;
   try{configuration(c.env);secrets(c.env);configured=true;}catch{/* First deployment opens setup. */}
   return security(json({configured,origin:new URL(c.req.url).origin}));
 });
-app.get('/healthz',c=>security(json({status:'ok',version:'4.0.0'})));
+app.get('/healthz',c=>security(json({status:'ok',version:'5.0.0'})));
 app.use('*', async (c, next) => {
   if(!/^\/(?:api\/|auth\/|(?:[a-z-]+\/)?widget(?:$|\/))/.test(c.req.path)){await next();return;}
   const config = configuration(c.env); c.set('config', config);
@@ -61,7 +61,7 @@ const widget = async (c:import('hono').Context<AppEnv>, pathLang?: string) => {
   if (pathLang) { requireCondition(!query.lang || query.lang === pathLang, 400, 'BAD_INPUT', 'The path and query specify different languages.'); query.lang = pathLang; }
   const input = parse(R.WidgetQuery, query), p = authorizeWidget(configuration(env), input);
   authorizePresentation(configuration(env),input);
-  const response=await publicRead(c,{config:input},async()=>unwrap(await invoke(env,'page',{request:parse(R.PageRequest,{config:R.selection(input),order:p.defaultCommentOrder,html:true}),session:''})),(view,expires)=>widgetHTML(input,p,{view,expires}));
+  const response=await publicRead(c,{config:input},async()=>unwrap(await invoke(env,'page',{request:parse(R.PageRequest,{config:R.selection(input),order:p.defaultCommentOrder,content:'github'}),session:''})),(view,expires)=>widgetHTML(input,p,{view,expires}));
   response.headers.set('Cache-Control','no-store');return response;
 };
 app.get('/widget', rateLimit('read'), c => widget(c));
@@ -86,7 +86,7 @@ app.use('/api/*', async (c, next) => {
   const native = Boolean(origin && origin !== config.origin);
   if (native) requireCondition([...Object.values(config.repositories),...(config.openHosting?[config.openHosting]:[])].some(p=>p.origins==='*'||p.origins.includes(origin!)), 403, 'ORIGIN', 'This website is not allowed.');
   if (c.req.method === 'OPTIONS') {
-    requireCondition(origin && ['GET','POST'].includes(c.req.header('Access-Control-Request-Method')||'') && c.req.path !== '/api/v4/auth/prepare', 403, 'ORIGIN', 'This operation does not support native requests.');
+    requireCondition(origin && ['GET','POST'].includes(c.req.header('Access-Control-Request-Method')||'') && c.req.path !== '/api/v5/auth/prepare', 403, 'ORIGIN', 'This operation does not support native requests.');
     c.res = new Response(null, { status: 204 });
   } else await next();
   // Apply after the security wrapper creates its response, including errors.
@@ -98,11 +98,11 @@ app.use('/api/*', async (c, next) => {
     c.res.headers.set('Access-Control-Max-Age', '600');
   }
 });
-app.use('/api/v4/*', async (c, next) => {
+app.use('/api/v5/*', async (c, next) => {
   await rateLimit(operationRates.get(c.req.path) || 'write')(c, next);
 });
-app.use('/api/v4/*', boundedJSON);
-app.use('/api/v4/*', async (c, next) => { await next(); c.res = security(c.res); });
+app.use('/api/v5/*', boundedJSON);
+app.use('/api/v5/*', async (c, next) => { await next(); c.res = security(c.res); });
 for (const name of Object.keys(C.operations) as C.Operation[]) {
   if (name === 'authPrepare' || name === 'authCallback') continue;
   const operation = C.operations[name];
@@ -123,7 +123,7 @@ app.post(C.operations.authPrepare.path, async c => {
   const result = unwrap(await invoke(c.env,'authPrepare', { request, browserCookie }));
   return json(result, 200, { 'Set-Cookie': cookieHeader(c.get('config').origin, result.attempt, browserCookie) });
 });
-app.all('/api/v4/*', () => { throw new AppError(404, 'NOT_FOUND', 'API route not found.'); });
+app.all('/api/v5/*', () => { throw new AppError(404, 'NOT_FOUND', 'API route not found.'); });
 app.all('/api/*', () => { throw new AppError(409, 'VERSION_MISMATCH', 'This comments page needs an update. Reload the page and try again.'); });
 app.all('/auth/*', () => { throw new AppError(404, 'NOT_FOUND', 'Sign-in route not found.'); });
 app.all('*', c => {

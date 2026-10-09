@@ -1,50 +1,44 @@
 # Maintain your service
 
-## Update
+## Update and restore
 
-1. Choose a [release](https://github.com/lumirth/giscusflare/releases).
-2. Merge the release changes into your source repository. Preserve your Wrangler configuration, including the Worker name, repository settings, Durable Object binding and migration history. Keep the existing secrets in Cloudflare.
-3. Record the current Worker version and deploy through your connected Cloudflare build.
-4. If your website imports the browser package, update it as required by the release and rebuild the site.
-5. Open comments on your website and check sign-in, posting and reactions.
+Choose a [release](https://github.com/lumirth/giscusflare/releases), update your source deployment and install the matching browser archive in native consumers. Preserve Wrangler's Worker name, repository policy, Durable Object binding and migration history. Preserve live secrets, including `SESSION_SECRET`, so operational records remain readable. Commit the website lockfile and rebuild it.
 
-Source deployments apply the values in Wrangler's `vars`. If you changed public settings in the Cloudflare dashboard, copy those values into your source configuration before deploying. Keep `SESSION_SECRET` so encrypted operational records remain readable.
+Record the current Worker version and website revision before updating. Deploy a compatible service before activating its browser client. Check `/healthz`, assets, anonymous reading, preview and the contribution paths you can exercise. Report authenticated GitHub writes separately from anonymous and local checks.
 
-Record the current Worker version and website revision before an update. If an update fails, restore a compatible service and website pair. Cloudflare's [version rollback mechanism](https://developers.cloudflare.com/workers/configuration/versions-and-deployments/rollbacks/) changes code, not stored data.
+Source deployments apply Wrangler `vars`; copy any dashboard-only public settings into source before deploying. If an update fails, restore a compatible Worker and website pair. Cloudflare version rollback changes code; it does not restore stored data.
+
+## Host-prepared content
+
+Keep a producer revision tied to its Markdown rules and resource build. Update `createRepository({ content: { revision, prepare } })` and the referenced immutable resources together. Cached prepared results use that revision and full rendering input. Eligible artifacts survive object restart in the existing store for 24 hours, within 8 MiB/256-item per-object bounds; retention failure does not reject otherwise valid output. The producer must apply commenter-safe interpretation; article-author permissions must not grant commenters raw executable HTML or extensions.
+
+Resource URLs must remain reachable by the embedding website and allowed by its CSP. Prepared output can fail to install when a stylesheet or module is missing, even when the service is healthy. Check both comment bodies and anonymous preview, with a cold browser cache. Preparation reuse does not include viewer authorization; normal service policy still applies to each request. Prepared HTTP packets bypass edge reuse and carry `Cache-Control: no-store`, so inspect repository preparation separately from HTTP cache hits.
 
 ## Troubleshoot
 
-| Symptom | What to do |
+| Symptom | What to inspect |
 | --- | --- |
-| Setup loads, but comments do not | Complete the GitHub credentials and repository settings on the setup page |
-| Your website is rejected | Add its exact origin to the repository policy, including `www` if used |
-| The repository or category cannot be found | Enable Discussions, install the App on the repository and match the category name |
-| Sign-in fails after a domain change | Set the GitHub callback to `PUBLIC_ORIGIN` plus `/auth/callback` and update the site's service URL |
-| Native requests fail in the browser | Check the browser console for CORS or Content Security Policy errors; allow your service in `connect-src` |
-| Requests return `VERSION_MISMATCH` | Deploy matching Worker and browser package versions, then reload the page |
-| A request returns 429 | Wait for the supplied retry interval; check Cloudflare and GitHub usage if it recurs |
-| A submission has an uncertain result | Check GitHub before posting again. Retry in the existing composer so the service can recover the original operation |
-| Comments fail during busy periods | Check Worker execution errors and CPU, then requests, object duration and SQLite allowances |
-| A custom sort does not load | Check the returned reason and retry time in [custom sort troubleshooting](#when-a-custom-sort-cannot-load) |
+| Setup loads, but comments do not | GitHub credentials, App installation and repository/category settings |
+| Website rejected | Exact allowed origin, including any `www` variant |
+| Sign-in fails after a domain change | GitHub callback: `PUBLIC_ORIGIN` plus `/auth/callback`; website service URL |
+| Native requests blocked | CORS and CSP; service in `connect-src` |
+| `VERSION_MISMATCH` | Matching Worker/browser protocol, then reload |
+| Prepared content unavailable | Deployed trusted producer, revision and returned resources |
+| Preview requires sign-in | Selected delivery mode; GitHub preview requires authentication, prepared preview does not |
+| HTTP 429 | Supplied retry interval and account/provider usage |
+| Submission outcome uncertain | Retry the existing record with the original author; inspect GitHub before creating another contribution |
+| Several recovered drafts appear | Explicitly select the intended record; same destination does not imply same intent |
+| Comments fail under load | Worker execution errors/CPU, request and object duration, SQLite allowances |
+| Named sort paused | Returned reason and retry time |
 
-The setup page's repository check contacts GitHub and verifies access and the category. `/api/v4/setup` reports whether service settings are configured. `/healthz` checks that the service responds.
+The setup repository check contacts GitHub and verifies access/category. `/api/v5/setup` reports configured service settings; `/healthz` reports that the service responds. Neither establishes an authenticated contribution.
 
-## When a custom sort cannot load
+## Named sorts
 
-For an order such as "Popular", check the reason returned with the API's `paused` status:
+For `paused` results, `budget` means wait for reset or adjust `RANKING_BUDGET` after inspecting usage. `upstream` means the provider could not complete acquisition; retry after the reported time. `size` means collection/order limits were exceeded; inspect discussion size and `maxOrderBytes`. See [configuration](CONFIGURATION.md#sort-by-reactions-or-reply-counts) and [reading state](API.md#reading-document).
 
-- `budget`: wait for the allowance to reset, or adjust `RANKING_BUDGET` after checking account usage.
-- `upstream`: GitHub could not complete the read. Retry after the reported time.
-- `size`: the collection or returned order exceeded its size limit. Check discussion size and `maxOrderBytes`.
+## Credentials and logs
 
-See [sorting configuration](CONFIGURATION.md#sort-by-reactions-or-reply-counts) for the settings and [API state](API.md#reading-document) for custom interfaces.
+Add a replacement GitHub App key or client secret and exercise sign-in before retiring the old credential. Keep `SESSION_SECRET` during routine updates; changing it requires readers to sign in again.
 
-## Rotate credentials
-
-Add the new GitHub App key or client secret in Cloudflare and test sign-in before retiring the old credential. Keep `SESSION_SECRET` during routine updates. Changing it requires readers to sign in again.
-
-## Logs
-
-Use request counts, timing and error codes to investigate failures. Exclude comment bodies, authorization headers, callback query strings and session tokens from logs. The supplied deployment disables Workers observability; check account-level logging separately.
-
-See [security](https://github.com/lumirth/giscusflare/blob/main/SECURITY.md) for access controls and session storage.
+Log request counts, timing and error codes. Exclude comment bodies, authorization headers, callback query strings and session tokens. The supplied deployment disables Workers observability; inspect account-level logging separately. See [security](https://github.com/lumirth/giscusflare/blob/main/SECURITY.md).

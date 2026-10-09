@@ -18,21 +18,23 @@ export async function publicRead(c:Context<AppEnv>, input:{repo:string;origin:st
   const config=configuration(c.env);
   if('config' in input)authorizeWidget(config,input.config);
   else parentOrigin(policy(config,input.repo),input.origin);
+  const prepared = 'content' in input && input.content === 'prepared';
   const respond = async () => {
     const {value,expires} = await read(), response = render(value,expires);
     const remaining = Math.max(0, Math.floor((expires - Date.now()) / 1000));
-    response.headers.set('Cache-Control', remaining ? 'public, max-age=' + remaining : 'no-store');
+    response.headers.set('Cache-Control', !prepared && remaining ? 'public, max-age=' + remaining : 'no-store');
     response.headers.set('X-Giscusflare-Expires', String(expires));
     return response;
   };
-  if(c.get('session'))return respond();
+  // Prepared identity belongs to the actor's producer revision and full rendering context.
+  if(c.get('session')||prepared)return respond();
   const cache=typeof caches==='undefined'?null:caches.default;
   if(!cache)return respond();
   const url=new URL(c.req.url);
   // Changed deployment policy cannot reuse entries admitted by an old policy.
   if(url.pathname.startsWith('/api/')){
-    const payload=structuredClone(input) as {config?:Selection;origin?:string;terms?:string[]};
-    if(payload.config)payload.config.origin=new URL(payload.config.origin).origin;
+    const payload=structuredClone(input) as {config?:Selection;origin?:string;terms?:string[];content?:string};
+    if(payload.config&&payload.content!=='prepared')payload.config.origin=new URL(payload.config.origin).origin;
     else if(payload.origin)payload.origin=new URL(payload.origin).origin;
     if(payload.terms)payload.terms=[...new Set(payload.terms)].sort();
     url.searchParams.set('input',JSON.stringify(payload));

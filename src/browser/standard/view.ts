@@ -18,12 +18,13 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
     const root = document.createElement('section');root.className = 'gsc-main';
     const hadClass = target.classList.contains('giscusflare'),
       previousTheme = target.getAttribute('data-theme'), previousDir = target.getAttribute('dir');
-    let error = '', disposed = false, drawing = false, main: HTMLElement | undefined, stop: (() => void) | undefined;
+    let error = '', disposed = false, drawing = false,
+      main: { id: string; element: HTMLElement; lifetime: AbortController } | undefined, stop: (() => void) | undefined;
     const context: StandardContext = { runtime, scope, report(cause) {
       error = cause instanceof Error ? cause.message : String(cause);draw();
     } };
     scope.own(() => {
-      disposed = true;stop?.();
+      disposed = true;stop?.();main?.lifetime.abort();
       try { render(nothing, root); } finally {
         root.remove();
         if (!hadClass) target.classList.remove('giscusflare');
@@ -32,8 +33,16 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
       }
     });
     target.append(root);target.classList.add('giscusflare');
-    const composer = (writing: Writing) => parts.composer ? parts.composer(context, writing)
-      : writing.id === 'main' ? main ??= createComposer(context, writing, scope.signal) : boundComposer(context, writing);
+    const composer = (writing: Writing) => {
+      if (parts.composer) return parts.composer(context, writing);
+      if (writing.target.kind !== 'comment') return boundComposer(context, writing);
+      if (main?.id !== writing.id) {
+        main?.lifetime.abort();
+        const lifetime = new AbortController();
+        main = { id: writing.id, lifetime, element: createComposer(context, writing, AbortSignal.any([scope.signal, lifetime.signal])) };
+      }
+      return main.element;
+    };
     const react = (subject: Comment | Discussion | null, position: 'top' | 'bottom') =>
       (parts.reactions || reactions)(context, { subject, position });
     const attempt = (work: () => Promise<unknown>) => () => {
@@ -48,11 +57,11 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
       function content(c: Comment, reply: boolean) {
         const t = strings(runtime.appearance.lang);
         return html` ${
-          runtime.writings.get("edit:" + c.id)?.open
+          runtime.activeWriting({ kind: 'edit', id: c.id })?.open
             ? composer(runtime.writing({kind:'edit',id:c.id}))
             : html`<div
                 dir="auto"
-                class=${"markdown " + (reply ? "gsc-reply-content" : "gsc-comment-content") + (c.isMinimized ? " minimized" : "")}
+                class=${(reply ? "gsc-reply-content" : "gsc-comment-content") + (c.isMinimized ? " minimized" : "")}
               >
                 ${
                   c.deletedAt
@@ -101,7 +110,7 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
           replies = (window?.ids || []).map(id => doc.nodes[id]).filter((node): node is Comment => Boolean(node)),
           count = window?.total ?? replies.length,
           hidden = Math.max(0, count - replies.length),
-          replying = Boolean(runtime.writings.get("reply:" + c.id)?.open);
+          replying = Boolean(runtime.activeWriting({ kind: 'reply', id: c.id })?.open);
         return html`<article class="gsc-comment" id=${"comment-" + c.id}>
           <div
             class=${"color-bg-primary w-full min-w-0 rounded-md border " + (c.viewerDidAuthor ? "gsc-comment-author-is-viewer" : "")}
@@ -160,7 +169,8 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
           lang = runtime.appearance.lang, t = strings(lang), discussion = metadata.thread,
           comments = roots.ids.map(id => doc.nodes[id]).filter((node): node is Comment => Boolean(node)),
           destination = discussion?.url || 'https://github.com/' + runtime.config.repo + '/discussions',
-          problem = error || runtime.error || runtime.session.error,
+          problem = error || runtime.error || runtime.session.error || runtime.recovery.error,
+          saved = runtime.recovery.records(),
           initial = !runtime.ready && !problem,
           writable = runtime.canCompose,
           restartAvailable = runtime.continuity.status === 'restart-required' ||
@@ -203,6 +213,14 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
         </section>`;
         render(html`
           ${initial ? loading(t.loading) : nothing}
+          ${saved.length ? html`<section class="flash" aria-label="Saved writing">
+            <p>Choose writing to resume.</p>
+            ${saved.map(record => html`<button type="button" class="btn mr-2 mb-2"
+              @click=${attempt(async () => {
+                const writing = await runtime.recovery.restore(record.id);
+                if (writing) runtime.interactions.focus(writing.id);
+              })}>${record.issued ? 'Unresolved submission' : record.target.kind === 'comment' ? 'Comment' : record.target.kind === 'reply' ? 'Reply' : 'Edit'}: ${record.text.slice(0, 80)}</button>`)}
+          </section>` : nothing}
           ${runtime.appearance.reactionsEnabled && !initial ? html`<section class="gsc-reactions">
             <h4 class="gsc-reactions-count"><a class="link-primary" href=${destination} target="_blank" rel="noopener noreferrer">${message(lang, 'reactions', total)}</a></h4>
             <div class="gsc-discussion-reactions">${react(discussion || null, 'bottom')}</div>

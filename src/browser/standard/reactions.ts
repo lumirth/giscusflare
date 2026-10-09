@@ -16,14 +16,14 @@ export const reactions: ReactionSlot = ({ runtime, report, scope }, { subject, p
   let lifetime = scope.signal;
   const lang = runtime.appearance.lang, t = strings(lang), id = subject?.id || 'discussion',
     groups = subject ? runtime.reactions(id) : {}, signedIn = runtime.session.signedIn,
-    capability = runtime.actions(id), blocked = capability.react.status !== 'available',
-    uncertain = capability.recover.status !== 'unavailable';
+    blocked = (reaction: Reaction) => { const state = runtime.reaction(id, reaction); return state.permission.status !== 'available' || state.recovery?.status === 'uncertain'; },
+    uncertain = contents.filter(reaction => runtime.reaction(id, reaction).recovery?.status === 'uncertain');
   const [before = '', signIn = t.signIn, after = ''] = message(lang, 'signInToAddYourReaction').split(/<a>|<\/a>/);
   const choose = async (reaction: Reaction, event: Event) => {
     if (lifetime.aborted || !runtime.session.signedIn) return;
     const menu = (event.currentTarget as HTMLElement).closest('.gsc-reaction-group')?.querySelector('details');
     if (menu) menu.open = false;
-    try { await runtime.setReaction(id, reaction, !groups[reaction]?.selected); }
+    try { await runtime.setReaction(id, reaction, !runtime.reaction(id, reaction).desired); }
     catch (error) { if (!lifetime.aborted) report(error); }
   };
   const signInText = html`${before}<button type="button" class="color-text-link hover:underline"
@@ -42,7 +42,7 @@ export const reactions: ReactionSlot = ({ runtime, report, scope }, { subject, p
         <div class="m-2 gsc-emoji-grid">
           ${contents.map(reaction => html`<button type="button"
             class=${'gsc-emoji-button ' + (groups[reaction]?.selected ? 'has-reacted color-bg-info color-border-tertiary' : '')}
-            aria-label=${reactionLabel(t, reaction)} ?disabled=${blocked}
+            aria-label=${reactionLabel(t, reaction)} ?disabled=${blocked(reaction)} aria-busy=${runtime.reaction(id, reaction).pending}
             @click=${(event: Event) => choose(reaction, event)}>
             <span class="gsc-emoji">${reactionEmoji[reaction]}</span>
           </button>`)}
@@ -54,13 +54,14 @@ export const reactions: ReactionSlot = ({ runtime, report, scope }, { subject, p
         ([reaction, group]) => html`<button type="button"
           class=${'gsc-direct-reaction-button gsc-social-reaction-summary-item ' + (group.selected ? 'has-reacted' : '')}
           aria-label=${reactionLabel(t, reaction) + ': ' + group.count} title=${reactionLabel(t, reaction)}
-          aria-pressed=${String(group.selected)} ?disabled=${blocked}
+          aria-pressed=${String(group.selected)} ?disabled=${blocked(reaction as Reaction)} aria-busy=${runtime.reaction(id, reaction as Reaction).pending}
           @click=${(event: Event) => choose(reaction as Reaction, event)}>
           <span class="gsc-direct-reaction-button-emoji">${reactionEmoji[reaction as Reaction]}</span><span
             class="gsc-social-reaction-summary-item-count">${group.count}</span>
         </button>`)}
     </div>
-    ${uncertain ? html`<button type="button" class="color-text-link text-xs"
-      @click=${() => { if (!lifetime.aborted) void runtime.retryAction(id).catch(report); }}>${t.retry}</button>${capability.abandon.status === 'available' ? html`<button type="button" class="ml-2 color-text-link text-xs" @click=${() => { if (window.confirm('This action may already be saved on GitHub. Stop trying to recover its outcome?')) runtime.abandonAction(id); }}>${t.cancel}</button>` : nothing}` : nothing}
+    ${uncertain.map(reaction => html`<button type="button" class="color-text-link text-xs"
+      ?disabled=${runtime.reaction(id, reaction).pending}
+      @click=${() => { if (!lifetime.aborted) void (runtime.reaction(id, reaction).recover.status === 'sign-in' ? runtime.session.signIn() : runtime.retryReaction(id, reaction)).catch(report); }}>${t.retry}</button>${runtime.reaction(id, reaction).abandon ? html`<button type="button" class="ml-2 color-text-link text-xs" @click=${() => { if (window.confirm('This reaction may already be saved on GitHub. Stop trying to recover its outcome?')) runtime.abandonReaction(id, reaction); }}>${t.cancel}</button>` : nothing}`)}
   </div>`;
 };

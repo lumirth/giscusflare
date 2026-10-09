@@ -16,7 +16,7 @@ if (repo && number) {
   };
   mountPresentation(
     document.getElementById("conversation")!,
-    { service: location.origin, content: githubContent(), page,appearance:{theme:"light"} },
+    { service: location.origin, contentSource: 'github', content: githubContent(), page,appearance:{theme:"light"} },
     forumPresentation,
   );
 } else

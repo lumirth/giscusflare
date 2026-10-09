@@ -6,7 +6,7 @@ A customizable comments system powered by GitHub Discussions, self-hosted on Clo
 
 - Replies and reactions, with Markdown, syntax highlighting and math.
 - The default GitHub/giscus-inspired interface, with themes and multiple languages.
-- Use your website’s Markdown pipeline, replace code/math rendering, or choose the defaults.
+- Use your website’s Markdown pipeline for comments and previews, replace code/math rendering, or choose the defaults.
 - Replace individual controls or build your own interface in JavaScript.
 - Deploy on Cloudflare's Free plan.
 
@@ -28,7 +28,7 @@ Already using giscus? You can [keep your existing discussions](docs/COMPARISON.m
 
 ## Customize your comments
 
-Use an iframe embed or [mount comments directly in your page](docs/INTEGRATION.md#native-rendering). The [customization guide](docs/EXTENDING.md) covers content rendering, themes, controls and custom interfaces. The demo's [forum design](https://github.com/lumirth/giscusflare/blob/main/examples/forum.ts) is a complete example you can adapt.
+Use an iframe embed or [mount comments directly in your page](docs/INTEGRATION.md#native-rendering). The [customization guide](docs/EXTENDING.md) covers host-prepared content, browser renderers, themes, controls and custom interfaces. The demo's [forum design](https://github.com/lumirth/giscusflare/blob/main/examples/forum.ts) is a complete example you can adapt.
 
 ## Documentation
 

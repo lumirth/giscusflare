@@ -1,6 +1,6 @@
 # Verification
 
-Use Node 22.16 or newer and `npm ci`. Run the complete release gate before proposing a release; use focused checks while implementing a change. Version 4 is a release candidate; historical results do not qualify its replacement contracts.
+Use Node 22.16 or newer and `npm ci`. Run the complete release gate before proposing a release; use focused checks while implementing a change. Historical results do not qualify the current preparation, operation and recovery contracts.
 
 | Command | Evidence |
 | --- | --- |
@@ -20,7 +20,7 @@ Native and browser workflows use the actual production Worker and SQLite Durable
 
 `npm run demo` prints iframe and native URLs. Comments and sign-in are simulated. `test:browser` starts and stops its own fixture and records the source/runtime conditions in `test-results/evidence/browser-acceptance.json`.
 
-The browser portfolio must exercise native and iframe embedding, future-capability sign-in, actual typing and undo/redo, preview, reading continuity, appearance and contributions. Cohesive custom-view workflows must cover local/server/default content selection, complete feature replacement, rich-content safety and readable failures, mounted-resource updates/retirement, retained writing destination and unresolved outcomes, forum switching and editing, and setup/configuration. Use the current receipt for executed scenarios and engines; a fixed case count is not an acceptance target.
+The browser portfolio must exercise native and iframe embedding, future-capability sign-in, actual typing and undo/redo, preview, reading continuity, appearance and contributions. Cohesive custom-view workflows must cover source/prepared/GitHub content selection, complete feature replacement, rich-content safety and readable failures, detached current-only content commits, installed-resource lifetime, independent persisted writing records and same-destination recovery, retained writing destination and unresolved outcomes, forum switching and editing, and setup/configuration. Use the current receipt for executed scenarios and engines; a fixed case count is not an acceptance target.
 
 CI runs the complete gate on [macOS 26](https://docs.github.com/en/actions/reference/runners/github-hosted-runners) to exercise WebKit's native controls on the Apple port. The Linux Playwright GTK build used during qualification did not enter resize mode through the mouse driver even for isolated plain textareas with fixed or content sizing. That observation does not establish behavior in a deployed GTK browser. The gate retains actual resize, subsequent typing and native undo assertions on macOS; it has no programmatic resize substitute or engine-specific skip.
 
@@ -29,6 +29,8 @@ Browser fixtures navigate an actual local HTTP document served by the native ser
 For manual editor checks, compare real typing, undo and redo with a plain textarea. Repeat after Preview/Write, theme changes, refresh and an asynchronous contribution completion. Verify the intended text, selection and focus; DOM identity alone is supporting evidence.
 
 ## Visual reference
+
+Version 5 qualification compares successful default states with an independently frozen version 4 build outside Git. Exercise Chromium and WebKit, native and iframe modes, narrow and wide layouts, published rich content and normal composer states. Use equal deterministic inputs and complete pixels; record the actual comparison outcome in its run artifact.
 
 The demo/default presentation must retain its established appearance. The [version 3 qualification](https://github.com/lumirth/giscusflare/pull/2) included a one-time comparison against `b39375bbba0b8249c3bc661c63150b5917b31d80`, built and run outside the repository. Both actual versions render equal fixture content in Chromium and WebKit, native and iframe modes, at 390px and 900px widths. Reading and editing states are captured before mutating journeys, so edge-cache freshness cannot make their input data unequal. Contribution/edit/delete-dialog states follow real local sign-in and writes.
 

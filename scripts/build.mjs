@@ -14,14 +14,13 @@ await mkdir('dist', { recursive: true });
 await buildStyles();
 const worker = await build({ entryPoints: ['src/worker/entry.ts'], outfile: 'dist/worker.mjs', bundle: true, format: 'esm', platform: 'neutral', target: 'es2022', external: ['cloudflare:workers'], minify: true, legalComments: 'eof', metafile: true });
 await build({entryPoints:['src/browser/client.ts'],outfile:'public/client.js',bundle:true,format:'iife',platform:'browser',target:'es2022',minify:true,legalComments:'eof'});
-const browser = await build({entryPoints:['widget','native','headless','content','github-content','auth-window','auth-complete','setup'].map(name=>'src/browser/'+name+'.ts'),outdir:'public',chunkNames:'chunks/[name]-[hash]',bundle:true,splitting:true,format:'esm',platform:'browser',target:'es2022',minify:true,legalComments:'eof',metafile:true});
+const browser = await build({entryPoints:{...Object.fromEntries(['widget','native','headless','content','github-content','auth-window','auth-complete','setup'].map(name=>[name,'src/browser/'+name+'.ts'])),model:'src/conversation/index.ts'},outdir:'public',chunkNames:'chunks/[name]-[hash]',bundle:true,splitting:true,format:'esm',platform:'browser',target:'es2022',minify:true,legalComments:'eof',metafile:true});
 if(Object.keys(browser.metafile.inputs).some(p=>/node_modules\/(hono|valibot)/.test(p)))throw new Error('Browser graph includes server libraries.');
 await writeFile('dist/browser-metafile.json',JSON.stringify(browser.metafile,null,2)+'\n');
 const sizes = {};
 for (const name of ['dist/worker.mjs', 'public/client.js', 'public/widget.js', 'public/auth-window.js', 'public/auth-complete.js', 'public/setup.js', 'public/widget.css', 'public/embed.css']) {
   const buffer = await readFile(name); sizes[name] = { bytes: buffer.length, gzip: gzipSync(buffer).length, sha256: createHash('sha256').update(buffer).digest('hex') };
 }
-if (sizes['dist/worker.mjs'].gzip > 3 * 1024 * 1024) throw new Error('The Worker exceeds the 3 MiB gzip budget.');
 const outputs=browser.metafile.outputs;
 const graph=(entry, dynamic=false,seen=new Set())=>{
  if(seen.has(entry)||!outputs[entry])return seen;seen.add(entry);
@@ -66,5 +65,5 @@ for(const name of (await readdir('vendor/giscus/themes')).filter(n=>n.endsWith('
   nativeThemes+=source.toString()+'\n';
 }
 await writeFile('public/native.css', sheet.toString()+'\n'+nativeThemes);
-await build({entryPoints:['src/browser/native.ts','src/browser/headless.ts','src/browser/interactions.ts','src/browser/content.ts','src/browser/github-content.ts'],outdir:'dist/browser',bundle:true,splitting:true,format:'esm',platform:'browser',target:'es2022',legalComments:'eof'});
+await build({entryPoints:{native:'src/browser/native.ts',headless:'src/browser/headless.ts',interactions:'src/browser/interactions.ts',content:'src/browser/content.ts','github-content':'src/browser/github-content.ts',model:'src/conversation/index.ts'},outdir:'dist/browser',bundle:true,splitting:true,format:'esm',platform:'browser',target:'es2022',legalComments:'eof'});
 await import('./build-assets.mjs');

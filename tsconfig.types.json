@@ -8,6 +8,7 @@
     "rootDir": "src"
   },
   "include": [
-    "src/browser/native.ts"
+    "src/browser/native.ts",
+    "src/conversation/index.ts"
   ]
 }

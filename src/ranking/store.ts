@@ -1,4 +1,4 @@
-import { INPUTS, type Candidate, type Fact, type Profile, type RankingOptions, type Storage } from './types.js';
+import { INPUTS, type Candidate, type Profile, type RankingOptions, type Storage } from './types.js';
 
 const DAY = 86400000, HOUR = 3600000;
 const columns = INPUTS.map((_, index) => 'v' + index);
@@ -99,12 +99,9 @@ export class RankingStore {
   prune(thread: string, seen: number, limit: number): number {
     return this.exec('DELETE FROM ranking_items WHERE (thread,id) IN (SELECT thread,id FROM ranking_items WHERE thread=? AND seen<? ORDER BY seen LIMIT ?) RETURNING id', thread, seen, limit).length;
   }
-  correct(thread: string, fact: Fact, version: number, seen: number): void {
-    if ('removed' in fact) {
-      this.exec('INSERT INTO ranking_items(thread,id,version,seen,removed) VALUES(?,?,?,0,1) ON CONFLICT(thread,id) DO UPDATE SET version=excluded.version,seen=0,removed=1', thread, fact.id, version);
-      return;
-    }
-    this.exec(`INSERT INTO ranking_items(thread,id,version,seen,removed,${fields.join(',')}) VALUES(${Array(fields.length + 5).fill('?').join(',')}) ON CONFLICT(thread,id) DO UPDATE SET version=excluded.version,seen=excluded.seen,removed=0,${fields.map(field => `${field}=excluded.${field}`).join(',')}`, thread, fact.id, version, seen, 0, fact.created, Number(fact.eligible), ...INPUTS.map(input => fact.values[input] ?? null));
+  reaction(thread: string, id: string, reaction: typeof INPUTS[number], count: number, version: number): boolean {
+    const column = columns[INPUTS.indexOf(reaction)];
+    return this.exec(`UPDATE ranking_items SET ${column}=?,version=? WHERE thread=? AND id=? AND removed=0 RETURNING id`, count, version, thread, id).length > 0;
   }
   order(thread: string, profile: Profile, id?: string): Scored[] {
     const weights = Object.entries(profile.weights).filter(([, weight]) => weight !== 0);
