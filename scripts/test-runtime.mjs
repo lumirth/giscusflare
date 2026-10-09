@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { randomBytes, createHash } from 'node:crypto';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { nativeService } from '../test/native-service.mjs';
 import { evidence } from '../test/evidence.mjs';
+const { version } = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
 const origin = 'http://127.0.0.1:18790', blog = 'http://127.0.0.1:18791';
 const config = { repo: 'example/comments', origin: blog + '/article', term: 'article' };
 const random = () => randomBytes(32).toString('base64url'), hash = value => createHash('sha256').update(value).digest('base64url');
@@ -46,6 +47,7 @@ async function signIn(principal = 'reader') {
 }
 const contribute = (action, cap, submission = key()) => post('contribute', { config, key: submission, action }, cap);
 try {
+    assert.deepEqual(await json(await service.fetch(origin + '/healthz')), { status: 'ok', version }, 'The extracted Worker reports its published package version');
     const first = service.github.discussions[0].comments[0];
     first.body = 'hello🌿'.repeat(32768);
     const response = await read('page', { config }), page = await json(response);
