@@ -3,7 +3,7 @@ import * as G from '../contracts/github.js';
 import { parse, parseJSON, type Schema } from '../contracts/parse.js';
 import { InstallationRecord } from '../contracts/storage.js';
 import type { Widget, Selection, PageRequest, Action } from '../contracts/requests.js';
-import type { Comment, Discussion, Reactions, Window, WindowPage } from '../contracts/document.js';
+import type { Comment, Discussion, Reactions, Window, WindowPage, Patch } from '../contracts/document.js';
 import type { PublicConfig, SecretConfig } from '../contracts/config.js';
 import { User, NodeID } from '../contracts/primitives.js';
 import { appJWT, sha1 } from './crypto.js';
@@ -26,7 +26,7 @@ export const QUERIES = {
 function reactions(groups: G.Comment['reactionGroups']): Reactions {
     return Object.fromEntries(groups.map(g => [g.content, { count: g.reactors.totalCount, selected: g.viewerHasReacted }]));
 }
-function node(raw: G.RootComment): Comment {
+function node(raw: G.Comment & Partial<Pick<G.RootComment, 'replies' | 'discussion'>>): Comment {
     const { reactionGroups, replyTo, upvoteCount, replies, discussion, ...value } = raw;
     return { ...value, parentId: replyTo?.id ?? null, reactions: reactions(reactionGroups), upvotes: upvoteCount };
 }
@@ -34,7 +34,10 @@ function window(connection: G.Replies, order: 'oldest' | 'newest',unobserved=fal
     const p = connection.pageInfo;
     return { ids: connection.nodes.map(n => n.id), total: connection.totalCount, cursor: unobserved&&connection.totalCount>0?'':order === 'oldest' ? (p.hasNextPage ? p.endCursor : null) : (p.hasPreviousPage ? p.startCursor : null) };
 }
+export type AcquisitionRequest = Pick<PageRequest, 'order' | 'cursor' | 'parentId' | 'ids' | 'replyPrefetch'> & { html: boolean; operation?: Action };
+export interface OperationTarget { id: string; parentId: string | null; url: string; viewerCanUpdate: boolean; viewerCanDelete: boolean; viewerCanMinimize: boolean; viewerCanUnminimize: boolean }
 export interface AcquiredPage {
+    target?: OperationTarget;
     repository: G.RepositoryHead;
     category: {
         id: string;
@@ -91,7 +94,7 @@ async function githubText(url: string, init: RequestInit, maximum = 4 * 1024 * 1
         clearTimeout(timer);
     }
 }
-const apiHeaders = (token: string) => ({ Accept: 'application/vnd.github+json', Authorization: 'Bearer ' + token, 'User-Agent': 'giscusflare/4', 'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/json' });
+const apiHeaders = (token: string) => ({ Accept: 'application/vnd.github+json', Authorization: 'Bearer ' + token, 'User-Agent': 'giscusflare/5', 'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/json' });
 /** Verify an installed public repository before creating any Durable Object.
  * Uses App authentication and the same transport/schema boundary as operations. */
 export async function installedRepository(repo: string, config: PublicConfig, keys: SecretConfig): Promise<string> {
@@ -254,7 +257,8 @@ export class GitHub {
         return { meta, summaries };
     }
     /** One physical query acquires the selected document window and its scope. */
-    async page(number: number, request: Pick<PageRequest, 'order' | 'cursor' | 'parentId' | 'ids' | 'replyPrefetch' | 'html'>, token:string,signedIn=false):Promise<AcquiredPage>{
+    async page(number: number, request: AcquisitionRequest, token:string,signedIn=false):Promise<AcquiredPage>{
+        if (request.operation) return this.#operationAccess(number, request.operation, token);
         const root = !request.parentId && request.ids === undefined;
         const fields = COMMENT.replace('bodyHTML', 'bodyHTML @include(if:$html)');
         const comment = `${fields} discussion{${IDENTITY}} replies(last:$prefetch){${GRAPH.page} nodes @include(if:$previewReplies){${fields}}}`;
@@ -325,48 +329,105 @@ export class GitHub {
         const data = await this.graph(G.CreateResponse, `mutation CreateDiscussion($input:CreateDiscussionInput!) { createDiscussion(input:$input) { discussion { ${ACCESS} } } }`, { input: { repositoryId, categoryId, title: widget.term, body } }, token);
         return data.createDiscussion.discussion;
     }
-    /** Commands return only external confirmation; Page owns all display observations. */
-    async contribute(action: Action, discussionId: string, targetId: string, parentId: string, token: string): Promise<string> {
-        const identity = v.object({ id: G.Comment.entries.id });
-        let query: string, input: Record<string, unknown>, field: string, item: string;
+    /** Scope and permission preflight does not acquire the target's Markdown or rich content. */
+    async #operationAccess(number: number, action: Action, token: string): Promise<AcquiredPage> {
+        const targetId = action.type === 'comment' ? action.replyToId
+            : action.type === 'reaction' ? action.subject.kind === 'comment' ? action.subject.id : '' : action.id;
+        const summary = `id number title url locked closed answer{id} ${GRAPH.scope} ${GRAPH.reactions}`;
+        const targetSchema = v.object({ id: NodeID, url: G.Comment.entries.url, replyTo: G.Comment.entries.replyTo,
+            viewerCanUpdate: v.boolean(), viewerCanDelete: v.boolean(), viewerCanMinimize: v.boolean(), viewerCanUnminimize: v.boolean(), discussion: G.DiscussionIdentity });
+        const data = await this.graph(v.object({ repository: v.nullable(v.object({ ...G.RepositoryHead.entries, discussion: v.nullable(G.DiscussionSummary) })),
+            target: v.optional(v.nullable(targetSchema)) }),
+            `query OperationAccess($owner:String!,$name:String!,$number:Int!,$target:ID!,$selected:Boolean!){repository(owner:$owner,name:$name){id nameWithOwner isPrivate isArchived discussion(number:$number){${summary}}} target:node(id:$target) @include(if:$selected){... on DiscussionComment{id url replyTo{id} viewerCanUpdate viewerCanDelete viewerCanMinimize viewerCanUnminimize discussion{${IDENTITY}}}}}`,
+            { ...this.#scope(), number, target: targetId || 'unused', selected: Boolean(targetId) }, token);
+        requireCondition(data.repository, 404, 'NOT_FOUND', 'The repository is not accessible.');
+        const { discussion: raw, ...repository } = data.repository;
+        if (raw) requireCondition(raw.repository.id === repository.id && !raw.repository.isPrivate && raw.repository.nameWithOwner.toLowerCase() === this.repo, 403, 'PUBLIC_ONLY', 'This discussion is outside the configured repository.');
+        const target = data.target;
+        if (target) requireCondition(target.id === targetId && raw && target.discussion.id === raw.id && target.discussion.repository.id === repository.id && !target.discussion.repository.isPrivate && target.discussion.category.id === raw.category.id, 403, 'PERMISSION', 'The requested comment is outside this page.');
+        return { repository, category: raw?.category,
+            discussion: raw ? { id: raw.id, number: raw.number, title: raw.title, url: raw.url, locked: raw.locked, closed: raw.closed, answerId: raw.answer?.id ?? null, reactions: reactions(raw.reactionGroups) } : null,
+            viewer: null, page: { nodes: {}, window: { ids: [], cursor: null, total: null }, replies: {} },
+            ...(target ? { target: { id: target.id, url: target.url, parentId: target.replyTo?.id ?? null, viewerCanUpdate: target.viewerCanUpdate, viewerCanDelete: target.viewerCanDelete, viewerCanMinimize: target.viewerCanMinimize, viewerCanUnminimize: target.viewerCanUnminimize } } : {}) };
+    }
+    /** Mutation selection returns only confirmed fields owned by this operation. */
+    async contribute(action: Action, discussionId: string, targetId: string, parentId: string, token: string, html = false): Promise<{ id: string; patch?: Patch }> {
+        let query: string, input: Record<string, unknown>, field: string, item: string, inputType: string, fields: string;
         switch (action.type) {
             case 'comment':
-                field = 'addDiscussionComment';
-                item = 'comment';
-                query = 'AddComment';
+                field = 'addDiscussionComment'; item = 'comment'; query = 'AddComment'; inputType = 'AddDiscussionCommentInput';
                 input = { discussionId, body: action.body, ...(parentId ? { replyToId: parentId } : {}) };
+                fields = COMMENT.replace('bodyHTML', html ? 'bodyHTML' : '') + ' discussion{id number comments(first:1){totalCount}} replyTo{id replies(first:1){totalCount}}';
                 break;
             case 'edit':
-                field = 'updateDiscussionComment';
-                item = 'comment';
-                query = 'EditComment';
+                field = 'updateDiscussionComment'; item = 'comment'; query = 'EditComment'; inputType = 'UpdateDiscussionCommentInput';
                 input = { commentId: targetId, body: action.body };
+                fields = 'id body lastEditedAt url replyTo{id}' + (html ? ' bodyHTML' : '');
                 break;
             case 'delete':
-                field = 'deleteDiscussionComment';
-                item = 'comment';
-                query = 'DeleteComment';
-                input = { id: targetId };
+                field = 'deleteDiscussionComment'; item = 'comment'; query = 'DeleteComment'; inputType = 'DeleteDiscussionCommentInput';
+                input = { id: targetId }; fields = 'id body deletedAt author{login avatarUrl url} viewerCanUpdate viewerCanDelete viewerCanMinimize viewerCanUnminimize';
                 break;
             case 'reaction':
-                field = action.add ? 'addReaction' : 'removeReaction';
-                item = 'subject';
-                query = action.add ? 'React' : 'Unreact';
-                input = { subjectId: targetId, content: action.reaction };
+                field = action.selected ? 'addReaction' : 'removeReaction'; item = 'subject'; query = action.selected ? 'React' : 'Unreact';
+                inputType = action.selected ? 'AddReactionInput' : 'RemoveReactionInput'; input = { subjectId: targetId, content: action.reaction };
+                fields = `id ${GRAPH.reactions}`;
                 break;
             case 'moderate':
-                field = action.minimized ? 'minimizeComment' : 'unminimizeComment';
-                item = action.minimized ? 'minimizedComment' : 'unminimizedComment';
-                query = action.minimized ? 'Minimize' : 'Unminimize';
+                field = action.minimized ? 'minimizeComment' : 'unminimizeComment'; item = action.minimized ? 'minimizedComment' : 'unminimizedComment'; query = action.minimized ? 'Minimize' : 'Unminimize';
+                inputType = action.minimized ? 'MinimizeCommentInput' : 'UnminimizeCommentInput';
                 input = { subjectId: targetId, ...(action.minimized ? { classifier: action.reason } : {}) };
+                fields = '... on DiscussionComment{id isMinimized minimizedReason}';
                 break;
         }
-        const inputType = { comment: 'AddDiscussionCommentInput', edit: 'UpdateDiscussionCommentInput', delete: 'DeleteDiscussionCommentInput', reaction: action.type === 'reaction' && action.add ? 'AddReactionInput' : 'RemoveReactionInput', moderate: action.type === 'moderate' && action.minimized ? 'MinimizeCommentInput' : 'UnminimizeCommentInput' }[action.type];
-        const selection = action.type === 'moderate' ? '... on DiscussionComment{id}' : 'id';
-        const data = await this.graph(v.object({ effect: v.object({ identity: v.nullable(identity) }) }), `mutation ${query}($input:${inputType}!){effect:${field}(input:$input){identity:${item}{${selection}}}}`, { input }, token);
-        requireCondition(action.type === 'delete' || data.effect.identity, 502, 'WRITE_UNCERTAIN', 'GitHub did not confirm the changed identity.');
-        requireCondition(action.type === 'comment' || !data.effect.identity || data.effect.identity.id === targetId, 502, 'WRITE_UNCERTAIN', 'GitHub returned another changed identity.');
-        return data.effect.identity?.id ?? targetId;
+        const confirmation = action.type === 'moderate' ? '... on DiscussionComment{id}' : 'id';
+        const envelope = await this.#rest(G.GraphQLEnvelope, '/graphql', token, 'POST', {
+            query: `mutation ${query}($input:${inputType}!){effect:${field}(input:$input){identity:${item}{${confirmation}} display:${item}{${fields}}}}`, variables: { input },
+        });
+        const data = parse(v.object({ effect: v.object({ identity: v.nullable(v.object({ id: NodeID })), display: v.optional(v.nullable(v.record(v.string(), v.unknown()))) }) }), envelope.data, 'upstream');
+        // Field-level errors can invalidate display data without invalidating the effect identity.
+        requireCondition(data.effect.identity || action.type === 'delete' && !envelope.errors?.length, 502, 'WRITE_UNCERTAIN', 'GitHub did not confirm the changed identity.');
+        const raw = data.effect.display, id = data.effect.identity?.id ?? targetId;
+        requireCondition(action.type === 'comment' || id === targetId, 502, 'WRITE_UNCERTAIN', 'GitHub returned another changed identity.');
+        try {
+            requireCondition(!raw || raw.id === id, 502, 'UPSTREAM_SCHEMA', 'GitHub returned another display identity.');
+            if (action.type === 'reaction') {
+                const groups = raw!.reactionGroups;
+                requireCondition(Array.isArray(groups), 502, 'UPSTREAM_SCHEMA', 'GitHub did not supply reaction observations.');
+                const selected = groups.find(group => Object(group).content === action.reaction);
+                if (!selected) requireCondition(!envelope.errors?.length && groups.every(group => group && typeof group.content === 'string'), 502, 'UPSTREAM_SCHEMA', 'GitHub did not fully observe this reaction.');
+                const group = selected ? reactions([parse(G.ReactionGroup, selected, 'upstream')])[action.reaction]! : { count: 0, selected: false };
+                return { id, patch: { reactions: { [id]: { [action.reaction]: group } } } };
+            }
+            if (action.type === 'delete') {
+                if (data.effect.identity) requireCondition(raw, 502, 'UPSTREAM_SCHEMA', 'GitHub did not observe the retained comment.');
+                if (raw) {
+                    const tombstone = parse(v.object({ body: G.Comment.entries.body, deletedAt: G.Comment.entries.deletedAt, author: G.Comment.entries.author,
+                        viewerCanUpdate: v.boolean(), viewerCanDelete: v.boolean(), viewerCanMinimize: v.boolean(), viewerCanUnminimize: v.boolean() }), raw, 'upstream');
+                    return { id, patch: { nodes: { [id]: tombstone } } };
+                }
+                return { id, patch: { nodes: { [id]: null }, ...(parentId ? { replies: { [parentId]: { remove: [id] } } } : { roots: { remove: [id] } }) } };
+            }
+            if (action.type === 'moderate') {
+                const state = parse(v.object({ isMinimized: v.boolean(), minimizedReason: v.nullable(v.string()) }), raw, 'upstream');
+                return { id, patch: { nodes: { [id]: state } } };
+            }
+            if (action.type === 'edit') {
+                const state = parse(v.object({ id: NodeID, body: G.Comment.entries.body, bodyHTML: G.Comment.entries.bodyHTML,
+                    lastEditedAt: G.Comment.entries.lastEditedAt, url: G.Comment.entries.url, replyTo: G.Comment.entries.replyTo }), raw, 'upstream');
+                const { replyTo, ...value } = state;
+                return { id, patch: { nodes: { [id]: { ...value, parentId: replyTo?.id ?? null } } } };
+            }
+            const comment = node(parse(G.Comment, raw, 'upstream'));
+            const counts = parse(v.object({ discussion: v.object({ id: NodeID, number: v.number(), comments: v.object({ totalCount: v.number() }) }),
+                replyTo: v.nullable(v.object({ id: NodeID, replies: v.object({ totalCount: v.number() }) })) }), raw, 'upstream');
+            requireCondition(counts.discussion.id === discussionId && comment.parentId === (parentId || null), 502, 'UPSTREAM_SCHEMA', 'GitHub returned a comment observation in another discussion.');
+            return { id, patch: { nodes: { [id]: comment }, roots: { total: counts.discussion.comments.totalCount, ...(!parentId ? { add: [id] } : {}) },
+                ...(parentId ? { replies: { [parentId]: { add: [id], total: counts.replyTo!.replies.totalCount } } } : {}) } };
+        } catch (error) {
+            // Identity confirms the effect even when its optional display fields cannot be adopted.
+            return { id };
+        }
     }
     async markdown(text: string, token: string): Promise<string> {
         return this.#response('/markdown', token, 'POST', { mode: 'gfm', context: this.repo, text }, true);
@@ -374,7 +435,7 @@ export class GitHub {
     async exchange(parameters: Record<string, string>): Promise<G.OAuthToken> {
         try {
             const response = await githubText('https://github.com/login/oauth/access_token', {
-                method: 'POST', headers: { Accept: 'application/json', 'User-Agent': 'giscusflare/4' },
+                method: 'POST', headers: { Accept: 'application/json', 'User-Agent': 'giscusflare/5' },
                 body: new URLSearchParams({ client_id: this.config.clientId, client_secret: this.keys.clientSecret, ...parameters }),
             }, 16384);
             const raw = parseJSON(response, 'upstream');

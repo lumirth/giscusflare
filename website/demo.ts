@@ -10,6 +10,7 @@ let current: keyof typeof presentations = 'standard';
 host.replaceChildren();
 const comments = mountPresentation(host, {
   service: DEMO_ORIGIN,
+  contentSource: 'github',
   content: githubContent(),
   page: { repo: 'lumirth/giscusflare', number: DEMO_NUMBER, origin: location.href, backLink: location.href },
   appearance: { theme: 'preferred_color_scheme' },

@@ -99,6 +99,17 @@ export class FakeGitHub {
       }
       case 'RepositoryHead':
       case 'Repository': check(x.owner+'/'+x.name===this.meta.nameWithOwner,'scoped metadata');data={repository:clone(this.meta)};break;
+      case 'OperationAccess': {
+        check(x.owner+'/'+x.name===this.meta.nameWithOwner,'scoped operation metadata');
+        const d=this.discussions.find(d=>d.number===x.number);
+        data={repository:{id:this.meta.id,nameWithOwner:this.meta.nameWithOwner,isPrivate:this.meta.isPrivate,isArchived:this.meta.isArchived,
+          discussion:d?{...this.identity(d),title:d.title,url:d.url,locked:d.locked,closed:d.closed,answer:d.answer,reactionGroups:this.groups(d,user)}:null}};
+        if(x.selected){const t=this.locate(x.target),c=t&&t.node!==t.d?this.comment(t.node,user):null;
+          data.target=c?{id:c.id,url:c.url,replyTo:c.replyTo,viewerCanUpdate:c.viewerCanUpdate,viewerCanDelete:c.viewerCanDelete,
+            viewerCanMinimize:c.viewerCanMinimize,viewerCanUnminimize:c.viewerCanUnminimize,discussion:this.identity(t.d)}:null;
+        }
+        break;
+      }
       case 'ResolvePage': {
         check(x.query.startsWith('repo:example/comments category:"Announcements" '),'quoted scoped search');
         const term=JSON.parse(/in:(?:body|title) ("(?:\\.|[^"\\])*")/.exec(x.query)?.[1]||'""');
@@ -151,7 +162,15 @@ export class FakeGitHub {
     }
     if(query.includes('effect:')){
       const payload=Object.values(data)[0],changed=payload.comment??payload.subject??null;
-      data={effect:{identity:changed?{id:changed.id}:null}};
+      if(changed){
+        if(operation==='AddComment'){
+          const target=this.locate(changed.id);
+          changed.discussion={...this.identity(target.d),comments:{totalCount:target.d.comments.length}};
+          if(changed.replyTo){const parent=this.locate(changed.replyTo.id).node;changed.replyTo={id:parent.id,replies:{totalCount:parent.replies.length}};}
+        }
+        if(!query.includes('bodyHTML'))delete changed.bodyHTML;
+      }
+      data={effect:query.includes('display:')?{identity:changed?{id:changed.id}:null,display:changed}:{identity:changed}};
     }
     if(this.corruptNext){const change=this.corruptNext;this.corruptNext=null;data=change(data,operation);}
     if(this.failAfterMutation&&query.startsWith('mutation')){this.failAfterMutation=false;throw new TypeError('lost response after commit');}

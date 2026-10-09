@@ -48,7 +48,7 @@ export const forumPresentation: Presentation = (target, page, scope) => {
         form.className = 'forum-composer';
         form.append(action('Write', () => editor.write()), action('Preview', () => editor.preview()),
           textarea, previewElement, feedback, submit);
-        if (name !== 'main') form.append(action('Cancel', () => writing.hide()));
+        if (writing.target.kind !== 'comment') form.append(action('Cancel', () => writing.hide()));
       }
       const previewing = editor.mode === 'preview';
       if (textarea.hidden !== previewing) textarea.hidden = previewing;
@@ -69,7 +69,7 @@ export const forumPresentation: Presentation = (target, page, scope) => {
     const authLabel = page.session.signedIn ? 'Sign out' : 'Sign in', problem = page.error || page.session.error;
     if (auth.textContent !== authLabel) auth.textContent = authLabel;
     if (status.textContent !== problem) status.textContent = problem;
-    for (const [name, editor] of editors) if (name !== 'main' && !page.writings.get(name)?.open) {
+    for (const [name, editor] of editors) if (editor.writing.target.kind !== 'comment' && !page.writings.get(name)?.open) {
       editor.dispose(); editors.delete(name);
     }
     composer(page.writing());
@@ -88,19 +88,20 @@ export const forumPresentation: Presentation = (target, page, scope) => {
       const { element, body } = retained;
       body.hidden = false;
       if (comment.deletedAt) { retained.content.clear(); body.textContent = 'Comment deleted.'; }
-      else void retained.content.update({ markdown: comment.body, html: comment.bodyHTML, purpose: 'comment', repo: page.config.repo,
+      else void retained.content.update({ markdown: comment.body, html: comment.bodyHTML, prepared: comment.prepared, purpose: 'comment', repo: page.config.repo, pageURL: page.config.origin,
         comment: { id: comment.id, url: comment.url, parentId: comment.parentId } }).catch(() => {});
       const byline = node('header'), avatar = node('span', (comment.author?.login || '?').slice(0, 1).toUpperCase());
       byline.className = 'forum-byline'; avatar.className = 'forum-avatar'; avatar.setAttribute('aria-hidden', 'true');
       const date = node('a', new Date(comment.createdAt).toLocaleString()) as HTMLAnchorElement;
       date.href = comment.url; byline.append(avatar, node('strong', comment.author?.login || 'Deleted'), date);
-      const controls = node('div'), groups = page.reactions(id);
+      const controls = node('div');
       controls.className = 'forum-actions';
       for (const reaction of Object.keys(emojis) as (keyof typeof emojis)[]) {
-        const group = groups[reaction], button = action(`${emojis[reaction]} ${group?.count || 0}`,
-          () => page.setReaction(id, reaction, !group?.selected));
-        button.disabled = page.actions(id).react.status !== 'available';
-        button.setAttribute('aria-pressed', String(Boolean(group?.selected))); controls.append(button);
+        const state = page.reaction(id, reaction), button = action(`${emojis[reaction]} ${state.count}`,
+          () => page.setReaction(id, reaction, !page.reaction(id, reaction).desired));
+        button.disabled = state.permission.status !== 'available' || state.recovery?.status === 'uncertain';
+        button.setAttribute('aria-pressed', String(state.selected)); button.setAttribute('aria-busy', String(state.pending)); controls.append(button);
+        if (state.recover.status !== 'unavailable') controls.append(action('Recover ' + emojis[reaction], () => state.recover.status === 'sign-in' ? page.session.signIn() : page.retryReaction(id, reaction)));
       }
       if (page.actions(id).recover.status === 'available') controls.append(action('Recover action', () => page.retryAction(id)));
       controls.append(action('Reply', () => page.interactions.focus(page.writing({ kind: 'reply', id: comment.parentId || id }).show().id)));

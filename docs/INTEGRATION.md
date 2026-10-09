@@ -43,13 +43,13 @@ Strict matching searches for the identifier's hash in the discussion body. Numbe
 
 ## Native rendering
 
-Version 4 is currently a release candidate. To use this checkout, build it with `npm ci && npm run build`, create its archive with `npm pack`, and install that archive in your website project.
+Install the package archive from the chosen [GitHub release](https://github.com/lumirth/giscusflare/releases), then commit your lockfile and rebuild your website:
 
 ```sh
-npm install /path/to/giscusflare-4.0.0.tgz
+npm install https://github.com/lumirth/giscusflare/releases/download/v5.0.0/giscusflare-5.0.0.tgz
 ```
 
-[GitHub releases](https://github.com/lumirth/giscusflare/releases) contain published package archives. Use matching service and browser versions; do not combine this version 4 browser build with the released version 3 service.
+Use matching Worker and browser versions. For a local source build, run `npm ci && npm run build`, run `npm pack`, and install the resulting archive in your website project.
 
 Add a container where comments should appear:
 
@@ -78,14 +78,32 @@ Use `comments.conversation` for state and contribution commands. Use a different
 
 Style the container in your page to set its width and outer spacing. See [customization](EXTENDING.md) to replace components or build a different interface, and the [API reference](API.md) for options and methods.
 
+## Choose content delivery
+
+The default native mount uses GitHub HTML with the built-in safe renderer and code/math features. To use content prepared by your deployed host, choose both the delivery mode and the DOM renderer:
+
+```js
+import { mountComments } from 'giscusflare';
+import { preparedHTML } from 'giscusflare/content';
+
+const comments = mountComments(target, {
+  service: 'https://your-comments.workers.dev',
+  page: { repo: 'you/comments', origin: location.href, term: 'post:hello-world' },
+  contentSource: 'prepared',
+  content: preparedHTML(),
+});
+```
+
+The Worker must provide the trusted producer. It prepares published bodies and anonymous previews; canonical GitHub Markdown stays available. The selected content owns its styles and resource references. See [customization](EXTENDING.md#prepare-content-in-your-deployment) for the producer setup. A browser Markdown renderer instead selects `contentSource: 'source'` with its own `content` function.
+
 ## Content Security Policy
 
-For iframe embedding, allow your service in your site's `script-src`, `style-src` and `frame-src`. Native rendering needs the service in `connect-src`. Images, code, math and styles in a native presentation follow your site's own policy.
+For iframe embedding, allow the service in your website's `script-src`, `style-src` and `frame-src`. Native rendering needs the service in `connect-src`. Images, code, math, styles and modules in a native presentation follow your website's policy. Prepared resources must be allowed by `style-src` and `script-src` as appropriate.
 
-Add these origins to the policy your website already uses. The service's iframe policy does not apply to content rendered directly in your page.
+Add these origins to your existing policy. The service iframe's policy does not apply to content installed directly in your page.
 
 ## Reading and writing recovery
 
-Readers see confirmed changes through canonical observations. Returning to a stale tab or reconnecting can observe already loaded content without resetting reading progress. Deliberate restart or changing order starts a new traversal. Public cache lifetime still applies; open tabs do not poll on a timer.
+Confirmed contributions apply their operation-owned changes immediately. Returning to a stale tab or reconnecting can observe loaded content without resetting reading progress. Deliberate restart or order changes start a new traversal. Public cache lifetime still applies; open tabs do not poll on a timer.
 
-Ordinary writing recovery uses local browser storage for five minutes by default. Snapshots containing pending or unresolved issued submissions do not expire through that retention policy and survive sign-out. They preserve destination, original body, receipt key and author until the outcome is known or recovery is deliberately abandoned. Storage remains best effort. Use `data-writing-recovery="off"` on the iframe script, or `writingRecovery: false` in JavaScript, to disable storage. In-memory writing remains owned by its page. [API options](API.md) cover reading triggers and retention.
+Browser recovery retains independent writing records, including several records for one destination. Recovery controls let the reader select a record explicitly. Ordinary records expire after five minutes by default; unresolved issued submissions remain protected through ordinary retention and sign-out. They preserve original target, body, key and author until a known outcome or explicit abandonment. Storage is best effort. Disable it with `data-writing-recovery="off"` on the iframe script or `writingRecovery: false` in JavaScript. [API options](API.md) cover triggers, retention and recovery selection.

@@ -8,9 +8,10 @@ For a custom website interface, install the browser package using [native integr
 | --- | --- |
 | `giscusflare` | Mounting the default interface or replacing its components |
 | `giscusflare/styles.css` | Styling the default interface in your page |
-| `giscusflare/headless` | Building a complete custom interface |
+| `giscusflare/headless` | Browser authentication, persistence and explicit content for a custom interface |
+| `giscusflare/model` | Portable page owner with a supplied transport, without browser APIs |
 | `giscusflare/interactions` | Connecting composers and menus to your controls |
-| `giscusflare/content` | Shared content mounting and renderer contracts |
+| `giscusflare/content` | Shared content mounting, host-prepared DOM rendering and portable producer contracts |
 | `giscusflare/content/github` | Optional GitHub HTML interpretation, code and math defaults/replacements |
 | `giscusflare/content.css` | Built-in content structure without the standard comments layout |
 | `giscusflare/worker` | Building a custom Worker deployment |

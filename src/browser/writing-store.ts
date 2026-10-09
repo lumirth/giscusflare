@@ -1,56 +1,61 @@
+import { recoveredWriting, type SavedWriting } from '../conversation/writing.js';
+
 export interface WritingStore {
-  load(key: string): string | null;
-  save(key: string, value: string, protectedWriting?: boolean): void;
-  remove(key: string): void;
+  load(scope: string): SavedWriting[];
+  acquire(scope: string, id: string, lifetime: AbortSignal): Promise<boolean>;
+  save(scope: string, writing: SavedWriting): void;
+  remove(scope: string, id: string): void;
 }
-export interface WritingRecovery {
-  retentionMs?: number;
-  store?: WritingStore;
-}
-/** Ordinary writing expires; unresolved issued work remains recoverable until explicitly cleared. */
+export interface WritingRecovery { retentionMs?: number; store?: WritingStore }
+
+/** Each intent has its own durable record. Admission protects one record, never the discussion. */
 export function browserWritingStore(
   retentionMs = 300_000,
   storage: () => Storage = () => localStorage,
   now = Date.now,
 ): WritingStore {
-  if (
-    !Number.isInteger(retentionMs) ||
-    retentionMs < 1 ||
-    retentionMs > 30 * 86_400_000
-  )
-    throw new RangeError("Writing retention must be between 1ms and 30 days.");
+  if (!Number.isInteger(retentionMs) || retentionMs < 1 || retentionMs > 30 * 86_400_000)
+    throw new RangeError('Writing retention must be between 1ms and 30 days.');
+  const claims = new WeakMap<AbortSignal, Map<string, Promise<boolean>>>();
+  const prefix = (scope: string) => scope + ':record:';
   return {
-    load(key) {
+    load(scope) {
+      const writing: SavedWriting[] = [];
       try {
-        const entry = JSON.parse(storage().getItem(key) || "null");
-        if (
-          entry &&
-          typeof entry.value === "string" &&
-          entry.value.length <= 240000 &&
-          (entry.expires === null || Number.isFinite(entry.expires) &&
-          entry.expires > now() &&
-          entry.expires <= now() + retentionMs)
-        )
-          return entry.value;
-        storage().removeItem(key);
-      } catch {}
-      return null;
+        const store = storage(), keys = Array.from({ length: store.length }, (_, index) => store.key(index))
+          .filter((key): key is string => Boolean(key?.startsWith(prefix(scope))));
+        for (const key of keys) {
+          let entry;
+          try { entry = JSON.parse(store.getItem(key) || 'null'); } catch {}
+          if (!entry || !(entry.expires === null || Number.isFinite(entry.expires) && entry.expires > now())) { store.removeItem(key);continue; }
+          const saved = recoveredWriting(JSON.stringify({ version: 5, writing: [entry.writing] }))[0];
+          if (saved && key === prefix(scope) + saved.id) writing.push(saved);
+        }
+      } catch { /* Existing in-memory writing remains available when storage is unavailable. */ }
+      return writing;
     },
-    save(key, value, protectedWriting = false) {
-      if (value.length > 240000) return;
-      try {
-        storage().setItem(
-          key,
-          JSON.stringify({ expires: protectedWriting ? null : now() + retentionMs, value }),
-        );
-      } catch {
-        /* In-memory writing continues when storage is unavailable. */
-      }
+    acquire(scope, id, lifetime) {
+      if (lifetime.aborted) return Promise.resolve(false);
+      let owned = claims.get(lifetime);
+      if (!owned) claims.set(lifetime, owned = new Map());
+      const key = prefix(scope) + id;
+      const previous = owned.get(key);
+      if (previous) return previous;
+      const work = new Promise<boolean>((resolve, reject) => {
+        if (!navigator.locks) { reject(new Error('This browser cannot safely restore writing opened in another window.'));return; }
+        void navigator.locks.request(key, { ifAvailable: true }, lock => {
+          if (!lock || lifetime.aborted) { resolve(false);return; }
+          resolve(true);
+          return new Promise<void>(release => lifetime.addEventListener('abort', () => release(), { once: true }));
+        }).catch(reject);
+      });
+      owned.set(key, work);
+      work.then(acquired => { if (!acquired) owned!.delete(key); }, () => owned!.delete(key));
+      return work;
     },
-    remove(key) {
-      try {
-        storage().removeItem(key);
-      } catch {}
+    save(scope, writing) {
+      storage().setItem(prefix(scope) + writing.id, JSON.stringify({ expires: writing.issued ? null : now() + retentionMs, writing }));
     },
+    remove(scope, id) { storage().removeItem(prefix(scope) + id); },
   };
 }

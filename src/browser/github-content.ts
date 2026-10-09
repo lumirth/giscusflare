@@ -52,7 +52,7 @@ function mountFeature<Input>(element: HTMLElement, input: ContentInput, feature:
       }
       return output;
     } catch { return fallback; }
-  }, { signal: context.signal, providerHTML: () => context.providerHTML() });
+  }, { signal: context.lifetime, preview: async () => ({ html: await context.providerHTML() }) });
   void mount.update(input).catch(() => { /* Shared ownership leaves readable source on failure. */ });
 }
 
@@ -75,7 +75,7 @@ function fileContent(element: HTMLElement): CodeContent {
 /** Optional GitHub interpretation. Local or server Markdown pipelines do not import this module. */
 export function githubContent(options: GitHubContentOptions = {}): ContentRenderer {
   const labels = options.labels || defaults;
-  const prepare = (html: string, input: ContentInput, context: ContentContext): DocumentFragment => {
+  const prepare = (html: string, input: ContentInput, context: ContentContext): HTMLElement => {
     context.signal.throwIfAborted();
     const fragment = markdown(html, input.markdown);
     const pres = [...fragment.querySelectorAll('pre')], expressions = [...fragment.querySelectorAll<HTMLElement>('.giscus-math')];
@@ -92,7 +92,7 @@ export function githubContent(options: GitHubContentOptions = {}): ContentRender
         mountFeature(pre, input, { source, language: pre.dataset.language || 'text', origin: 'fence' }, options.code, context);
       } else if (options.code !== false) {
         const block = document.createElement('div'); block.className = 'code-block'; pre.replaceWith(block); block.append(pre);
-        if (options.copy !== false) copyControl(block, source, labels, context.signal);
+        if (options.copy !== false) copyControl(block, source, labels, context.lifetime);
       }
     }
     for (const element of expressions) {
@@ -116,9 +116,9 @@ export function githubContent(options: GitHubContentOptions = {}): ContentRender
         }, context, false);
       }
     }
-    return fragment;
+    const root = document.createElement('div'); root.className = 'markdown'; root.append(fragment); return root;
   };
   const renderer: ContentRenderer = (input, context) => input.html !== undefined ? prepare(input.html, input, context)
     : context.providerHTML().then(html => prepare(html, input, context));
-  return Object.assign(renderer, { providerHTML: true });
+  return renderer;
 }

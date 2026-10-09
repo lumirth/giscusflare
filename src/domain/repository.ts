@@ -1,10 +1,11 @@
+import * as v from 'valibot';
 import { ReadCache } from './read-cache.js';
 import { RankingEngine } from '../ranking/engine.js';
 import { headQuery, discoveryQuery, observationQuery, parseHead, parseDiscovery, parseObservation } from '../ranking/github.js';
 import type { RankingScope } from '../ranking/github.js';
-import {INPUTS,validCandidate,type Source,type Storage as RankingStorage,type Input as RankingInput} from '../ranking/types.js';
+import {type Source,type Storage as RankingStorage} from '../ranking/types.js';
 import type { EffectResult, ReadValue } from '../contracts/results.js';
-import type { WindowPage, Metadata, Patch, ContributionResult } from '../contracts/document.js';
+import type { WindowPage, Metadata, ContributionResult } from '../contracts/document.js';
 import { configuration, secrets, type ConfigBindings, type RepositoryPolicy } from '../contracts/config.js';
 import { parse } from '../contracts/parse.js';
 import * as R from '../contracts/requests.js';
@@ -15,9 +16,15 @@ import { NodeID } from '../contracts/primitives.js';
 import { authorizeWidget, parentOrigin, policy, repositoryScope, repositoryIdentityScope, discussionScope } from './authorization.js';
 import { Auth } from './auth.js';
 import { hash } from './crypto.js';
-import { GitHub, type AcquiredPage } from './github.js';
+import { GitHub, type AcquiredPage, type AcquisitionRequest } from './github.js';
 import { AppError, requireCondition, result, type Result } from './errors.js';
 import { Store } from './store.js';
+import type { ContentInputData, ContentPreparer, PreparedContent, ContentSource, ContentPreview } from '../contracts/content.js';
+export interface RepositoryOptions { content?: { revision: string; prepare: ContentPreparer } }
+const PreparedArtifact = v.strictObject({
+    html: v.pipe(v.string(), v.maxLength(1000000)), revision: v.pipe(v.string(), v.minLength(1), v.maxLength(256)),
+    resources: v.optional(v.strictObject({ styles: v.pipe(v.array(v.pipe(v.string(), v.maxLength(2048))), v.maxLength(64)), scripts: v.pipe(v.array(v.pipe(v.string(), v.maxLength(2048))), v.maxLength(64)) })),
+});
 interface Access extends AcquiredPage {
     client: GitHub;
     token: string;
@@ -25,13 +32,14 @@ interface Access extends AcquiredPage {
     policy: RepositoryPolicy;
 }
 const emptyWindow = () => ({ ids: [], cursor: null, total: 0 });
-const emptyRequest = (): Pick<R.PageRequest, 'order' | 'cursor' | 'replyPrefetch' | 'ids' | 'html'> => ({ order: 'oldest', cursor: '', replyPrefetch: 0, ids: [], html: false });
+const emptyRequest = (): AcquisitionRequest => ({ order: 'oldest', cursor: '', replyPrefetch: 0, ids: [], html: false });
 export class RepositoryEngine {
     #reads = new ReadCache(() => this.store.now());
+    #prepared = new ReadCache(() => this.store.now());
     #client?: GitHub;
     #ranking?: RankingEngine;
     #repositoryId?: string;
-    constructor(readonly env: ConfigBindings, readonly store: Store, readonly rankingStorage?: RankingStorage) { }
+    constructor(readonly env: ConfigBindings, readonly store: Store, readonly rankingStorage?: RankingStorage, readonly options: RepositoryOptions = {}) { }
     execute<K extends C.Operation>(name: K, raw: unknown, repositoryID: string): Promise<Result<Output<K>>> {
         return result(async () => {
             const id = parse(NodeID, repositoryID);
@@ -67,7 +75,7 @@ export class RepositoryEngine {
     #metadata(a: Access, unavailable = false): Metadata { return { thread: a.discussion, viewer:a.viewer, archived: a.repository.isArchived, unavailable, profiles: Object.keys(a.policy.ranking?.profiles ?? {}) }; }
     /** One owner resolves selection, validates current authority, and acquires a window.
      * Creation shares this owner under the term lock rather than a second resolver. */
-    async #acquire(w: R.Selection, principal: string | S.Session, request: Pick<R.PageRequest, 'order' | 'cursor' | 'parentId' | 'ids' | 'replyPrefetch' | 'html'>, create?: R.ContributionRequest['creation'], reserve?: (n: number) => void): Promise<Access> {
+    async #acquire(w: R.Selection, principal: string | S.Session, request: AcquisitionRequest, create?: R.ContributionRequest['creation'], reserve?: (n: number) => void): Promise<Access> {
         const base = this.#base(w.repo), session = typeof principal === 'string' ? await base.auth.session(principal, w.origin, create !== undefined) : principal;
         const token = session?.credentials.accessToken || await base.client.installation(reserve ? () => reserve(2) : undefined);
         const key = this.#mapping(w, base.policy);
@@ -127,16 +135,19 @@ export class RepositoryEngine {
     async page(input: C.Input<'page'>): Promise<ReadValue<WindowPage>> {
         const r = input.request, w = r.config, p = policy(configuration(this.env), w.repo);
         const load = async () => {
-            const a = await this.#acquire(w, input.session, r);
+            const a = await this.#acquire(w, input.session, { ...r, html: r.content === 'github' });
             if (r.ids && !r.observe)
                 for (const id of a.page.window.ids)
                     requireCondition(!a.page.nodes[id]!.parentId, 400, 'BAD_INPUT', 'Ranked windows contain top-level comments.');
             return { ...a.page, metadata: this.#metadata(a, Boolean(!a.discussion && (w.number || this.store.get(this.#mapping(w, p), S.Mapping)))) };
         };
-        if (input.session)
-            return { value: await load(), expires: 0 };
         const { origin, ...identity } = w;
-        return this.#reads.read(JSON.stringify(['page', identity, r.order, r.cursor, r.parentId, r.ids, r.replyPrefetch, r.observe, r.html]), this.#group(w), p.displayCacheMs, load);
+        const acquired = input.session ? { value: await load(), expires: 0 }
+            : await this.#reads.read(JSON.stringify(['page', identity, r.order, r.cursor, r.parentId, r.ids, r.replyPrefetch, r.observe, r.content === 'github']), this.#group(w), p.displayCacheMs, load);
+        if (r.content !== 'prepared') return acquired;
+        const value = structuredClone(acquired.value);
+        await this.#prepareNodes(value.nodes, w.repo, w.origin);
+        return { value, expires: acquired.expires };
     }
     async info(input: R.InfoRequest) {
         const base = this.#base(input.repo);
@@ -209,57 +220,50 @@ export class RepositoryEngine {
         await this.#ranker(identity.repo)?.continueJobs(id => this.#rankingSource(identity.repo, id));
     } }
     rankingAlarm() { return this.#ranking?.nextAlarmAt() ?? null; }
-    async preview(input: C.Input<'preview'>) {
-        const base = this.#base(input.request.config.repo), session = await base.auth.session(input.session, input.request.config.origin, true);
+    async #prepare(input: ContentInputData): Promise<PreparedContent> {
+        const producer = this.options.content;
+        requireCondition(producer && typeof producer.revision === 'string' && producer.revision.trim().length > 0 && producer.revision.length <= 256 && typeof producer.prepare === 'function', 503, 'CONFIGURATION', 'This deployment needs a versioned content producer.');
+        const key = await hash(JSON.stringify([producer.revision, input]));
+        return (await this.#prepared.read(key, 'prepared', 86400000, async () => {
+            const record = 'prepared:v5:' + key;
+            let persisted: PreparedContent | null = null;
+            try { persisted = this.store.get(record, PreparedArtifact); } catch { try { this.store.delete(record); } catch {} }
+            if (persisted) return persisted;
+            const value = parse(PreparedArtifact, await producer.prepare(input), 'upstream');
+            if (new TextEncoder().encode(JSON.stringify(value)).byteLength <= 1024 * 1024) {
+                const retain = () => {
+                    this.store.put(record, PreparedArtifact, value, this.store.now() + 86400000);
+                    this.store.bound('prepared:v5:', 8 * 1024 * 1024, 256);
+                };
+                try { if (this.store.transactionSync) this.store.transactionSync(retain); else retain(); }
+                catch { console.error('Prepared content could not be retained.'); }
+            }
+            return value;
+        })).value;
+    }
+    async #prepareNodes(nodes: Record<string, Partial<import('../contracts/document.js').Comment> | null>, repo: string, pageURL: string): Promise<void> {
+        for (const comment of Object.values(nodes)) if (comment && comment.body !== undefined && comment.id && comment.url) {
+            comment.prepared = await this.#prepare({ markdown: comment.body, purpose: 'comment', repo, pageURL,
+                comment: { id: comment.id, url: comment.url, parentId: comment.parentId ?? null } });
+        }
+    }
+    async preview(input: C.Input<'preview'>): Promise<ContentPreview> {
+        const request = input.request;
+        if (request.content === 'prepared') return { prepared: await this.#prepare({ markdown: request.body, purpose: 'preview', repo: request.config.repo, pageURL: request.config.origin, ...(request.draft ? { draft: request.draft } : {}) }) };
+        if (request.content === 'source') return {};
+        const base = this.#base(request.config.repo), session = await base.auth.session(input.session, request.config.origin, true);
         const meta = await base.client.repositoryHead(session!.credentials.accessToken);
-        this.#pin(input.request.config.repo, meta);
+        this.#pin(request.config.repo, meta);
         requireCondition(!meta.isArchived, 403, 'ARCHIVED', 'The repository is archived.');
         this.store.limit('preview:' + session!.principal, 30, 60000);
-        return { html: await base.client.markdown(input.request.body, session!.credentials.accessToken) };
+        return { html: await base.client.markdown(request.body, session!.credentials.accessToken) };
     }
-    async #observation(w: R.Selection, session: S.Session, effect: EffectResult, action: R.Action, html: boolean): Promise<ContributionResult> {
-        try {
-            const ids = action.type === 'reaction' && action.id === 'discussion' ? [] : [...new Set([effect.id, ...(effect.parentId ? [effect.parentId] : [])])];
-            const a = await this.#acquire(w, session, { ...emptyRequest(), ids, html });
-            const nodes: Patch['nodes'] = Object.fromEntries(ids.map(id => [id, a.page.nodes[id] ?? null]));
-            const patch: Patch = { nodes, metadata: this.#metadata(a, !a.discussion), roots: { total: a.page.window.total ?? 0 }, replies: {} };
-            for (const [id, window] of Object.entries(a.page.replies ?? {}))
-                patch.replies![id] = { total: window.total! };
-            if (action.type === 'comment' && nodes[effect.id]) {
-                const parentId = nodes[effect.id]!.parentId;
-                if (parentId)
-                    patch.replies![parentId] = { ...patch.replies![parentId], add: [effect.id] };
-                else
-                    patch.roots!.add = [effect.id];
-            }
-            try {
-                const ranker = this.#ranker(w.repo);
-                if (ranker && a.discussion)
-                    for (const [id, node] of Object.entries(nodes)) {
-                        if (id === a.discussion.id || node?.parentId)
-                            continue;
-                        if (!node) {
-                            ranker.correct(a.discussion.id,{id,removed:true});
-                            continue;
-                        }
-                        const values: Partial<Record<RankingInput, number>> = { upvotes: node.upvotes, answer: a.discussion.answerId === id ? 1 : 0 };
-                        for (const [reaction, value] of Object.entries(node.reactions))
-                            values[reaction as RankingInput] = value.count;
-                        const total = a.page.replies?.[id]?.total;
-                        if (total !== null && total !== undefined)
-                            values.replies = total;
-                        const fact={id,created:Date.parse(node.createdAt),eligible:!node.isMinimized&&!node.deletedAt,values};
-                        if(validCandidate(fact,INPUTS))ranker.correct(a.discussion.id,fact);
-                    }
-            }
-            catch {
-                console.error('Ranking correction could not be recorded.');
-            }
-            return { ...effect, patch };
-        }
-        catch {
-            return effect;
-        }
+    async #delivery(effect: EffectResult, content: ContentSource, repo: string, pageURL: string): Promise<ContributionResult> {
+        if (content !== 'prepared' || !effect.patch?.nodes) return effect;
+        // Preparation is display work, never grounds to repeat the confirmed effect.
+        const delivery = structuredClone(effect);
+        try { await this.#prepareNodes(delivery.patch!.nodes!, repo, pageURL); } catch { /* Original source remains readable. */ }
+        return delivery;
     }
     async contribute(input: C.Input<'contribute'>): Promise<ContributionResult> {
         const r = input.request, w = r.config, action = r.action;
@@ -273,19 +277,16 @@ export class RepositoryEngine {
                 requireCondition(receipt.owner === owner, 409, 'CONFLICT', 'This submission belongs to another GitHub account.');
                 requireCondition(receipt.fingerprint === fingerprint, 409, 'CONFLICT', 'This request ID was used for different content.');
                 requireCondition(receipt.result, 409, 'WRITE_UNCERTAIN', 'GitHub may have saved this change. Check the discussion before submitting it again.');
-                const meta = await base.client.repository(session!.credentials.accessToken);
-                repositoryScope(meta, w.repo, base.policy);
-                this.#pin(w.repo, meta);
-                return this.#observation({ ...w, number: receipt.result.number }, session!, receipt.result, action, r.html);
+                return this.#delivery(receipt.result, r.content, w.repo, w.origin);
             }
             const created = Number(r.key.split('.')[1]);
             requireCondition(Number.isSafeInteger(created) && created <= this.store.now() + 300000 && this.store.now() - created < 86400000, 409, 'OPERATION_EXPIRED', 'This submission is too old to retry. Check the discussion before submitting again.');
-            const targetId = action.type === 'comment' ? action.replyToId : action.id === 'discussion' ? '' : action.id;
-            const create = action.type === 'comment' && !action.replyToId || action.type === 'reaction' && action.id === 'discussion' && action.add;
-            const a = await this.#acquire(w, session!, { ...emptyRequest(), ids: targetId ? [targetId] : [] }, create ? r.creation : undefined);
+            const targetId = action.type === 'comment' ? action.replyToId : action.type === 'reaction' ? action.subject.kind === 'comment' ? action.subject.id : '' : action.id;
+            const create = action.type === 'comment' && !action.replyToId || action.type === 'reaction' && action.subject.kind === 'discussion' && action.selected;
+            const a = await this.#acquire(w, session!, { ...emptyRequest(), operation: action }, create ? r.creation : undefined);
             requireCondition(!a.repository.isArchived, 403, 'ARCHIVED', 'The repository is archived.');
             requireCondition(a.discussion, 404, 'NOT_FOUND', 'Discussion not found.');
-            const target = targetId ? a.page.nodes[targetId] : null;
+            const target = targetId ? a.target : null;
             if (targetId)
                 requireCondition(target, 404, 'NOT_FOUND', 'Comment not found.');
             if (action.type === 'comment' || action.type === 'reaction')
@@ -303,8 +304,9 @@ export class RepositoryEngine {
             this.store.put(receiptKey, S.Receipt, {owner,fingerprint,result:null}, expires);
             let effect: EffectResult;
             try {
-                const id = await a.client.contribute(action, a.discussion.id, targetId || a.discussion.id, parentId, a.token);
-                effect = { id, number: a.discussion.number, ...(parentId ? { parentId } : {}) };
+                const confirmed = await a.client.contribute(action, a.discussion.id, targetId || a.discussion.id, parentId, a.token, r.content === 'github');
+                effect = { ...confirmed, number: a.discussion.number, ...(parentId ? { parentId } : {}) };
+                if (create && effect.patch) effect.patch = { ...effect.patch, metadata: { thread: a.discussion, archived: a.repository.isArchived, unavailable: false, profiles: Object.keys(a.policy.ranking?.profiles ?? {}) } };
                 this.store.put(receiptKey, S.Receipt, {owner,fingerprint,result:effect}, expires);
             }
             catch (error) {
@@ -317,7 +319,12 @@ export class RepositoryEngine {
             finally {
                 this.#invalidate(w, a.discussion.number);
             }
-            return this.#observation({ ...w, number: effect.number }, session!, effect, action, r.html);
+            if (action.type === 'reaction' && !parentId && action.subject.kind === 'comment') {
+                const count = effect.patch?.reactions?.[effect.id]?.[action.reaction]?.count;
+                if (count !== undefined) try { this.#ranker(w.repo)?.reaction(a.discussion.id, effect.id, action.reaction, count); }
+                catch { /* Acquisition cadence and its budget remain independent of interactive completion. */ }
+            }
+            return this.#delivery(effect, r.content, w.repo, w.origin);
         });
     }
     authPrepare(input: C.Input<'authPrepare'>) { return this.#base(input.request.repo).auth.prepare(input); }

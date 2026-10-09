@@ -1,9 +1,10 @@
 /** Shared host storage mechanics for native and iframe embeddings. */
 const failedWrites = new WeakMap<Window, Map<string, unknown>>();
 export function storageNamespace(service: string, repo: string): string {
-  return `giscusflare:4:${service}:${repo}:`;
+  return `giscusflare:5:${service}:${repo}:`;
 }
 export function writingIdentity(config: {
+  origin?: unknown;
   strict?: unknown;
   number?: unknown;
   term?: unknown;
@@ -11,6 +12,7 @@ export function writingIdentity(config: {
   return (
     "writing:" +
     JSON.stringify([
+      typeof config.origin === 'string' ? new URL(config.origin).origin : '',
       Boolean(config.strict),
       Number(config.number) || 0,
       config.term || "",

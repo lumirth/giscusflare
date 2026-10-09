@@ -1,5 +1,5 @@
 import { mountContent } from "./content.js";
-import type { Writing, WritingOutcome } from "../conversation/writing.js";
+import { writingTargetKey, type Writing, type WritingOutcome } from "../conversation/writing.js";
 import type { Conversation } from "./runtime.js";
 
 export interface FocusHandle {
@@ -56,12 +56,13 @@ export function createEditor(runtime: Conversation, writing: Writing, options: {
   options.signal?.throwIfAborted();
   const form = document.createElement('form'), textarea = document.createElement('textarea'),
     previewElement = document.createElement('div'), events = new window.AbortController();
-  form.dataset.composer = name;
+  form.dataset.composer = writingTargetKey(writing.target);
+  form.dataset.writingId = writing.id;
   textarea.rows = 4;textarea.maxLength = 60000;textarea.dir = 'auto';
   let mode: 'write' | 'preview' = 'write', fixedWidth = false, error = '', previewPending = false,
     changing = false, previewVersion = 0, clearedSelection: [number, number, 'forward' | 'backward' | 'none'] | undefined, stop: (() => void) | undefined, unregister: (() => void) | undefined;
   const content = mountContent(previewElement, runtime.content, { signal: events.signal,
-    providerHTML: (input, signal) => runtime.preview(input.markdown, signal) });
+    preview: (input, signal) => runtime.preview(input.markdown, signal, input.draft) });
   const disposed = () => events.signal.aborted;
   const dispose = runtime.own(() => {
     options.signal?.removeEventListener('abort', dispose);
@@ -134,7 +135,7 @@ export function createEditor(runtime: Conversation, writing: Writing, options: {
       draw();
       if (!previewPending) return;
       try {
-        await content.update({ markdown: body, purpose: 'preview', draft: writing.id, repo: runtime.config.repo });
+        await content.update({ markdown: body, purpose: 'preview', draft: writing.id, repo: runtime.config.repo, pageURL: runtime.config.origin });
       } catch (cause) {
         if (disposed() || version !== previewVersion || mode !== 'preview') return;
         error = errorText(cause, 'Unable to preview.');

@@ -6,8 +6,8 @@ export async function browserBehavior({ browser, service, blog, report, capabili
   const errors = [], providerPreviews = [], contentReads = [];
   page.on('request', request => {
     const url = new URL(request.url());
-    if (url.pathname === '/api/v4/preview') providerPreviews.push(url.href);
-    if (url.pathname === '/api/v4/page') contentReads.push(JSON.parse(url.searchParams.get('input')));
+    if (url.pathname === '/api/v5/preview') providerPreviews.push(url.href);
+    if (url.pathname === '/api/v5/page') contentReads.push(JSON.parse(url.searchParams.get('input')));
   });
   page.on('pageerror', error => errors.push(error.message));
   try {
@@ -33,7 +33,7 @@ export async function browserBehavior({ browser, service, blog, report, capabili
         const node = document.createElement('div');
         node.className = 'markdown';
         contentHost.append(node);
-        await mountContent(node, githubContent(options), { signal: lifetime.signal }).update({ markdown: 'Original source', html, repo: 'example/comments', purpose: 'comment' }).catch(() => {});
+        await mountContent(node, githubContent(options), { signal: lifetime.signal }).update({ markdown: 'Original source', html, repo: 'example/comments', pageURL: blog + '/article', purpose: 'comment' }).catch(() => {});
         return node;
       };
       const rich = await content('<script>window.executed=true</script><img onerror="window.executed=true" src="data:x"><a href="javascript:alert(1)">bad</a><table><tr><td rowspan="2">cell</td></tr></table><input type="checkbox" checked>');
@@ -92,23 +92,25 @@ export async function browserBehavior({ browser, service, blog, report, capabili
         void mountContent(body, githubContent({ math: (_feature, context) => {
           enhancementSignal = context.signal;
           return new Promise(resolve => { releaseEnhancement = resolve; });
-        } }), { signal: scope.signal }).update({ markdown: 'x', html: '<math-renderer>x</math-renderer>', purpose: 'comment', repo: owner.config.repo });
+        } }), { signal: scope.signal }).update({ markdown: 'x', html: '<math-renderer>x</math-renderer>', purpose: 'comment', repo: owner.config.repo, pageURL: owner.config.origin });
       };
-      const rendering = { disposals: 0, updates: 0, inputs: [] };
+      const rendering = { disposals: 0, updates: 0, inputs: [] }, waitingUpdates = new Map();
       const localMarkdown = async (input, context) => {
         await Promise.resolve();
         context.signal.throwIfAborted();
         if (input.markdown === 'Failed custom rendering remains readable') throw Error('Renderer offline');
         const article = document.createElement('section'), counter = document.createElement('button'), source = document.createElement('p');
         article.dataset.hostMarkdown = input.purpose; source.textContent = input.markdown;
-        let clicks = 0; counter.textContent = 'Clicks 0'; counter.onclick = () => { counter.textContent = 'Clicks ' + ++clicks; };
+        let clicks = 0; counter.textContent = 'Clicks 0'; counter.addEventListener('click', () => { counter.textContent = 'Clicks ' + ++clicks; }, { signal: context.lifetime });
         article.append(source, counter); rendering.inputs.push(input);
         return { node: article, async update(next, nextContext) {
+          if (next.markdown.startsWith('Deferred mounted value ')) await new Promise(resolve => waitingUpdates.set(next.markdown, resolve));
           await Promise.resolve(); nextContext.signal.throwIfAborted(); rendering.updates++;
-          rendering.inputs.push(next); source.textContent = next.markdown;
-        }, dispose() { rendering.disposals++; counter.onclick = null; } };
+          if (next.markdown === 'Failed prepared mounted value') throw Error('Renderer offline');
+          rendering.inputs.push(next); return () => { source.textContent = next.markdown; };
+        }, dispose() { rendering.disposals++; } };
       };
-      const mounted = api.mountPresentation(target, { service, page: { repo: 'example/comments', origin: blog + '/article', term: 'article' }, content: localMarkdown, fetching: { onFocus: true, staleAfterMs: 0 }, writingRecovery: false, host: { emit() {}, navigate() { throw Error('Unexpected custom-consumer navigation'); } } }, custom);
+      const mounted = api.mountPresentation(target, { service, page: { repo: 'example/comments', origin: blog + '/article', term: 'article' }, content: localMarkdown, contentSource: 'source', fetching: { onFocus: true, staleAfterMs: 0 }, writingRecovery: false, host: { emit() {}, navigate() { throw Error('Unexpected custom-consumer navigation'); } } }, custom);
       const owner = mounted.conversation;
       owner.initialize({ session: capability });
       await until(() => owner.ready);
@@ -116,7 +118,7 @@ export async function browserBehavior({ browser, service, blog, report, capabili
       owner.writing().update('Writing belongs to this page');
       await editor.preview();
       check(editor.previewElement.textContent.includes('Writing belongs to this page'), 'A website Markdown pipeline previews original writing');
-      check(rendering.inputs.at(-1).purpose === 'preview' && rendering.inputs.at(-1).draft === 'main', 'The preview renderer receives original writing identity and purpose');
+      check(rendering.inputs.at(-1).purpose === 'preview' && rendering.inputs.at(-1).draft === owner.writing().id, 'The preview renderer receives original writing identity and purpose');
       editor.write(); owner.writing().update('Failed custom rendering remains readable');
       await editor.preview();
       check(editor.previewElement.textContent === 'Failed custom rendering remains readable' && editor.error.includes('Renderer offline'), 'Failed website preview retains original writing alongside its error');
@@ -153,21 +155,32 @@ export async function browserBehavior({ browser, service, blog, report, capabili
       check(component.isConnected && clicker.textContent === 'Clicks 1', 'Unchanged content retains a mounted website component and its local state across freshness work');
       const host = document.createElement('div'); target.append(host);
       const shared = mountContent(host, localMarkdown);
-      await shared.update({ markdown: 'First mounted value', purpose: 'comment', repo: owner.config.repo });
+      await shared.update({ markdown: 'First mounted value', purpose: 'comment', repo: owner.config.repo, pageURL: owner.config.origin });
       const retained = host.firstChild, control = retained.querySelector('button'); control.click();
-      await shared.update({ markdown: 'Second mounted value', purpose: 'comment', repo: owner.config.repo });
+      await shared.update({ markdown: 'Second mounted value', purpose: 'comment', repo: owner.config.repo, pageURL: owner.config.origin });
       check(host.firstChild === retained && control.textContent === 'Clicks 1' && host.textContent.includes('Second mounted value'), 'Changed content updates the same mounted component without losing its state');
+      const olderUpdate = shared.update({ markdown: 'Deferred mounted value older', purpose: 'comment', repo: owner.config.repo, pageURL: owner.config.origin });
+      check(host.textContent.includes('Second mounted value') && control.textContent === 'Clicks 1', 'A retained website component stays usable while its next output is prepared');
+      const newestUpdate = shared.update({ markdown: 'Deferred mounted value newest', purpose: 'comment', repo: owner.config.repo, pageURL: owner.config.origin });
+      waitingUpdates.get('Deferred mounted value newest')(); await newestUpdate;
+      waitingUpdates.get('Deferred mounted value older')(); await olderUpdate;
+      check(host.firstChild === retained && host.textContent.includes('Deferred mounted value newest') && !host.textContent.includes('Deferred mounted value older') && control.textContent === 'Clicks 1', 'Reordered rendering completion commits only the newest prepared value without losing mounted state');
+      let failedUpdate;
+      await shared.update({ markdown: 'Failed prepared mounted value', purpose: 'comment', repo: owner.config.repo, pageURL: owner.config.origin }).catch(error => { failedUpdate = error; });
+      check(failedUpdate?.message === 'Renderer offline' && host.firstChild === retained && host.textContent.includes('Deferred mounted value newest'), 'Preparation failure reports its error without replacing the last ready component');
+      control.click(); check(control.textContent === 'Clicks 2', 'An installed component keeps its interaction lifetime across canceled and failed preparations');
       const beforeDispose = rendering.disposals; shared.dispose();
       check(!host.hasChildNodes() && rendering.disposals === beforeDispose + 1, 'Mounted website content releases its resources when retired');
+      control.click(); check(control.textContent === 'Clicks 2', 'Retiring the installed component also retires its interaction lifetime');
       let releaseLate, lateDisposals = 0;
       const deferred = mountContent(host, () => new Promise(resolve => { releaseLate = resolve; }));
-      const lateWork = deferred.update({ markdown: 'Readable pending source', purpose: 'comment', repo: owner.config.repo });
-      check(host.textContent === 'Readable pending source', 'Unfinished custom rendering leaves readable original writing');
-      deferred.dispose();
-      releaseLate({ node: document.createElement('span'), dispose() { lateDisposals++; } }); await lateWork;
+      const lateWork = deferred.update({ markdown: 'Readable pending source', purpose: 'comment', repo: owner.config.repo, pageURL: owner.config.origin });
+      check(!host.hasChildNodes(), 'Cold content is published only when its complete output is ready');
+      deferred.dispose(); await lateWork;
+      releaseLate({ node: document.createElement('span'), dispose() { lateDisposals++; } }); await until(() => lateDisposals === 1);
       check(lateDisposals === 1 && !host.hasChildNodes(), 'A retired asynchronous renderer cannot attach its late result');
       const offline = mountContent(host, async () => { throw Error('Renderer offline'); });
-      await offline.update({ markdown: 'Readable failed source', purpose: 'comment', repo: owner.config.repo }).catch(() => {});
+      await offline.update({ markdown: 'Readable failed source', purpose: 'comment', repo: owner.config.repo, pageURL: owner.config.origin }).catch(() => {});
       check(host.textContent === 'Readable failed source', 'Custom renderer failure retains readable original writing'); offline.dispose(); host.remove();
       window.consumer = { mounted, owner, target, until, check, capability };
     }, { service, blog, capability });
@@ -183,7 +196,7 @@ export async function browserBehavior({ browser, service, blog, report, capabili
     await textarea.press(modifier + '+Shift+z');
     assert.equal(await textarea.inputValue(), 'Forum native editing survives refresh');
     const reactionRequests = [];
-    await page.context().route(service + '/api/v4/contribute', route => {
+    await page.context().route(service + '/api/v5/contribute', route => {
       reactionRequests.push(route.request().postDataJSON()); return route.abort('failed');
     });
     await page.evaluate(async () => {
@@ -191,15 +204,15 @@ export async function browserBehavior({ browser, service, blog, report, capabili
       window.consumer.recoverySubject = id;
       window.consumer.recoverySelected = !Boolean(owner.reactions(id).HEART?.selected);
       await owner.setReaction(id, 'HEART', window.consumer.recoverySelected).catch(() => {});
-      check(owner.actions(id).react.status === 'recovery' && owner.actions(id).recover.status === 'available', 'A custom presentation can identify an unresolved reaction without inspecting private intents');
+      check(owner.reaction(id, 'HEART').recovery?.status === 'uncertain' && owner.reaction(id, 'HEART').recover.status === 'available', 'A custom presentation can identify an unresolved reaction without inspecting private intents');
     });
-    await page.context().unroute(service + '/api/v4/contribute');
-    await page.context().route(service + '/api/v4/contribute', route => {
+    await page.context().unroute(service + '/api/v5/contribute');
+    await page.context().route(service + '/api/v5/contribute', route => {
       reactionRequests.push(route.request().postDataJSON()); return route.continue();
     });
-    await page.getByRole('article').filter({ has: page.getByRole('button', { name: 'Recover action', exact: true }) }).getByRole('button', { name: 'Recover action', exact: true }).click();
-    await page.waitForFunction(() => window.consumer.owner.actions(window.consumer.recoverySubject).react.status !== 'recovery');
-    await page.context().unroute(service + '/api/v4/contribute');
+    await page.getByRole('article').filter({ has: page.getByRole('button', { name: 'Recover ❤️', exact: true }) }).getByRole('button', { name: 'Recover ❤️', exact: true }).click();
+    await page.waitForFunction(() => !window.consumer.owner.reaction(window.consumer.recoverySubject, 'HEART').recovery);
+    await page.context().unroute(service + '/api/v5/contribute');
     assert.equal(reactionRequests[1].key, reactionRequests[0].key, 'Reaction recovery retains the issued receipt identity');
     assert.deepEqual(reactionRequests[1].action, reactionRequests[0].action, 'Reaction recovery retains the issued effect');
     await page.evaluate(async () => {
@@ -233,7 +246,7 @@ export async function browserBehavior({ browser, service, blog, report, capabili
       mounted.dispose();
       check(!target.hasChildNodes(), 'Final disposal releases the current view');
     });
-    assert.ok(contentReads.length > 0 && contentReads.every(input => input.html === false), 'A local Markdown consumer acquires source without provider HTML');
+    assert.ok(contentReads.length > 0 && contentReads.every(input => input.content === 'source'), 'A local Markdown consumer acquires source without provider HTML');
     assert.equal(providerPreviews.length, 0, 'A complete website Markdown pipeline never requests provider HTML for previews');
     assert.deepEqual(errors, [], 'Custom consumer and rich-content page errors');
     report.checks.push({ engine: browser.browserType().name(), workflow: 'real repository custom consumer, content safety and resource retirement', status: 'passed' });

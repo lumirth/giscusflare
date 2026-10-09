@@ -1,6 +1,6 @@
 # Verification scope
 
-Version 4 changes content customization, writing recovery, reading continuity and public action availability. It is a release candidate. Earlier release results do not qualify these replacements, and this document does not claim a completed current gate or deployment. Use the PR and current run artifacts for execution results; follow [verification](../TESTING.md) to reproduce them.
+Version 5 changes preparation ownership, contribution adoption and independent writing recovery. Use current PR and run artifacts for completed gates and deployments; follow [verification](../TESTING.md) to reproduce checks. A maintained scope document does not establish that any particular run passed.
 
 ## Local evidence
 
@@ -11,7 +11,7 @@ Version 4 changes content customization, writing recovery, reading continuity an
 | Ranking service with native SQL cursor counters and controlled due alarms | Complete-service row work, configured admission, cadence and budget pauses under the recorded workload |
 | Independent consumers built from an extracted archive | Published export shape, packaged browser/Worker entry points and assets |
 
-The simulated GitHub fixture validates GraphQL against the recorded official schema and holds remote effects outside workerd so they survive its restart. Schema agreement does not establish actual App permissions. Contribution recovery needs independent remote effect/readback oracles, not receipt identity alone. Writing tests need the correct destination and original issued body/key after hide/reload/account changes. Content tests need observable output, no unnecessary preview request, readable failure and retirement of mounted resources. Continuity tests need preserved accumulated reading and explicit invalidation, not an internal flag copied from implementation.
+The simulated GitHub fixture validates GraphQL against the recorded official schema and holds remote effects outside workerd so they survive its restart. Schema agreement does not establish actual App permissions. Contribution recovery needs independent remote effect/readback oracles, not receipt identity alone. Independent contributions must complete without a page-wide queue, and delayed broad reads must not overwrite accepted narrow facts. Writing tests need the correct destination and original issued body/key after hide/reload/account changes, plus independently retained records and explicit same-destination recovery selection. Content tests need detached preparation, current-only commits, installed-view lifetime, safe host output and resources, anonymous prepared preview, readable failure and mounted resource retirement. Continuity tests need preserved accumulated reading and explicit invalidation, not an internal flag copied from implementation.
 
 Native typing, selection, undo and redo are behavioral oracles. Stable DOM alone is insufficient. Retiring page/view/content must prevent late publication even when already issued work finishes. Default visual fidelity remains required, without making historical DOM structure an architectural constraint.
 

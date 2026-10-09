@@ -2,6 +2,7 @@ import * as v from 'valibot';
 import { Capability, Cursor, DiscussionNumber, EmptyNodeID, IdempotencyKey, Language, Markdown, NodeID, Order, Origin, PageURL, Reaction, RepositoryName, SafeLine, Theme } from './primitives.js';
 import { parse } from './parse.js';
 import { AppError } from '../domain/errors.js';
+import { ContentSource } from './content.js';
 
 const Term = v.pipe(v.string(), v.maxLength(256), v.check(s => !/[\u0000-\u001f\u007f]/u.test(s)));
 const Description = v.pipe(v.string(), v.maxLength(2000), v.check(s => !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(s)));
@@ -41,7 +42,7 @@ export function queryObject(url: URL): Record<string, string> {
 export const PageRequest = v.pipe(v.strictObject({
   config: Selection, order: v.optional(Order, 'oldest'), cursor: v.optional(Cursor, ''),
   parentId: v.optional(NodeID), ids: v.optional(v.pipe(v.array(NodeID), v.maxLength(100))),
-  observe: v.optional(v.boolean(), false), html: v.optional(v.boolean(), false),
+  observe: v.optional(v.boolean(), false), content: v.optional(ContentSource, 'source'),
   replyPrefetch: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(100)), 5),
 }), v.check(p => p.parentId === undefined || p.ids === undefined),
   v.check(p => !p.observe || (p.ids !== undefined && !p.parentId && !p.cursor && p.replyPrefetch === 0)));
@@ -52,16 +53,19 @@ export const Action = v.variant('type', [
   v.strictObject({ type: v.literal('comment'), body: Markdown, replyToId: v.optional(EmptyNodeID, '') }),
   v.strictObject({ type: v.literal('edit'), id: NodeID, body: Markdown }),
   v.strictObject({ type: v.literal('delete'), id: NodeID }),
-  v.strictObject({ type: v.literal('reaction'), id: v.union([NodeID, v.literal('discussion')]), reaction: Reaction, add: v.boolean() }),
+  v.strictObject({ type: v.literal('reaction'), subject: v.variant('kind', [
+    v.strictObject({ kind: v.literal('discussion') }),
+    v.strictObject({ kind: v.literal('comment'), id: NodeID }),
+  ]), reaction: Reaction, selected: v.boolean() }),
   v.strictObject({ type: v.literal('moderate'), id: NodeID, minimized: v.boolean(), reason: v.optional(ModerationReason, 'OFF_TOPIC') }),
 ]);
 export const ContributionRequest = v.pipe(v.strictObject({
-  config: Selection, key: IdempotencyKey, action: Action, html: v.optional(v.boolean(), false), creation: v.optional(Creation, {}),
+  config: Selection, key: IdempotencyKey, action: Action, content: v.optional(ContentSource, 'source'), creation: v.optional(Creation, {}),
 }), v.check(c => !c.creation.backLink || new URL(c.creation.backLink).origin === new URL(c.config.origin).origin));
 export type PageRequest = v.InferOutput<typeof PageRequest>;
 export type Action = v.InferOutput<typeof Action>;
 export type ContributionRequest = v.InferOutput<typeof ContributionRequest>;
-export const PreviewRequest = v.strictObject({ config: Selection, body: Markdown });
+export const PreviewRequest = v.strictObject({ config: Selection, body: Markdown, content: v.optional(ContentSource, 'github'), draft: v.optional(v.pipe(SafeLine, v.maxLength(256))) });
 export const InfoRequest = v.strictObject({ repo: RepositoryName, origin: PageURL });
 const AuthContext = { repo: RepositoryName, origin: PageURL, mode: v.picklist(['popup', 'redirect']), openerOrigin: v.optional(Origin) };
 export const AuthWindow = v.strictObject({ ...AuthContext, attempt: Capability });

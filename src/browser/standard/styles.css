@@ -128,6 +128,9 @@ summary.gsc-reactions-button:focus-visible {
 .gsc-comment-box-write:focus-within .input-contrast {
   background: var(--color-canvas-default, var(--color-bg-primary));
 }
+.gsc-reply-content .markdown pre {
+  background-color: var(--color-neutral-muted, var(--color-hidden-text-expander-bg));
+}
 .action-dialog {
   max-width: min(560px, calc(100% - 32px));
   width: 100%;

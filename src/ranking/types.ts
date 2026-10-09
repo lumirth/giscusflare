@@ -35,7 +35,6 @@ export interface Sql {
   exec(query: string, ...bindings: (string | number | null)[]): Iterable<Record<string, unknown>> & { readonly rowsRead: number; readonly rowsWritten: number };
 }
 export interface Storage { sql: Sql; transactionSync<T>(action: () => T): T }
-export type Fact = Candidate | { id: string; removed: true };
 export const DEFAULT_RANKING_LIMITS = Object.freeze({ refreshSeconds: 600, maxRequestsPerHour: 240, maxRowsWrittenPerDay: 36_000, maxRowsReadPerDay: 4_000_000, maxOrderBytes: 512 * 1024 });
 
 export function requiredInputs(profiles: Record<string, Profile>): Input[] {

@@ -71,7 +71,7 @@ To add a "Popular" order alongside Oldest and Newest, add a `ranking` field to t
 
 This example gives each thumbs-up or heart one point and each reply half a point. Tied comments show oldest first. The default interface adds `popular` to its sorting controls. A custom interface selects it with `conversation.setOrder({ profile: 'popular' })`.
 
-Each profile can use any of the eight [reaction names](API.md#actions-session-and-lifetime), plus `replies`, `upvotes` and `answer`. Weights can be positive or negative. GitHub upvotes are separate from emoji reactions; they can contribute to a score, but visitors upvote through GitHub.
+Each profile can use any of the eight [reaction names](API.md#actions-reactions-and-session), plus `replies`, `upvotes` and `answer`. Weights can be positive or negative. GitHub upvotes are separate from emoji reactions; they can contribute to a score, but visitors upvote through GitHub.
 
 `refreshSeconds` sets the interval after a completed acquisition before another is requested. The default is 600 seconds; accepted values are 1 to 604800 seconds. A returned order reports its acquisition's start and completion times and next refresh time. Remote observations can span that interval; this is neither an atomic snapshot nor a guarantee that every value is younger than one age cutoff. Increasing the cadence interval permits less frequent acquisition. The service fetches only profile inputs; reply counts require smaller batches than reactions alone. See [sorting costs](../FREE-TIER.md#optional-ranking).
 
@@ -94,7 +94,7 @@ These limits cover ranking access, acquisition, publication and ready-order work
 
 Splitting the default allowance among several repositories does not guarantee each can complete acquisition on the requested cadence. Access checks and token renewal can exhaust the hourly call allowance while SQL use remains low. Measure intended traffic and discussion sizes before enabling sorting across an archive; increase the service-wide call budget only within GitHub's applicable limits.
 
-A custom order reports `preparing` while its data loads and `paused` when it cannot finish. [Troubleshooting](OPERATIONS.md#when-a-custom-sort-cannot-load) explains the reasons; the [API reference](API.md#reading-document) covers custom controls.
+A custom order reports `preparing` while its data loads and `paused` when it cannot finish. [Troubleshooting](OPERATIONS.md#named-sorts) explains the reasons; the [API reference](API.md#reading-document) covers custom controls.
 
 ## Offer open hosting
 
@@ -124,7 +124,7 @@ An explicit `REPOSITORIES` entry overrides `OPEN_HOSTING` for that repository. U
 | `OPEN_HOSTING` | Default settings for other public repositories with your App installed |
 | `RANKING_BUDGET` | Resource limits for custom sorting |
 
-Store `GITHUB_CLIENT_SECRET`, `GITHUB_PRIVATE_KEY` and `SESSION_SECRET` as encrypted secrets. See [setup](../DEPLOY.md#configure-cloudflare) for their values and [operations](OPERATIONS.md#rotate-credentials) when rotating credentials.
+Store `GITHUB_CLIENT_SECRET`, `GITHUB_PRIVATE_KEY` and `SESSION_SECRET` as encrypted secrets. See [setup](../DEPLOY.md#configure-cloudflare) for their values and [operations](OPERATIONS.md#credentials-and-logs) when rotating credentials.
 
 ## Request rate limits
 

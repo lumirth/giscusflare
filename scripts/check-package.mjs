@@ -34,12 +34,24 @@ try {
   assert(standard.includes('themes/dark.css'));
   await writeFile(join(temporary, 'custom.ts'), `import { createConversation, mountPresentation } from 'giscusflare/headless';\nimport { createEditor } from 'giscusflare/interactions';\nimport { mountContent } from 'giscusflare/content';\nexport { createConversation, mountPresentation, createEditor, mountContent };\n`);
   await writeFile(join(temporary, 'native.ts'), `import { mountComments } from 'giscusflare';\nimport { githubContent } from 'giscusflare/content/github';\nexport { mountComments, githubContent };\n`);
+  await writeFile(join(temporary, 'model.ts'), `import { PageModel, type Transport } from 'giscusflare/model';\nexport function acquire(transport: Transport) { return new PageModel({ repo: 'example/comments', term: 'article', number: 0, strict: false, origin: 'https://example.test/article' }, transport); }\n`);
+  await writeFile(join(temporary, 'worker.ts'), `import { createRepository, type ContentPreparer } from 'giscusflare/worker';
+export { default } from 'giscusflare/worker';
+const prepare: ContentPreparer = input => ({ html: '<p>' + input.markdown.replaceAll('&', '&amp;').replaceAll('<', '&lt;') + '</p>', revision: 'consumer-1' });
+export const Repository = createRepository({ content: { revision: 'consumer-1', prepare } });\n`);
   await cp('examples', join(temporary, 'examples'), { recursive: true });
-  await writeFile(join(temporary, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2022', module: 'ESNext', moduleResolution: 'Bundler', strict: true, noUncheckedIndexedAccess: true, noEmit: true, skipLibCheck: false, types: [], lib: ['ES2022', 'DOM', 'DOM.Iterable'] }, include: ['custom.ts', 'native.ts', 'examples/**/*.ts'] }));
+  await writeFile(join(temporary, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2022', module: 'ESNext', moduleResolution: 'Bundler', strict: true, noUncheckedIndexedAccess: true, noEmit: true, skipLibCheck: false, types: [], lib: ['ES2022', 'DOM', 'DOM.Iterable'] }, include: ['custom.ts', 'native.ts', 'model.ts', 'worker.ts', 'examples/**/*.ts'] }));
   execFileSync(process.execPath, [resolve('node_modules/typescript/bin/tsc'), '-p', join(temporary, 'tsconfig.json')], { stdio: 'inherit' });
+  await mkdir(join(temporary, 'node_modules/@types'), { recursive: true });
+  await symlink(resolve('node_modules/@types/node'), join(temporary, 'node_modules/@types/node'), 'dir');
+  await symlink(resolve('node_modules/undici-types'), join(temporary, 'node_modules/undici-types'), 'dir');
+  await writeFile(join(temporary, 'tsconfig.model.json'), JSON.stringify({ compilerOptions: { target: 'ES2022', module: 'ESNext', moduleResolution: 'Bundler', strict: true, noEmit: true, skipLibCheck: false, types: ['node'], lib: ['ES2022'] }, include: ['model.ts'] }));
+  execFileSync(process.execPath, [resolve('node_modules/typescript/bin/tsc'), '-p', join(temporary, 'tsconfig.model.json')], { stdio: 'inherit' });
   await build({ absWorkingDir: temporary, entryPoints: ['custom.ts'], bundle: true, write: false, platform: 'browser', format: 'esm' });
   await build({ absWorkingDir: temporary, entryPoints: ['native.ts'], bundle: true, write: false, platform: 'browser', format: 'esm' });
-  await writeFile(join(temporary, 'worker.ts'), "export { default, Repository } from 'giscusflare/worker';\n");
+  const modelFile = join(temporary, 'model.mjs');
+  await build({ absWorkingDir: temporary, entryPoints: ['model.ts'], bundle: true, outfile: modelFile, platform: 'node', format: 'esm' });
+  await import(pathToFileURL(modelFile).href);
   await build({ absWorkingDir: temporary, entryPoints: ['worker.ts'], bundle: true, write: false, platform: 'neutral', format: 'esm', external: ['cloudflare:workers'] });
-  console.log(JSON.stringify({ package: packed.filename, packedFiles: paths.length, selectedAssets: selected.length, standardAssets: standard.length, isolatedCustomBrowser: true, isolatedNativeBrowser: true, isolatedWorker: true, examplesOrTestsShipped: false }, null, 2));
+  console.log(JSON.stringify({ package: packed.filename, packedFiles: paths.length, selectedAssets: selected.length, standardAssets: standard.length, isolatedCustomBrowser: true, isolatedNativeBrowser: true, isolatedPortableModel: true, modelTypesWithoutDOM: true, isolatedTypedWorker: true, examplesOrTestsShipped: false }, null, 2));
 } finally { await rm(temporary, { recursive: true, force: true }); }

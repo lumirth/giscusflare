@@ -6,7 +6,7 @@ export type WritingOutcome = { status: 'saved'; result: ContributionResult }
   | { status: 'failed'; error: WritingFailure } | { status: 'blocked'; reason: string };
 interface IssuedWriting { target: WritingTarget; body: string; key: string; principal: string }
 export interface SavedWriting {
-  target: WritingTarget; text: string; open: boolean; undo?: string;
+  id: string; target: WritingTarget; text: string; open: boolean; undo?: string;
   issued?: IssuedWriting; error?: WritingFailure;
 }
 export interface WritingOwner {
@@ -16,7 +16,7 @@ export interface WritingOwner {
   initialText(target: WritingTarget): string;
   contribute(issued: IssuedWriting): Promise<ContributionResult>;
 }
-export const writingId = (target: WritingTarget): string => target.kind === 'comment' ? 'main' : target.kind + ':' + target.id;
+export const writingTargetKey = (target: WritingTarget): string => target.kind === 'comment' ? 'main' : target.kind + ':' + target.id;
 export function contributionFailure(cause: unknown): WritingFailure {
   const value = Object(cause), status = Number(value.status ?? 0);
   return { status: !status || status >= 500 || ['WRITE_UNCERTAIN', 'OPERATION_EXPIRED'].includes(value.code) ? 'uncertain' : 'failed',
@@ -34,8 +34,8 @@ export class Writing {
   #issued?: IssuedWriting;
   #error?: WritingFailure;
   #pending?: Promise<WritingOutcome>;
-  constructor(target: WritingTarget, private owner: WritingOwner, text = '') {
-    this.target = Object.freeze({ ...target });this.id = writingId(target);
+  constructor(target: WritingTarget, private owner: WritingOwner, text = '', id: string = crypto.randomUUID()) {
+    this.target = Object.freeze({ ...target });this.id = id;
     this.#text = text;this.#open = target.kind === 'comment';
   }
   get text(): string { return this.#text; }
@@ -76,11 +76,11 @@ export class Writing {
   }
   identityChanged(): void { if (this.#issued) { this.#error = unresolved();this.owner.changed(); } }
   save(): SavedWriting {
-    return { target: this.target, text: this.#text, open: this.#open, undo: this.#undo, issued: this.#issued,
+    return { id: this.id, target: this.target, text: this.#text, open: this.#open, undo: this.#undo, issued: this.#issued,
       error: this.#issued ? this.#error ?? unresolved() : this.#error };
   }
   recover(saved: SavedWriting): void {
-    if (this.protected || writingId(saved.target) !== this.id) return;
+    if (this.protected || saved.id !== this.id || writingTargetKey(saved.target) !== writingTargetKey(this.target)) return;
     this.#text = saved.text;this.#open = this.target.kind === 'comment' || saved.open;
     this.#undo = saved.undo;this.#issued = saved.issued && Object.freeze({ ...saved.issued, target: Object.freeze({ ...saved.issued.target }) });
     this.#error = saved.issued ? { status: 'uncertain', message: saved.error?.message ?? unresolved().message } : saved.error;
@@ -115,17 +115,16 @@ export class Writing {
 
 /** Reject malformed recovery as a whole; recovered identities never come from editor state. */
 export function recoveredWriting(raw: string): SavedWriting[] {
-  if (raw.length > 240000) return [];
   try {
     const value = JSON.parse(raw);
-    if (value.version !== 4 || !Array.isArray(value.writing)) return [];
+    if (value.version !== 5 || !Array.isArray(value.writing)) return [];
     const target = (v: WritingTarget): boolean => Boolean(v && (v.kind === 'comment' ||
       (['reply', 'edit'].includes(v.kind) && 'id' in v && typeof v.id === 'string' && v.id.length > 0 && v.id.length <= 256)));
     const text = (v: unknown): boolean => typeof v === 'string' && v.length <= 60000;
     for (const saved of value.writing as SavedWriting[]) {
-      if (!target(saved.target) || !text(saved.text) || typeof saved.open !== 'boolean' || saved.undo !== undefined && !text(saved.undo)) return [];
+      if (typeof saved.id !== 'string' || !/^[A-Za-z0-9_.-]{1,160}$/.test(saved.id) || !target(saved.target) || !text(saved.text) || typeof saved.open !== 'boolean' || saved.undo !== undefined && !text(saved.undo)) return [];
       const issued = saved.issued;
-      if (issued && (!target(issued.target) || writingId(issued.target) !== writingId(saved.target) || !text(issued.body) || issued.body !== saved.text ||
+      if (issued && (!target(issued.target) || writingTargetKey(issued.target) !== writingTargetKey(saved.target) || !text(issued.body) || issued.body !== saved.text ||
         !/^3\.\d{13}\.[A-Za-z0-9_-]{16,86}$/.test(issued.key) || typeof issued.principal !== 'string' || !issued.principal || issued.principal.length > 256)) return [];
       if (saved.error && (!['failed', 'uncertain'].includes(saved.error.status) || typeof saved.error.message !== 'string')) return [];
     }

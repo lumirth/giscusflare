@@ -12,6 +12,7 @@ const embedded = window.parent !== window,
 const emit = (value: Record<string, unknown>) => {
   if (embedded) window.parent.postMessage({ giscus: value }, origin);
 };
+const restoring = new Map<string, (record: import('../conversation/writing.js').SavedWriting | undefined) => void>();
 const mounted = mountComments(target, {
   service: location.origin,
   ...conversationSettings(raw,raw),
@@ -21,6 +22,12 @@ const mounted = mountComments(target, {
     ? {
         host: {
           emit,
+          restoreWriting(id: string) {
+            return new Promise<import('../conversation/writing.js').SavedWriting | undefined>(resolve => {
+              const previous = restoring.get(id); previous?.(undefined);
+              restoring.set(id, resolve); emit({ restoreWriting: id });
+            });
+          },
           navigate(url: string) {
             emit({ navigate: url });
           },
@@ -47,6 +54,12 @@ const receive = (event: MessageEvent) => {
   )
     return;
   const data = event.data.giscus as Record<string, unknown>;
+  if (typeof data.restoreWritingId === 'string') {
+    const complete = restoring.get(data.restoreWritingId);
+    restoring.delete(data.restoreWritingId);
+    complete?.(data.restoredWriting as import('../conversation/writing.js').SavedWriting | undefined);
+  }
+  if (Array.isArray(data.savedWritingRecords)) mounted.conversation.initialize({ savedWritingRecords: data.savedWritingRecords });
   if (typeof data.loginError === 'string') mounted.conversation.initialize({ loginError: data.loginError });
   if (data.init && typeof data.init === "object")
     mounted.conversation.initialize(data.init as Record<string, unknown>);
@@ -117,6 +130,7 @@ window.addEventListener(
   "unload",
   () => {
     stop();
+    for (const complete of restoring.values()) complete(undefined); restoring.clear();
     resize.disconnect();
     window.removeEventListener("message", receive);
     mounted.dispose();

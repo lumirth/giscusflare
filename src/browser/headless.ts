@@ -15,7 +15,8 @@ export {
   type Transport,
 } from "../conversation/page.js";
 export { ApiError } from "./session.js";
-export { mountContent, type ContentInput, type ContentContext, type ContentRenderer, type ContentOutput, type MountedContent, type ContentMount } from "./content.js";
+export { mountContent, preparedHTML, type ContentInput, type ContentContext, type ContentRenderer, type ContentOutput, type MountedContent, type ContentMount,
+  type ContentInputData, type ContentPreparer, type PreparedContent, type ContentPreview, type ContentSource } from "./content.js";
 export {conversationSettings} from "./options.js";
 export type {Page,Appearance} from "./options.js";
 export type { Comment, Discussion, PageDocument, Window, Reactions, Reaction } from "../contracts/document.js";
@@ -36,5 +37,5 @@ export {
   defaultFetchPolicy,
   type FetchPolicy,
 } from "../conversation/fetch-policy.js";
-export { Writing, writingId, type WritingTarget, type WritingFailure, type WritingOutcome, type SavedWriting } from "../conversation/writing.js";
-export type { Acquisition, AcquisitionPurpose, ActionAvailability, SubjectActions } from "../conversation/page.js";
+export { Writing, writingTargetKey, type WritingTarget, type WritingFailure, type WritingOutcome, type SavedWriting } from "../conversation/writing.js";
+export type { Acquisition, AcquisitionPurpose, ActionAvailability, SubjectActions, ReactionState } from "../conversation/page.js";
