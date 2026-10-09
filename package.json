@@ -1,6 +1,6 @@
 {
   "name": "giscusflare",
-  "version": "6.0.1",
+  "version": "7.0.0",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -102,7 +102,12 @@
     "./registration": {
       "types": "./dist/types/registration.d.ts",
       "import": "./dist/registration.mjs"
-    }
+    },
+    "./mona": {
+      "types": "./dist/types/browser/mona.d.ts",
+      "import": "./dist/browser/mona.js"
+    },
+    "./mona.css": "./dist/assets/mona.css"
   },
   "files": [
     "dist/browser",
@@ -110,7 +115,8 @@
     "dist/worker.mjs",
     "dist/assets",
     "dist/asset-manifest.json",
-    "package",
+    "package/*.mjs",
+    "package/*.d.mts",
     "LICENSE",
     "THIRD-PARTY-NOTICES.md",
     "README.md",

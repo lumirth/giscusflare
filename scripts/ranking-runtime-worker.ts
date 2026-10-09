@@ -4,6 +4,7 @@ import { Store } from '../src/domain/store.js';
 import { hash, random } from '../src/domain/crypto.js';
 import { Session } from '../src/contracts/storage.js';
 import type { ConfigBindings } from '../src/contracts/config.js';
+const registeredPolicy = { repositoryId: 'R_fixture', installationId: 123, categoryId: 'CAT_fixture', category: 'Announcements', origins: ['https://blog.example'], maxReplyPrefetch: 20, displayCacheMs: 60000, countCacheMs: 300000, defaultCommentOrder: 'oldest' as const, customThemeOrigins: [] };
 /** Measured full-service workload; native cursors keep their streaming/billing contract. */
 export class RepositoryRankingProof extends DurableObject<ConfigBindings> {
     #now = 1800000000000;
@@ -19,6 +20,7 @@ export class RepositoryRankingProof extends DurableObject<ConfigBindings> {
     #applied = 0;
     #start = 0;
     #warm: unknown;
+    #identitySetup: unknown;
     #order: string[] = [];
     constructor(ctx: DurableObjectState, env: ConfigBindings) {
         super(ctx, env);
@@ -64,7 +66,7 @@ export class RepositoryRankingProof extends DurableObject<ConfigBindings> {
     }
     async #ready() {
         for (let step = 0; step < 1000; step++) {
-            const outcome = await this.#repository.execute('ranking', { request: { config: { repo: 'example/comments', origin: 'https://blog.example', pageURL: 'https://blog.example/article', returnURL: 'https://blog.example/article', selector: { kind: 'discussion', number: 1, id: 'D_1' } }, profile: 'popular' }, session: '' }, { repositoryId: 'R_fixture', installationId: 123, categoryId: 'CAT_fixture', category: 'Announcements', origins: ['https://blog.example'], maxReplyPrefetch: 20, displayCacheMs: 60000, countCacheMs: 300000, defaultCommentOrder: 'oldest', customThemeOrigins: [] });
+            const outcome = await this.#repository.execute('ranking', { config: { repo: 'example/comments', origin: 'https://blog.example', pageURL: 'https://blog.example/article', returnURL: 'https://blog.example/article', selector: { kind: 'discussion', number: 1, id: 'D_1' } }, profile: 'popular' }, registeredPolicy);
             await this.#schedule();
             if (!outcome.ok)
                 throw Error(JSON.stringify(outcome.error));
@@ -79,7 +81,7 @@ export class RepositoryRankingProof extends DurableObject<ConfigBindings> {
     }
     async acquire(time: number) {
         this.#now = time;
-        const result = await this.#repository.execute('ranking', { request: { config: { repo: 'example/comments', origin: 'https://blog.example', pageURL: 'https://blog.example/article', returnURL: 'https://blog.example/article', selector: { kind: 'discussion', number: 1, id: 'D_1' } }, profile: 'popular' }, session: '' }, { repositoryId: 'R_fixture', installationId: 123, categoryId: 'CAT_fixture', category: 'Announcements', origins: ['https://blog.example'], maxReplyPrefetch: 20, displayCacheMs: 60000, countCacheMs: 300000, defaultCommentOrder: 'oldest', customThemeOrigins: [] });
+        const result = await this.#repository.execute('ranking', { config: { repo: 'example/comments', origin: 'https://blog.example', pageURL: 'https://blog.example/article', returnURL: 'https://blog.example/article', selector: { kind: 'discussion', number: 1, id: 'D_1' } }, profile: 'popular' }, registeredPolicy);
         if (!result.ok) throw Error(JSON.stringify(result.error));
         await this.#schedule();
         return { ...result.value, ...this.#metrics() };
@@ -106,6 +108,15 @@ export class RepositoryRankingProof extends DurableObject<ConfigBindings> {
             const id = await hash(this.#session);
             const value = { principal: 'U_reader', credentials: { accessToken: 'ghu_reader', accessExpires: this.#now + 28800000, refreshToken: 'ghr_reader', refreshExpires: this.#now + 15552000000 }, origin: 'https://blog.example', expires: this.#now + 30 * 86400000 };
             await this.#store.putSecret('session:' + id, Session, value, this.env.SESSION_SECRET, this.env.GITHUB_APP_ID + ':' + this.env.GITHUB_CLIENT_ID + ':R_fixture', value.expires);
+            const input = {repo:'example/comments',origin:'https://blog.example'}, authority = {session:this.#session}, before = this.#http;
+            const local = await this.#repository.execute('session',input,registeredPolicy,authority);
+            if (!local.ok || local.value.principal !== 'U_reader' || local.value.profile !== null || this.#http !== before) throw Error('Stored session identity must be available locally without a display profile.');
+            const identity = await this.#repository.execute('identity',input,registeredPolicy,authority);
+            if (!identity.ok || identity.value.principal !== 'U_reader' || identity.value.profile.login !== 'reader' || this.#http !== before + 1) throw Error('A missing display profile needs exactly one independent user lookup.');
+            const retained = await this.#repository.execute('session',input,registeredPolicy,authority);
+            if (!retained.ok || retained.value.profile?.login !== 'reader' || this.#http !== before + 1) throw Error('The acquired identity display must be reused locally.');
+            this.#identitySetup = {localSessionRequests:0,missingProfileRequests:1,reusedProfileRequests:0};
+            this.#reads = 0;this.#writes = 0;this.#http = 0;this.#alarms = 0;this.#alarmEvents = 0;
         }
         const end = Math.min(visits, this.#index + 64);
         for (; this.#index < end; this.#index++) {
@@ -115,7 +126,7 @@ export class RepositoryRankingProof extends DurableObject<ConfigBindings> {
                 return { status: 'paused', visit: this.#index, ranking, ...this.#metrics() };
             const target = Math.floor((this.#index + 1) * mutations / visits);
             while (this.#applied < target) {
-                const result = await this.#repository.execute('contribute', { request: { config: { repo: 'example/comments', origin: 'https://blog.example', pageURL: 'https://blog.example/article', returnURL: 'https://blog.example/article', selector: { kind: 'discussion', number: 1, id: 'D_1' } }, key: '3.' + this.#now + '.' + random(), action: { type: 'reaction', subject: { kind: 'comment', id: targetIDs[this.#applied]! }, reaction: 'THUMBS_UP', selected: true } }, session: this.#session }, { repositoryId: 'R_fixture', installationId: 123, categoryId: 'CAT_fixture', category: 'Announcements', origins: ['https://blog.example'], maxReplyPrefetch: 20, displayCacheMs: 60000, countCacheMs: 300000, defaultCommentOrder: 'oldest', customThemeOrigins: [] });
+                const result = await this.#repository.execute('contribute', { config: { repo: 'example/comments', origin: 'https://blog.example', pageURL: 'https://blog.example/article', returnURL: 'https://blog.example/article', selector: { kind: 'discussion', number: 1, id: 'D_1' } }, key: '3.' + this.#now + '.' + random(), providerHTML:false, action: { type: 'reaction', subject: { kind: 'comment', id: targetIDs[this.#applied]! }, reaction: 'THUMBS_UP', selected: true } }, registeredPolicy,{session:this.#session});
                 if (!result.ok)
                     throw Error(JSON.stringify(result.error));
                 await this.#schedule();
@@ -125,7 +136,7 @@ export class RepositoryRankingProof extends DurableObject<ConfigBindings> {
         if (this.#index < visits)
             return { status: 'continuing', visit: this.#index };
         const final = await this.#ready();
-        return { status: final.status, visits: this.#index, mutations: this.#applied, warm: this.#warm, order: this.#order, ...this.#metrics() };
+        return { status: final.status, visits: this.#index, mutations: this.#applied, warm: this.#warm, identitySetup: this.#identitySetup, order: this.#order, ...this.#metrics() };
     }
     #metrics() { const row = [...this.#store.sql.exec('SELECT value FROM ranking_meter WHERE id=1')][0]; return { reads: this.#reads, writes: this.#writes, http: this.#http, alarmWrites: this.#alarms, alarmEvents: this.#alarmEvents, meter: row ? JSON.parse(String(row.value)) : null, now: this.#now }; }
 }

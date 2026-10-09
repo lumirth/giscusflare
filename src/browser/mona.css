@@ -1,0 +1,23 @@
+.giscusflare-mona {
+  display: block;
+  fill: var(--mona-ink, #444d56);
+}
+.giscusflare-mona .mona-face { fill: var(--mona-face, #fafbfc); }
+.giscusflare-mona .mona-pose {
+  opacity: 0;
+  animation: giscusflare-mona-pose 1120ms steps(1, end) infinite;
+}
+.giscusflare-mona [data-mona-frame="1"] { animation-delay: 160ms; }
+.giscusflare-mona [data-mona-frame="2"] { animation-delay: 320ms; }
+.giscusflare-mona [data-mona-frame="3"] { animation-delay: 480ms; }
+.giscusflare-mona [data-mona-frame="4"] { animation-delay: 640ms; }
+.giscusflare-mona [data-mona-frame="5"] { animation-delay: 800ms; }
+.giscusflare-mona [data-mona-frame="6"] { animation-delay: 960ms; }
+@keyframes giscusflare-mona-pose {
+  0% { opacity: 1; }
+  14.285714285714286%, 100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .giscusflare-mona .mona-pose { animation: none; }
+  .giscusflare-mona [data-mona-frame="0"] { opacity: 1; }
+}

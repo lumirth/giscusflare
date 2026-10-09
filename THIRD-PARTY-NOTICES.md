@@ -10,7 +10,7 @@ The themes in `vendor/giscus/themes` and files in `vendor/giscus/reference` come
 
 The build adapts vendored theme selectors for native embedding. The generated visual foundation expands pinned giscus reference styles and Tailwind 3.4.17/vanilla-rtl 0.4.0 using the pre-3.0 presentation's class vocabulary; it retains the upstream Primer and Tailwind MIT notices. Its generation inputs and recipe are recorded in [source provenance](docs/PROVENANCE.md). Project overrides remain separately authored. Vendored React components remain presentation references; their implementation is not bundled.
 
-The standard widget loads giscus's Mona animation and pagination decorations from their original GitHub asset URLs. It does not copy GitHub's separately licensed math renderer.
+The standard widget's Mona SVG is hand-authored geometry reproducing the seven poses of GitHub's loading artwork; the geometry and shared animation code are maintained here. Pagination decorations still use their original GitHub asset URLs. It does not copy GitHub's separately licensed math renderer.
 
 The visual foundation's generator license texts are retained under `vendor/giscus/reference/styles/licenses`: Tailwind CSS, copyright Tailwind Labs, Inc., and vanilla-rtl, copyright 2022-current Thibaud Colas, both MIT.
 

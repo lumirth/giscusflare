@@ -4,26 +4,9 @@
 
 ## Browser construction and mounting
 
-```js
-import { createConversation } from 'giscusflare/headless';
-import { preparedContent } from 'giscusflare/content';
+Embedding examples are in [integration](INTEGRATION.md); a complete producer/consumer customization is in [extending](EXTENDING.md).
 
-const conversation = createConversation({
-  service: 'https://your-comments.workers.dev',
-  page: {
-    repo: 'you/comments',
-    selector: { kind: 'page', key: 'post:hello-world' },
-    origin: location.origin,
-    pageURL: new URL(location.pathname, location.origin).href,
-    returnURL: location.href,
-  },
-  content: preparedContent(),
-});
-const stop = conversation.subscribe(() => render(conversation.document));
-// On removal: stop(); conversation.dispose();
-```
-
-Headless construction requires `content: ContentProfile`, pairing delivery with rendering. `mountComments` supplies the stock profile by default. Complete profile choices are documented in [customization](EXTENDING.md).
+Headless construction requires `content: ContentProfile`, pairing delivery with rendering. `mountComments` supplies the stock profile by default. `stockContent({ service })` selects standard GitHub interpretation; `preparedContent({ resources })` consumes the internal producer; `browserContent(renderer, delivery?)` selects deliberate browser interpretation (`source` by default).
 
 | Option | Meaning |
 | --- | --- |
@@ -40,7 +23,7 @@ Headless construction requires `content: ContentProfile`, pairing delivery with 
 | `fetching` | Focus/reconnect freshness and reply prefetch |
 | `writingRecovery` | Retention/store settings, or false |
 | `bootstrap` | Unexpired public `{ view, expires }` observation |
-| `host` | Browser session host for navigation, persistence messages and record restoration |
+| `host` | Typed browser host for navigation, persistence and record restoration |
 
 `mountPresentation(target, options, presentation)` and `mountComments` return `conversation`, `replacePage(page)`, `replacePresentation(view)` and `dispose()`. Page replacement retires the current owner and creates another; rebind subscriptions. Presentation replacement retains reading and writing. `updateAppearance()` changes appearance without replacing their owners.
 
@@ -48,7 +31,7 @@ Headless construction requires `content: ContentProfile`, pairing delivery with 
 
 ## Portable model
 
-`new PageModel(page, transport, order?, lifetime?)` uses the same exact page selection without browser dependencies. `Transport` exposes optional immutable-account `principal: string | null` and `request<T>(operation, input, signal?, method?)`. The host supplies protocol and authentication. Subscribe before `start()`, retire with `dispose()`, and use `settled()` when joining already-issued work. A dispatched external effect can finish after retirement but cannot publish into a replacement owner.
+`new PageModel(page, transport, order?, lifetime?, { counts?, writingChanged? })` uses exact page selection without browser dependencies. Supply a shared pure `CountFacts` owner when models reuse count observations, and `writingChanged` for direct persistence notifications. The lifetime owns retirement. `Transport` exposes optional immutable-account `principal: string | null` and `request<T>(operation, input, signal?, method?)`. The host supplies protocol and authentication. Subscribe before `start()`, retire with `dispose()`, and await the promises returned by the operations you issue. A dispatched external effect can finish after retirement but cannot publish into a replacement owner.
 
 ## Reading document
 
@@ -88,7 +71,7 @@ Ranked reading captures root IDs from a completed order and hydrates bounded win
 
 ## Account, actions and reactions
 
-`viewer` is an independently acquired account projection: principal profile, comment permissions, selected reactions and relevant target state. `viewerPending`, `viewerError` and `refreshViewer()` manage its acquisition and retry. Account changes retire authority and incoming account work while retaining public reading. `session.signedIn` means a capability is present; verified principal and usable permissions arrive independently. `session.needsAuthorization` asks the original author to reconnect GitHub while retaining their local session and protected issued writing.
+`viewer` is an independently acquired account projection: immutable principal, comment permissions, selected reactions and relevant target state. `viewerPending`, `viewerError` and `refreshViewer()` manage its acquisition and retry. Account changes retire authority and incoming account work while retaining public reading. `session.viewer` supplies the locally verified display profile and immutable ID; `session.principal` retains that proof even when the profile is absent. `session.signedIn` means a capability is present; verified principal and usable permissions arrive independently. `session.needsAuthorization` asks the original author to reconnect GitHub while retaining their local session and protected issued writing.
 
 `actions(subjectId?)` derives reply, edit, remove, moderate, react, recover and abandon availability. Status is available, sign-in, pending, recovery or unavailable, with an optional cause/reason. `composition` provides shared base participation availability independently of reading traversal: unknown target is pending; archive, lock and unavailable targets have distinct causes. Use these results rather than reconstructing permissions from public comments.
 
@@ -117,42 +100,55 @@ Abandonment cannot cancel a remote effect. Explain that it might already be save
 
 `writingRecovery` accepts `{ retentionMs, store }` or false. A custom `WritingStore` implements load, acquire, save and remove for scoped records; keep a claim until its lifetime retires and remove only the owned record. `saveWriting()` returns typed records/selections; `recoverWriting(records, selected?)` attaches validated typed restoration. Normal persistence is record-level, not repeated whole-page snapshots.
 
-`createEditor(conversation, writing, { signal, render, writeWhileSignedOut, submitted })` supplies the actual form, textarea and preview nodes. Retain them through redraws to preserve native selection/undo. Project its mode, pending states and error; commands include write, preview, font toggle, submit, clear/undo and disposal. Local drafting can start before sign-in; sign-in never publishes automatically. Previews are independent of participation sign-in. Prepared/source profiles interpret locally; GitHub/stock profiles use the service’s selected provider interpreter without commenter credentials.
+`createEditor(conversation, writing, { signal, render, writeWhileSignedOut, submitted, elements? })` supplies the actual form, textarea and preview nodes. Retain them through redraws to preserve native selection/undo. Project its mode, pending states and error; commands include write, preview, font toggle, submit, clear/undo and disposal. Supplying `elements: { form, textarea, previewElement }` binds existing native markup, admitting an untouched field’s pre-hydration draft without replacing its selection, undo history or chosen height. Disposal releases bindings but retains supplied DOM. Local drafting can start before sign-in; sign-in never publishes automatically. Previews are independent of participation sign-in. Prepared/source profiles interpret locally; GitHub/stock profiles use the service’s selected provider interpreter without commenter credentials.
 
 ## Content and counts
 
-`conversation.content.mount(target, comment, { signal, onReady })` binds canonical source once. The owner supplies rendering context, batches acquisition, accepts source/metadata/provider-hint changes and retains installed output during replacement. Explicit preview/custom input uses `{ markdown, purpose, draft? }` through the same method. Mounts expose ready, pending, update, clear and dispose. Preview pending state comes from this same current preparation owner. See [content lifetime](EXTENDING.md#mount-published-bodies).
+`conversation.content.mount(target, comment, { signal, onReady })` binds canonical source once. The owner supplies rendering context, batches acquisition, accepts source/metadata/provider-hint changes and retains installed output during replacement. Explicit preview/custom input uses `{ markdown, purpose, draft? }` through the same method. Mounts expose ready, pending, update, clear and dispose. Preview pending state comes from this same current preparation owner. `createContentWorker({ revision, prepare })` from `giscusflare/content/worker` is the isolated producer factory. Its preparer returns HTML and optional resource/anchor requirements; the factory stamps the configured revision. Its sole completed-artifact store is the shared bounded LRU: at most 256 entries/8 MiB, accounting for input keys and results, with individual retained results at most 2 MB. Reuse is optional; cold isolates prepare again. Producer input/output bounds and concurrency apply independently of retention.
+
+`mountContent(target, renderer, { signal?, onReady?, acquire? })` exposes the same preparation primitive independently.
+
+A renderer returns `Node`, `Promise<Node>` or `{ node, update?, dispose? }`. Preparation uses `context.signal`; installed controls/resources use `context.lifetime`. Optional mounted `update(input, context)` prepares without touching the live tree and returns a commit callback invoked only while current. Failure retains installed output or safe source with Retry; retirement releases installed resources. An explicit `input.revision` changes interpretation when external renderer inputs change. `context.providerHTML()` and `preparedContent()` request the selected capability; they do not switch delivery implicitly. Returned DOM belongs to the renderer's commenter-safe trust policy.
+
+A resource manifest has `revision`, `styles` and `scripts`. Body output declares only its required manifest fingerprint and optional generated `anchorPrefixes`; omit the fingerprint when the output needs none. Required styles start concurrently with acquisition and finish before affected HTML installs. Optional enhancements leave HTML readable on failure. Script-dependent generated controls can use `data-content-enhancement`; producer-disabled controls stay disabled. A different manifest fingerprint rejects incompatible HTML and offers Reload. Resolve immutable resource paths at the consumer's intended origin.
+
+`githubContent({ code?, math?, copy?, labels? })` from `giscusflare/content/github` replaces complete code/math features of deliberate `github` delivery. Code callbacks receive source, language and optional GitHub file metadata; math receives source/display mode. Its `FeatureOutput` is `Node` or `Pick<MountedContent, 'node' | 'dispose'>`: node and optional cleanup, retired with its containing body. `false` disables that feature; whole-body mounted updates belong to the renderer contract above.
+
+`mountComments(target, options, parts)` accepts header/composer/reactions slots returning text, owned nodes or lit-html templates. Their `context.scope` owns cleanup; appearance updates preserve reading/writing. A custom presentation receives `(target, conversation, scope)`, uses `scope.own(cleanup)`, and publishes `conversation.readingLayout.publish()` after required DOM is installed. [Forum](../examples/forum.ts) is the complete presentation example.
 
 `createCounts({ service, repo, origin, registration?, storage? })` from `giscusflare/counts` returns subscribe, read, observe, invalidate and dispose. Subscribing to an exact page key (root count) or typed `CountTarget` batches missing/expired observations automatically. `countKey(target)` is the shared stable map identity for explicit selectors and root/reply windows. Optional same-tab storage and conversation observations use the same scoped owner; null explicitly disables storage. Hosts retain stale useful labels while refreshing and never infer zero from failure.
 
 ## Browser session and initialization
 
+Locally verified session identity includes the last verified display profile independently of discussion discovery and permissions. When that fact is missing, `/identity` acquires it directly while reading continues. `/access` supplies the immutable principal, current permissions/selections and narrow participation availability, never the account label.
+
 `session.signIn()` uses full-page return; `signIn('popup')` explicitly requests a popup. `signOut()` ends local capability use immediately and separately removes the server session. A future capability is generated before OAuth; verified return adoption requires no polling. Return acceptance expires after ten minutes. Full-page recovery depends on browser session storage.
 
-Native hosts call `initialize(ConversationInitialization)` with typed session, handoff, fetching, writing restoration, recovery choices or return position. The iframe adapter decodes messages into this same initialization. Storage and login envelopes retain their version 5 identities independently of protocol 6. No runtime legacy importer is involved. `readingLayout.publish()` reports necessary installed reading for return positioning; native reader interaction cancels automatic repositioning.
+Native hosts call `initialize(ConversationInitialization)` with typed session, handoff, fetching, writing restoration or return position. `ConversationHost` exposes direct `saveSession`, `pendingLogin`, `clearPending`, `saveWriting`, `removeWriting`, `selectWriting`, `records`, `restoreWriting` and `navigate` operations; serialization belongs only to storage and iframe boundaries. The iframe adapter decodes messages into this same initialization. Storage and login envelopes retain their version 5 identities independently of protocol 7. No runtime legacy importer is involved. `readingLayout.publish()` reports necessary installed reading for return positioning; native reader interaction cancels automatic repositioning.
 
 ## HTTP protocol
 
-Matching browser and Worker packages use `/api/v6/`. Unknown/retired protocols return 409 VERSION_MISMATCH. GET JSON is in the input query parameter; POST JSON is in the body. Website policy applies independently of presentation. Selection is the page object shown above, without appearance or description; clients do not supply repository/installation/category authority IDs.
+Matching browser and Worker packages use `/api/v7/`. Unknown/retired protocols return 409 VERSION_MISMATCH. GET JSON is in the input query parameter; POST JSON is in the body. Website policy applies independently of presentation. Selection is the page object shown above, without appearance or description; clients do not supply repository/installation/category authority IDs.
 
 | Endpoint | Request |
 | --- | --- |
-| GET `/api/v6/page` | `{ config, read, fresh?, content? }` |
-| GET or POST `/api/v6/counts` | `{ repo, origin, targets, registration?, fresh? }`, at most 20 typed count targets |
-| GET `/api/v6/ranking` | `{ config, profile }` |
-| POST `/api/v6/session` | `{ repo, origin, registration? }`; verifies the capability principal |
-| POST `/api/v6/access` | `{ config, ids? }`; bearer capability required |
-| POST `/api/v6/content` | `{ config, inputs, content? }`; at most 20 canonical inputs |
-| POST `/api/v6/contribute` | `{ config, key, action, creation?, content? }`; bearer capability required |
-| POST `/api/v6/logout` | `{ repo, origin, registration? }`; bearer capability required |
-| POST `/api/v6/registration` | `{ repo, origin, category }`; setup or explicit open-hosting registration |
+| GET `/api/v7/page` | `{ config, read, fresh?, providerHTML? }` |
+| GET or POST `/api/v7/counts` | `{ repo, origin, targets, registration?, fresh? }`, at most 20 typed count targets |
+| GET `/api/v7/ranking` | `{ config, profile }` |
+| POST `/api/v7/session` | `{ repo, origin, registration? }`; returns local `{ principal, profile, needsAuthorization }` without provider or discussion work |
+| POST `/api/v7/identity` | `{ repo, origin, registration? }`; bearer required; fetches a genuinely missing display profile directly |
+| POST `/api/v7/access` | `{ config, ids? }`; bearer capability required |
+| POST `/api/v7/content` | `{ config, inputs, content? }`; at most 20 canonical inputs |
+| POST `/api/v7/contribute` | `{ config, key, action, creation?, providerHTML? }`; bearer capability required |
+| POST `/api/v7/logout` | `{ repo, origin, registration? }`; bearer capability required |
+| POST `/api/v7/registration` | `{ repo, origin, category }`; setup or explicit open-hosting registration |
 
 `read` selects roots with order/cursor/replyPrefetch, replies with parentId/cursor, observe with up to 100 loaded IDs, or selected with captured IDs and optional replyPrefetch. These are explicit request intents rather than a flag combination.
 
-Content delivery is source for deliberate local interpretation, github for provider HTML interpreted by a chosen browser renderer, prepared for the host producer, or stock for the service’s default rich interpretation. GitHub and stock previews use the service’s installation-token provider interpreter; all content requests omit commenter credentials. Prepared/source profiles need no provider calls. The browser GitHub choice bypasses the stock producer, so it does not compile output that the selected renderer would discard.
+Local source profiles make no content request. The content endpoint selects github for provider HTML interpreted by a chosen browser renderer, prepared for the host producer, or stock for the service’s default rich interpretation. Public reading and contribution requests select only whether provider HTML is needed with providerHTML; they do not carry renderer choices. GitHub and stock previews use the service’s installation-token provider interpreter; all content requests omit commenter credentials. Prepared/source profiles need no provider calls. The browser GitHub choice bypasses the stock producer, so it does not compile output that the selected renderer would discard.
 
 Public pages carry canonical source and optional reusable content hints, never expensive completed interpretation. Count results contain observations by `countKey(target)`, with each observation retaining its exact selector and root/reply window identity. The shared client uses GET when encoded input fits the service URL limit, otherwise POST with text/plain JSON to avoid an extra native preflight. Content results preserve input order as `{ results: [{ prepared?, html? } | { error }] }`; one failed body does not discard other results. Prepared output includes HTML, revision, optional resources manifest fingerprint requirement and declared anchor prefixes. The selected profile owns the one manifest with its resource revision and required stylesheet/optional module URLs; bodies do not repeat those arrays. The internal producer binding receives only `{ inputs }`, without commenter credentials.
 
-Contributions describe comment/reply, edit, delete, moderate or selected-state reaction intent. A confirmed result has phase confirmed, ID, discussion number, optional parent and narrow patch. Patches establish only their owned node fields, reaction groups, window membership/counts and metadata. They do not redefine unrelated accepted facts.
+Contributions describe comment/reply, edit, delete, moderate or selected-state reaction intent. A confirmed result has phase confirmed, ID, discussion number, optional parent and narrow patch. Patches establish only their owned node fields, reaction groups, window membership/counts and metadata. They do not redefine unrelated accepted facts. Command preflight acquires scope and required authority without loading public headers or reaction totals. Only an actual discussion creation returns full thread metadata; its separate `metadataObservedAt` preserves creation age when the following contribution completes.
 
-Preflight errors report not-issued; lost/ambiguous issued effects report unknown. A durable receipt binds original principal/key to exact selection and action. Retry unchanged with its original key; a new key means a new effect. The retained `3.` key format and Repository addresses are independent of protocol 6.
+Preflight errors report not-issued; lost/ambiguous issued effects report unknown. A durable receipt binds original principal/key to exact selection and action. Retry unchanged with its original key; a new key means a new effect. The retained `3.` key format and Repository addresses are independent of protocol 7.

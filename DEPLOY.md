@@ -34,17 +34,7 @@ npm run register -- --config wrangler.jsonc --secrets .dev.vars --repo you/comme
 
 The secrets file supplies the existing `GITHUB_PRIVATE_KEY`; alternatively supply that environment variable. The command reads the App ID from `config.vars.GITHUB_APP_ID` and prints only public registration facts. Configuration files use JSON syntax. Paste that returned JSON into setup's registration field, or copy repositoryId, installationId and categoryId into the repository policy:
 
-```json
-{
-  "you/comments": {
-    "repositoryId": "COPY_FROM_REGISTRATION",
-    "installationId": 123456,
-    "categoryId": "COPY_FROM_REGISTRATION",
-    "category": "Announcements",
-    "origins": ["https://your-site.example"]
-  }
-}
-```
+Use the [registered repository policy](docs/CONFIGURATION.md#choose-allowed-websites) as the configuration shape; its field reference owns defaults and allowed values.
 
 Use the actual returned installation ID as a number. Normal reads reuse this registration and one credential owner; they do not repeat installation discovery. Current provider results still establish scope, visibility and permissions. Re-register when the App installation or selected category changes. Open hosting uses an explicit installation-backed registration reference; see [configuration](docs/CONFIGURATION.md#offer-open-hosting).
 
@@ -52,12 +42,7 @@ Use the actual returned installation ID as a number. Normal reads reuse this reg
 
 Set public variables in source or the API Worker's **Settings → Variables and Secrets**:
 
-| Variable | Value |
-| --- | --- |
-| `PUBLIC_ORIGIN` | Service origin, without a trailing slash |
-| `GITHUB_APP_ID` | Numeric App ID as a string |
-| `GITHUB_CLIENT_ID` | App client ID |
-| `REPOSITORIES` | Registered repository policies with exact website origins |
+Set `PUBLIC_ORIGIN`, `GITHUB_APP_ID`, `GITHUB_CLIENT_ID` and registered `REPOSITORIES`. [Configuration](docs/CONFIGURATION.md#service-settings) is the variable and policy reference.
 
 Store `GITHUB_CLIENT_SECRET`, `GITHUB_PRIVATE_KEY` and `SESSION_SECRET` as encrypted secrets. The private key is the complete downloaded PEM; setup generates the random session key. Setup uses its own service origin and accepts repository, website, category, App ID, client ID and the registration JSON. It does not retain those values on your behalf.
 
@@ -65,9 +50,7 @@ Deploy the configured API and open setup again. Choose an exact page key or expl
 
 ## Update an existing deployment
 
-Preserve Worker names, routes, Repository binding/class identity, platform migration history, session secret and existing repository IDs. Browser and API packages must agree on protocol 6. Existing durable addresses, receipt identities and browser storage formats remain stable; there is no runtime migration/importer.
-
-Build immutable profile resources, upload matching content/API/website versions, then activate content, API and website in that order. Cloudflare service deployments are separate; record exact version IDs and complete or roll back a partial publication deliberately. A new Worker needs one initial deployment before inactive version uploads are supported. [Deployment management](https://developers.cloudflare.com/workers/versions-and-deployments/deployment-management/).
+Follow [operations](docs/OPERATIONS.md#update-and-restore) for preserved bindings/secrets, version activation and rollback. Browser and API packages must agree on protocol 7; durable addresses, receipts and browser storage remain independent of that protocol version.
 
 ## Use a custom domain
 

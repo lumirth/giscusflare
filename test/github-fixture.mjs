@@ -100,21 +100,23 @@ export class FakeGitHub {
       }
       case 'RepositoryHead':
       case 'Repository': check(x.owner+'/'+x.name===this.meta.nameWithOwner,'scoped metadata');data={...(x.signedIn?{viewer:this.profile(user)}:{}),repository:clone(this.meta)};break;
+      case 'ViewerIdentity': data={viewer:{id:this.profile(user).id}};break;
       case 'ViewerAccess': {
         check(x.owner+'/'+x.name===this.meta.nameWithOwner,'scoped account metadata');
         const d=this.discussions.find(d=>d.number===x.number);
-        data={viewer:this.profile(user),repository:{id:this.meta.id,nameWithOwner:this.meta.nameWithOwner,isPrivate:this.meta.isPrivate,isArchived:this.meta.isArchived,
-          discussion:d?this.discussion(d,user):null},nodes:x.ids.map(id=>{const t=this.locate(id);return t&&t.node!==t.d?{...this.comment(t.node,user),discussion:this.identity(t.d)}:null;})};
+        const selections=node=>this.groups(node,user).map(({content,viewerHasReacted})=>({content,viewerHasReacted}));
+        data={viewer:{id:this.profile(user).id},repository:{id:this.meta.id,nameWithOwner:this.meta.nameWithOwner,isPrivate:this.meta.isPrivate,isArchived:this.meta.isArchived,
+          discussion:d?{...this.identity(d),locked:d.locked,closed:d.closed,reactionGroups:selections(d)}:null},nodes:x.ids.map(id=>{const t=this.locate(id);if(!t||t.node===t.d)return null;const c=this.comment(t.node,user);return{id:c.id,discussion:this.identity(t.d),viewerDidAuthor:c.viewerDidAuthor,viewerCanUpdate:c.viewerCanUpdate,viewerCanDelete:c.viewerCanDelete,viewerCanMinimize:c.viewerCanMinimize,viewerCanUnminimize:c.viewerCanUnminimize,reactionGroups:selections(t.node)};})};
         break;
       }
       case 'OperationAccess': {
         check(x.owner+'/'+x.name===this.meta.nameWithOwner,'scoped operation metadata');
         const d=this.discussions.find(d=>d.number===x.number);
         data={repository:{id:this.meta.id,nameWithOwner:this.meta.nameWithOwner,isPrivate:this.meta.isPrivate,isArchived:this.meta.isArchived,
-          discussion:d?{...this.identity(d),title:d.title,url:d.url,locked:d.locked,closed:d.closed,answer:d.answer,reactionGroups:this.groups(d,user)}:null}};
+          discussion:d?{...this.identity(d),locked:d.locked,closed:d.closed}:null}};
         if(x.selected){const t=this.locate(x.target),c=t&&t.node!==t.d?this.comment(t.node,user):null;
-          data.target=c?{id:c.id,url:c.url,replyTo:c.replyTo,viewerCanUpdate:c.viewerCanUpdate,viewerCanDelete:c.viewerCanDelete,
-            viewerCanMinimize:c.viewerCanMinimize,viewerCanUnminimize:c.viewerCanUnminimize,discussion:this.identity(t.d)}:null;
+          const permission=query.match(/\b(viewerCanUpdate|viewerCanDelete|viewerCanMinimize|viewerCanUnminimize)\b/)?.[1];
+          data.target=c?{id:c.id,replyTo:c.replyTo,...(permission?{[permission]:c[permission]}:{}),discussion:this.identity(t.d)}:null;
         }
         break;
       }
@@ -154,7 +156,7 @@ export class FakeGitHub {
         if(data.repository.discussion)for(const root of data.repository.discussion.comments.nodes)root.discussion=this.identity(d);
         break;
       }
-      case 'CreateDiscussion': {check(token==='ghs_fixture','app authors first discussion');check(x.input.repositoryId==='R_fixture'&&x.input.categoryId==='CAT_fixture','creation scope');const d=this.addThread(x.input.title,{body:x.input.body,bodyHTML:render(x.input.body)});data={createDiscussion:{discussion:{...this.identity(d),locked:d.locked}}};break;}
+      case 'CreateDiscussion': {check(token==='ghs_fixture','app authors first discussion');check(x.input.repositoryId==='R_fixture'&&x.input.categoryId==='CAT_fixture','creation scope');const d=this.addThread(x.input.title,{body:x.input.body,bodyHTML:render(x.input.body)});data={createDiscussion:{discussion:{...this.discussion(d,''),reactionGroups:this.groups(d,'').map(({content,reactors})=>({content,reactors}))}}};break;}
       case 'AddComment': {check(user,'reader authors comments');const d=this.discussions.find(d=>d.id===x.input.discussionId);check(d&&!d.locked,'writable discussion');const c=this.addComment(d,x.input.body,{author:user,replyTo:x.input.replyToId||null});data={addDiscussionComment:{comment:this.comment(c,user)}};break;}
       case 'EditComment': {const t=this.locate(x.input.commentId);check(t?.node.author&&t.node.authorPrincipal===user,'editor ownership');t.node.body=x.input.body;t.node.bodyHTML=render(x.input.body);t.node.lastEditedAt=new Date(this.now()).toISOString();data={updateDiscussionComment:{comment:this.comment(t.node,user)}};break;}
       case 'DeleteComment': {

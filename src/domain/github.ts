@@ -5,17 +5,16 @@ import { InstallationRecord } from '../contracts/storage.js';
 import type { Widget, Selection, Selector, ReadIntent, Action } from '../contracts/requests.js';
 import type { Comment, Discussion, Reactions, Patch,Permissions,AccessResult,AccountPatch,SelectedReactions,WindowPage,Window } from '../contracts/document.js';
 import type { PublicConfig, SecretConfig } from '../contracts/config.js';
-import { User, NodeID } from '../contracts/primitives.js';
+import {User,NodeID,Reaction} from '../contracts/primitives.js';
 import { appJWT, sha1 } from './crypto.js';
 import {AppError,requireCondition,failure,type Failure} from './errors.js';
 import {countObservation,type CountTarget} from '../contracts/count.js';
 import {discussionScope} from './authorization.js';
 import {Store} from './store.js';
 import { bodyBytes } from './body.js';
-const Viewer = v.object({ ...User.entries, id: NodeID });
 export const GRAPH = {
     reactions: 'reactionGroups { content viewerHasReacted reactors(first:1) { totalCount } }',
-    scope: 'repository { id nameWithOwner isPrivate } category { id name }',
+    scope: 'repository { id nameWithOwner isPrivate } category { id }',
     page: 'totalCount pageInfo { startCursor endCursor hasNextPage hasPreviousPage }',
 };
 export const COMMENT = `upvoteCount id body bodyHTML createdAt lastEditedAt url authorAssociation viewerDidAuthor viewerCanUpdate viewerCanDelete viewerCanMinimize viewerCanUnminimize deletedAt isMinimized minimizedReason author { login avatarUrl url } replyTo { id } ${GRAPH.reactions}`;
@@ -28,14 +27,18 @@ export const QUERIES = {
 const PublicReaction=v.omit(G.ReactionGroup,['viewerHasReacted']);
 const PublicComment=v.object({...v.omit(G.Comment,['viewerDidAuthor','viewerCanUpdate','viewerCanDelete','viewerCanMinimize','viewerCanUnminimize']).entries,reactionGroups:v.array(PublicReaction)});
 const PUBLIC_REACTIONS=GRAPH.reactions.replace('viewerHasReacted','');
+const PublicSummary=v.object({...G.DiscussionSummary.entries,reactionGroups:v.array(PublicReaction)});
+const SUMMARY=`id number title url locked closed answer{id} ${GRAPH.scope} ${PUBLIC_REACTIONS}`;
 function reactions(groups:v.InferOutput<typeof PublicReaction>[]): Reactions {
     return Object.fromEntries(groups.map(g=>[g.content,{count:g.reactors.totalCount}]));
 }
 const AUTHORITY='viewerDidAuthor viewerCanUpdate viewerCanDelete viewerCanMinimize viewerCanUnminimize';
 const PermissionObservation=v.pick(G.Comment,['id','viewerDidAuthor','viewerCanUpdate','viewerCanDelete','viewerCanMinimize','viewerCanUnminimize']);
-function permissions(raw:v.InferOutput<typeof PermissionObservation>):Permissions{return {didAuthor:raw.viewerDidAuthor,canUpdate:raw.viewerCanUpdate,canDelete:raw.viewerCanDelete,canMinimize:raw.viewerCanMinimize,canUnminimize:raw.viewerCanUnminimize};}
-function selections(groups:G.Comment['reactionGroups']):SelectedReactions{return Object.fromEntries(groups.map(g=>[g.content,g.viewerHasReacted]));}
-function account(raw:v.InferOutput<typeof PermissionObservation>&{reactionGroups?:G.Comment['reactionGroups']}):Omit<AccountPatch,'principal'|'observedAt'>{return {permissions:{[raw.id]:permissions(raw)},...(raw.reactionGroups?{reactions:{[raw.id]:selections(raw.reactionGroups)}}:{})};}
+function permissionsFrom(raw:v.InferOutput<typeof PermissionObservation>):Permissions{return {didAuthor:raw.viewerDidAuthor,canUpdate:raw.viewerCanUpdate,canDelete:raw.viewerCanDelete,canMinimize:raw.viewerCanMinimize,canUnminimize:raw.viewerCanUnminimize};}
+const SelectedGroup=v.pick(G.ReactionGroup,['content','viewerHasReacted']);
+const SELECTED_GROUPS='reactionGroups{content viewerHasReacted}';
+function selections(groups:v.InferOutput<typeof SelectedGroup>[]):SelectedReactions{return Object.fromEntries(Reaction.options.map(content=>[content,groups.some(group=>group.content===content&&group.viewerHasReacted)]));}
+function account(raw:v.InferOutput<typeof PermissionObservation>&{reactionGroups?:G.Comment['reactionGroups']}):Omit<AccountPatch,'principal'|'observedAt'>{return {permissions:{[raw.id]:permissionsFrom(raw)},...(raw.reactionGroups?{reactions:{[raw.id]:selections(raw.reactionGroups)}}:{})};}
 function node(raw:v.InferOutput<typeof PublicComment>):Comment {
   return {id:raw.id,body:raw.body,url:raw.url,parentId:raw.replyTo?.id??null,createdAt:raw.createdAt,lastEditedAt:raw.lastEditedAt,deletedAt:raw.deletedAt,author:raw.author,authorAssociation:raw.authorAssociation,isMinimized:raw.isMinimized,minimizedReason:raw.minimizedReason,reactions:reactions(raw.reactionGroups),upvotes:raw.upvoteCount};
 }
@@ -44,7 +47,7 @@ function window(connection:Pick<G.Replies,'totalCount'|'pageInfo'>&{nodes:{id:st
     return { ids: connection.nodes.map(n => n.id), count, cursor: unobserved&&connection.totalCount>0?'':order === 'oldest' ? (p.hasNextPage ? p.endCursor : null) : (p.hasPreviousPage ? p.startCursor : null) };
 }
 type SelectedDiscussion={id?:string;number:number};
-export interface CommandTarget {discussion:Discussion;archived:boolean;targetId:string;parentId:string}
+export interface CommandTarget {discussion:Pick<Discussion,'id'|'number'|'locked'|'closed'>;targetId:string;parentId:string}
 function thread(raw:(Omit<G.DiscussionSummary,'reactionGroups'>&{reactionGroups:v.InferOutput<typeof PublicReaction>[]})|null):Discussion|null{return raw?{id:raw.id,number:raw.number,title:raw.title,url:raw.url,locked:raw.locked,closed:raw.closed,answerId:raw.answer?.id??null,reactions:reactions(raw.reactionGroups)}:null;}
 export async function limitedText(response: Response, max = 4 * 1024 * 1024): Promise<string> {
     const oversized = new AppError(502, 'UPSTREAM', 'The GitHub response is too large to display safely. Open the discussion on GitHub.');
@@ -268,9 +271,8 @@ export class GitHub {
           ids='ids'in intent?intent.ids:undefined,replyPrefetch='replyPrefetch'in intent?intent.replyPrefetch:0,root=intent.kind==='roots';
         const fields = COMMENT.replace(AUTHORITY,'').replace(GRAPH.reactions,PUBLIC_REACTIONS).replace('bodyHTML', 'bodyHTML @include(if:$html)');
         const comment = `${fields} discussion{${IDENTITY}} replies(last:$prefetch){${GRAPH.page} nodes @include(if:$previewReplies){${fields}}}`;
-        const summary = `id number title url locked closed answer{id} ${GRAPH.scope} ${PUBLIC_REACTIONS}`;
         const query = `query Page($owner:String!,$name:String!,$number:Int!,$first:Int,$last:Int,$after:String,$before:String,$prefetch:Int!,$previewReplies:Boolean!,$roots:Boolean!,$ids:[ID!]!,$selected:Boolean!,$parent:ID!,$reply:Boolean!,$replyBefore:String,$html:Boolean!){
-      repository(owner:$owner,name:$name){id nameWithOwner isPrivate isArchived discussion(number:$number){${summary} comments(first:$first,last:$last,after:$after,before:$before){${GRAPH.page} nodes @include(if:$roots){${comment}}}}}
+      repository(owner:$owner,name:$name){id nameWithOwner isPrivate isArchived discussion(number:$number){${SUMMARY} comments(first:$first,last:$last,after:$after,before:$before){${GRAPH.page} nodes @include(if:$roots){${comment}}}}}
       nodes(ids:$ids) @include(if:$selected){... on DiscussionComment{${comment}}}
       parent:node(id:$parent) @include(if:$reply){... on DiscussionComment{${fields} discussion{${IDENTITY}} replies(last:50,before:$replyBefore){${GRAPH.page} nodes{${fields}}}}}
     }`;
@@ -279,7 +281,7 @@ export class GitHub {
         const observed=v.object({...PublicComment.entries,discussion:G.DiscussionIdentity,replies:preview});
         const roots=v.pipe(v.array(observed),v.maxLength(20)),selectedNodes=v.array(v.nullable(observed));
         const connection=v.object({...G.Replies.entries,nodes:root?roots:v.optional(roots,[])});
-        const schema=v.object({repository:v.nullable(v.object({...G.RepositoryHead.entries,discussion:v.nullable(v.object({...G.DiscussionSummary.entries,reactionGroups:v.array(PublicReaction),comments:connection}))})),nodes:ids!==undefined?selectedNodes:v.optional(selectedNodes),parent:parentId?v.nullable(v.object({...observed.entries,replies:publicReplies})):v.optional(v.nullable(v.object({...observed.entries,replies:publicReplies})))});
+        const schema=v.object({repository:v.nullable(v.object({...G.RepositoryHead.entries,discussion:v.nullable(v.object({...PublicSummary.entries,comments:connection}))})),nodes:ids!==undefined?selectedNodes:v.optional(selectedNodes),parent:parentId?v.nullable(v.object({...observed.entries,replies:publicReplies})):v.optional(v.nullable(v.object({...observed.entries,replies:publicReplies})))});
         const observedAt=this.store.now();
         const data=await this.graph(schema,query,{...this.#names(),number,roots: root, first: root && order === 'oldest' ? 20 : root ? null : 1, last: root && order === 'newest' ? 20 : null, after: root && order === 'oldest' && cursor ? cursor : null, before: root && order === 'newest' && cursor ? cursor : null, replyBefore: parentId && cursor ? cursor : null, prefetch: Math.max(1,replyPrefetch), previewReplies:replyPrefetch>0, ids: ids ?? [], selected: ids !== undefined, parent: parentId ?? 'unused', reply:Boolean(parentId),html:request.html},token, ids !== undefined);
         requireCondition(data.repository, 404, 'NOT_FOUND', 'The repository is not accessible.');
@@ -325,22 +327,23 @@ export class GitHub {
         if(intent.kind==='selected')for(const id of acquired.ids)requireCondition(!nodes[id]!.parentId,400,'BAD_INPUT','Ranked windows contain root comments.');
         return {observedAt,nodes,window:acquired,replies,contentHints,metadata:{thread:thread(raw),archived:repository.isArchived,unavailable:!raw,profiles:request.profiles}};
     }
-    async create(widget: Selection & Partial<Pick<Widget,'description'>>,token:string): Promise<G.DiscussionAccess> {
+    async create(widget: Selection & Partial<Pick<Widget,'description'>>,token:string):Promise<{thread:Discussion;observedAt:number}> {
         const page=new URL(widget.pageURL);
         page.hash = '';
         page.searchParams.delete('giscus');
         const body = `# ${widget.selector.kind==='page'?widget.selector.key:''}\n\n${widget.description || ''}\n\n${page.toString()}\n\n<!-- sha1: ${await sha1(widget.selector.kind==='page'?widget.selector.key:'')} -->`;
-        const data = await this.graph(G.CreateResponse, `mutation CreateDiscussion($input:CreateDiscussionInput!) { createDiscussion(input:$input) { discussion { ${ACCESS} } } }`, { input: {repositoryId:this.repositoryId,categoryId:this.categoryId,title:widget.selector.kind==='page'?widget.selector.key:'', body } }, token);
-        const created=data.createDiscussion.discussion;this.#discussion(created);return created;
+        const observedAt=this.store.now();
+        const data = await this.graph(v.object({createDiscussion:v.object({discussion:PublicSummary})}), `mutation CreateDiscussion($input:CreateDiscussionInput!) { createDiscussion(input:$input) { discussion { ${SUMMARY} } } }`, { input: {repositoryId:this.repositoryId,categoryId:this.categoryId,title:widget.selector.kind==='page'?widget.selector.key:'', body } }, token);
+        const created=data.createDiscussion.discussion;this.#discussion(created);return {thread:thread(created)!,observedAt};
     }
     /** Scope and permission preflight does not acquire the target's Markdown or rich content. */
     async targetAccess(selected:SelectedDiscussion,action:Action,token:string):Promise<CommandTarget> {
         const targetId = action.type === 'comment' ? action.replyToId
             : action.type === 'reaction' ? action.subject.kind === 'comment' ? action.subject.id : '' : action.id;
-        const summary = `id number title url locked closed answer{id} ${GRAPH.scope} ${GRAPH.reactions}`;
+        const summary = `${ACCESS} closed`,available=v.object({...G.DiscussionAccess.entries,closed:v.boolean()});
         const permission=action.type==='edit'?'viewerCanUpdate':action.type==='delete'?'viewerCanDelete':action.type==='moderate'?action.minimized?'viewerCanMinimize':'viewerCanUnminimize':null;
         const targetSchema=v.object({id:NodeID,replyTo:G.Comment.entries.replyTo,discussion:G.DiscussionIdentity,...v.partial(v.pick(G.Comment,['viewerCanUpdate','viewerCanDelete','viewerCanMinimize','viewerCanUnminimize'])).entries});
-        const data = await this.graph(v.object({ repository: v.nullable(v.object({ ...G.RepositoryHead.entries, discussion: v.nullable(G.DiscussionSummary) })),
+        const data = await this.graph(v.object({ repository: v.nullable(v.object({ ...G.RepositoryHead.entries, discussion:v.nullable(available) })),
             target: v.optional(v.nullable(targetSchema)) }),
             `query OperationAccess($owner:String!,$name:String!,$number:Int!,$target:ID!,$selected:Boolean!){repository(owner:$owner,name:$name){id nameWithOwner isPrivate isArchived discussion(number:$number){${summary}}} target:node(id:$target) @include(if:$selected){... on DiscussionComment{id replyTo{id} ${permission??''} discussion{${IDENTITY}}}}}`,
             { ...this.#names(), number:selected.number, target: targetId || 'unused', selected: Boolean(targetId) }, token);
@@ -354,30 +357,28 @@ export class GitHub {
         if(action.type==='comment'||action.type==='reaction')requireCondition(!raw.locked,403,'LOCKED','This discussion is locked.');
         if(permission)requireCondition(parse(v.boolean(),target?.[permission],'upstream'),403,'PERMISSION','You cannot change this comment.');
         const parentId=action.type==='comment'&&target?target.replyTo?.id||target.id:target?.replyTo?.id||'';
-        return {discussion:thread(raw)!,archived:repository.isArchived,targetId:targetId||raw.id,parentId};
+        const {id,number,locked,closed}=raw;return {discussion:{id,number,locked,closed},targetId:targetId||raw.id,parentId};
     }
     /** Account authority and selections contain no comment interpretation or body acquisition. */
     async access(selected:SelectedDiscussion,ids:string[],token:string):Promise<AccessResult> {
       const flags=AUTHORITY;
-      const observations=v.object({id:NodeID,replyTo:G.Comment.entries.replyTo,discussion:G.DiscussionIdentity,
-        viewerDidAuthor:v.boolean(),viewerCanUpdate:v.boolean(),viewerCanDelete:v.boolean(),viewerCanMinimize:v.boolean(),viewerCanUnminimize:v.boolean(),reactionGroups:G.Reactions});
-      const schema=v.object({viewer:Viewer,repository:v.nullable(v.object({...G.RepositoryHead.entries,discussion:v.nullable(G.DiscussionSummary)})),nodes:v.array(v.nullable(observations))});
+      const observations=v.object({...PermissionObservation.entries,discussion:G.DiscussionIdentity,reactionGroups:v.array(SelectedGroup)});
+      const available=v.object({...G.DiscussionAccess.entries,closed:v.boolean(),reactionGroups:v.array(SelectedGroup)});
+      const schema=v.object({viewer:v.object({id:NodeID}),repository:v.nullable(v.object({...G.RepositoryHead.entries,discussion:v.nullable(available)})),nodes:v.array(v.nullable(observations))});
       const observedAt=this.store.now();
-      const data=await this.graph(schema,`query ViewerAccess($owner:String!,$name:String!,$number:Int!,$ids:[ID!]!){viewer{id login avatarUrl url} repository(owner:$owner,name:$name){id nameWithOwner isPrivate isArchived discussion(number:$number){id number title url locked closed answer{id} ${GRAPH.scope} ${GRAPH.reactions}}} nodes(ids:$ids){... on DiscussionComment{id replyTo{id} discussion{${IDENTITY}} ${flags} ${GRAPH.reactions}}}}`,{...this.#names(),number:selected.number,ids},token,true);
+      const data=await this.graph(schema,`query ViewerAccess($owner:String!,$name:String!,$number:Int!,$ids:[ID!]!){viewer{id} repository(owner:$owner,name:$name){id nameWithOwner isPrivate isArchived discussion(number:$number){id number locked closed ${GRAPH.scope} ${SELECTED_GROUPS}}} nodes(ids:$ids){... on DiscussionComment{id discussion{${IDENTITY}} ${flags} ${SELECTED_GROUPS}}}}`,{...this.#names(),number:selected.number,ids},token,true);
       requireCondition(data.repository,404,'NOT_FOUND','The repository is not accessible.');
       const {discussion:raw,...repository}=data.repository;
       this.#scope(repository,raw,selected);
       const permissions:Record<string,Permissions>={},chosen:Record<string,Record<string,boolean>>={};
       requireCondition(data.nodes.length===ids.length,502,'UPSTREAM_SCHEMA','GitHub omitted account observations.');
       for(const [i,item] of data.nodes.entries()){
-        if(!item){permissions[ids[i]!]={didAuthor:false,canUpdate:false,canDelete:false,canMinimize:false,canUnminimize:false};chosen[ids[i]!]={};continue;}
+        if(!item){permissions[ids[i]!]={didAuthor:false,canUpdate:false,canDelete:false,canMinimize:false,canUnminimize:false};chosen[ids[i]!]=selections([]);continue;}
         requireCondition(item.id===ids[i]&&raw,403,'PERMISSION','This account observation is outside the page.');
         this.#discussion(item.discussion,raw);
-        permissions[item.id]=account(item).permissions![item.id]!;chosen[item.id]=selections(item.reactionGroups);
+        permissions[item.id]=permissionsFrom(item);chosen[item.id]=selections(item.reactionGroups);
       }
-      return {observedAt,principal:data.viewer,permissions,reactions:chosen,threadReactions:Object.fromEntries((raw?.reactionGroups??[]).map(g=>[g.content,g.viewerHasReacted])),
-        thread:thread(raw),
-        archived:repository.isArchived,unavailable:!raw};
+      return {observedAt,principal:data.viewer.id,permissions,reactions:chosen,threadReactions:selections(raw?.reactionGroups??[]),availability:{thread:raw?{id:raw.id,number:raw.number,locked:raw.locked,closed:raw.closed}:null,archived:repository.isArchived,unavailable:!raw}};
     }
     /** Mutation selection returns only confirmed fields owned by this operation. */
     async contribute(action: Action, discussionId: string, targetId: string, parentId: string, token: string, html = false): Promise<{id:string;patch?:Patch;account?:Omit<AccountPatch,'principal'|'observedAt'>;rootCount?:number;replyCount?:number}> {
@@ -481,9 +482,10 @@ export class GitHub {
         }
     }
     /** Authentication retains immutable identity; Page owns current display. */
-    async viewer(token:string){return (await this.graph(v.object({viewer:Viewer}),'query ViewerIdentity{viewer{id login avatarUrl url}}',{},token)).viewer;}
-    async principal(token:string):Promise<string>{
-        return (await this.#rest(G.Viewer,'/user',token)).node_id;
+    async principal(token:string):Promise<string>{return (await this.graph(v.object({viewer:v.object({id:NodeID})}),'query ViewerIdentity{viewer{id}}',{},token)).viewer.id;}
+    async identity(token:string){
+      const user=await this.#rest(G.Viewer,'/user',token);
+      return {id:user.node_id,login:user.login,avatarUrl:user.avatar_url,url:user.html_url};
     }
 
 }

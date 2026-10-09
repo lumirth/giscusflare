@@ -26,17 +26,16 @@ export interface MountedContent {
 export type ContentOutput = Node | MountedContent;
 export type ContentRenderer = (input: ContentInput, context: ContentContext) => ContentOutput | Promise<ContentOutput>;
 /** One selected capability pairs acquisition semantics with its installed rendering. */
-export interface ContentProfile { delivery: ContentSource; render: ContentRenderer }
+export interface ContentProfile { delivery: ContentSource | 'source'; render: ContentRenderer }
 export function preparedContent(options: Parameters<typeof preparedHTML>[0] = {}): ContentProfile {
   return { delivery: 'prepared', render: preparedHTML(options) };
 }
-export function browserContent(render: ContentRenderer, delivery: ContentSource = 'source'): ContentProfile {
+export function browserContent(render: ContentRenderer, delivery: ContentProfile['delivery'] = 'source'): ContentProfile {
   return { delivery, render };
 }
 export type ContentAcquisition = (input: ContentInputData, signal: AbortSignal) => Promise<ContentPreview>;
 export interface ContentMount { readonly ready: boolean; readonly pending: boolean; update(input: ContentInput): Promise<void>; clear(): void; dispose(): void }
 class ResourceMismatch extends Error {}
-const mounted = (output: ContentOutput): output is MountedContent => 'node' in output;
 const same = (a: ContentInput, b: ContentInput) => a.markdown === b.markdown && a.html === b.html &&
   a.purpose === b.purpose && a.repo === b.repo && a.pageURL === b.pageURL && a.draft === b.draft && a.comment?.id === b.comment?.id &&
   a.comment?.url === b.comment?.url && a.comment?.parentId === b.comment?.parentId && a.revision === b.revision &&
@@ -54,13 +53,13 @@ interface MountOptions {
 export const mountContent: (target: HTMLElement, renderer: ContentRenderer, options?: MountOptions) => ContentMount = installContent;
 function installContent(target: HTMLElement, renderer: ContentRenderer, options: MountOptions = {}) {
   let input: ContentInput | undefined, generation: AbortController | undefined, candidate: AbortController | undefined,
-    view: { output: ContentOutput; lifetime: AbortController } | undefined, pending = Promise.resolve(), disposed = false, ready = false, failure: HTMLElement | undefined;
+    view: { output: MountedContent; lifetime: AbortController } | undefined, pending = Promise.resolve(), disposed = false, ready = false, failure: HTMLElement | undefined;
   const publishReady = (value: boolean) => {
     if (ready !== value) { ready = value; options.onReady?.(value); }
   };
+  const retire = (previous: typeof view) => { if (previous) { previous.lifetime.abort(); previous.output.dispose?.(); } };
   const release = () => {
-    const previous = view; view = undefined;
-    if (previous) { previous.lifetime.abort(); if (mounted(previous.output)) previous.output.dispose?.(); }
+    const previous = view; view = undefined; retire(previous);
   };
   const clear = () => {
     failure?.remove(); failure = undefined;
@@ -86,7 +85,7 @@ function installContent(target: HTMLElement, renderer: ContentRenderer, options:
       generation?.abort(); candidate?.abort();
       const current = generation = new AbortController(); input = next;
       let failing = false;
-      const retained = view && mounted(view.output) && view.output.update ? view : undefined;
+      const retained = view?.output.update ? view : undefined;
       const lifetime = retained?.lifetime || (candidate = new AbortController());
       let acquired: Promise<ContentPreview> | undefined;
       const delivery = () => acquired ||= options.acquire ? options.acquire(next, current.signal)
@@ -122,16 +121,17 @@ function installContent(target: HTMLElement, renderer: ContentRenderer, options:
         throw cause;
       };
       const install = (output: ContentOutput) => {
-        if (!active()) { lifetime.abort(); if (mounted(output)) output.dispose?.(); return; }
-        release();
-        if (!active()) { lifetime.abort(); if (mounted(output)) output.dispose?.(); return; }
-        view = { output, lifetime }; if (candidate === lifetime) candidate = undefined;
-        target.replaceChildren(mounted(output) ? output.node : output);
+        const next = {output: 'node' in output ? output : {node: output}, lifetime};
+        try { if (active()) release(); }
+        catch (cause) { retire(next); throw cause; }
+        if (!active()) { retire(next); return; }
+        view = next; if (candidate === lifetime) candidate = undefined;
+        target.replaceChildren(next.output.node);
         publishReady(true);
       };
       target.setAttribute('aria-busy', 'true');
       try {
-        if (retained && mounted(retained.output)) {
+        if (retained) {
           pending = Promise.resolve(retained.output.update!(next, context)).then(commit => { if (active()) commit(); }).catch(fail).finally(finish);
         } else {
           const output = renderer(next, context);

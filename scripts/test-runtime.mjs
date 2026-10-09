@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { nativeService } from '../test/native-service.mjs';
 import { evidence } from '../test/evidence.mjs';
 const { version } = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+const api = '/api/v' + version.split('.')[0] + '/';
 const origin = 'http://127.0.0.1:18790', blog = 'http://127.0.0.1:18791';
 const config = { repo: 'example/comments', origin: blog, pageURL: blog + '/article', returnURL: blog + '/article', selector: { kind: 'page', key: 'article' } };
 const random = () => randomBytes(32).toString('base64url'), hash = value => createHash('sha256').update(value).digest('base64url');
@@ -33,7 +34,7 @@ const writeConsumer = revision => writeFile(contentEntry, `import { createConten
 export default createContentWorker({ revision: ${JSON.stringify(revision)}, prepare(input) {
   if (input.markdown === 'Failed isolated body') throw Error('Fixture interpretation failed');
   const source = input.markdown.replace(/[&<>]/g, value => ({'&':'&amp;', '<':'&lt;', '>':'&gt;'}[value]));
-  return { html: '<article><p>' + source + '</p></article>', revision: 'ignored' };
+  return { html: '<article><p>' + source + '</p></article>' };
 } });
 `);
 await writeConsumer('native-host-1');
@@ -41,8 +42,8 @@ let service;
 try { service = await nativeService({ origin, blog, entry, contentEntry }); }
 catch (error) { await rm(consumer, { recursive: true, force: true }); throw error; }
 report.runtime = service.versions;
-const read = (name, input, cap = '') => service.fetch(origin + '/api/v6/' + name + '?' + new URLSearchParams({ input: JSON.stringify(name === 'page' ? { read: { kind: 'roots', order: 'oldest' }, ...input, ...(cap ? { fresh: true } : {}) } : input) }), { headers: { Origin: origin, ...(cap ? { 'Cache-Control': 'no-cache', Authorization: 'Bearer ' + cap } : {}) } });
-const post = (name, input, cap = '', headers = {}) => service.fetch(origin + '/api/v6/' + name, { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json', ...(cap ? { Authorization: 'Bearer ' + cap } : {}), ...headers }, body: JSON.stringify(input) });
+const read = (name, input, cap = '') => service.fetch(origin + api + name + '?' + new URLSearchParams({ input: JSON.stringify(name === 'page' ? { read: { kind: 'roots', order: 'oldest' }, ...input, ...(cap ? { fresh: true } : {}) } : input) }), { headers: { Origin: origin, ...(cap ? { 'Cache-Control': 'no-cache', Authorization: 'Bearer ' + cap } : {}) } });
+const post = (name, input, cap = '', headers = {}) => service.fetch(origin + api + name, { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json', ...(cap ? { Authorization: 'Bearer ' + cap } : {}), ...headers }, body: JSON.stringify(input) });
 const json = async (response, status = 200) => { const result = await response.json(); assert.equal(response.status, status, JSON.stringify(result)); return result; };
 let signInIndex = 0;
 async function signIn(principal = 'reader') {
@@ -54,8 +55,10 @@ async function signIn(principal = 'reader') {
     assert.equal(data.attempt, hash(proof));
     assert.equal((await post('access', { config, ids: [] }, cap)).status, 401, 'a future capability is unusable before authorization');
     const callback = origin + '/auth/callback?' + new URLSearchParams({ state: url.searchParams.get('state'), code: 'fixture_' + url.searchParams.get('code_challenge') });
+    const beforeAuthorization = service.github.calls.length;
     const response = await service.fetch(callback, { headers: { Cookie: cookie, ...headers }, redirect: 'manual' }), html = await response.text();
     assert.equal(response.status, 200, html);
+    assert.equal(service.github.calls.slice(beforeAuthorization).filter(call=>call.path==='/user').length,1,'Authorization acquires its identity and display through the same necessary user lookup');
     assert.ok(!html.includes(cap) && !html.includes(proof) && !html.includes('ghu_'), 'callback contains no credential or capability');
     assert.equal((await service.fetch(callback, { headers: { Cookie: cookie, ...headers }, redirect: 'manual' })).status, 401, 'authorization is one-use');
     assert.equal((await post('auth/prepare', { repo: config.repo, origin: config.origin, returnURL: config.returnURL, proof, mode: 'popup' }, '', headers)).status, 409, 'an existing future capability cannot be replaced');
@@ -146,14 +149,47 @@ try {
     assert.equal((await read('page', { config: { ...config, origin: 'https://unapproved.example', pageURL: 'https://unapproved.example/article', returnURL: 'https://unapproved.example/article' } })).status, 403);
     report.checks.push({ workflow: 'read useful root/reply windows through native RPC, frame/cache and origin boundaries', status: 'passed' });
     const cap = await signIn();
+    const unusable = random();
+    assert.equal((await post('access',{config,ids:[]},unusable)).status,401);
+    const beforePublicReading = service.github.calls.length;
+    const publicReading = await json(await service.fetch(origin+api+'page?'+new URLSearchParams({input:JSON.stringify({config,read:{kind:'roots',order:'oldest'}})}),{headers:{Origin:origin,Authorization:'Bearer '+unusable}}));
+    assert.ok(publicReading.window.ids.length,'Unusable account authority leaves registered public reading available');
+    assert.ok(service.github.calls.slice(beforePublicReading).every(call=>call.token==='ghs_fixture'),'Public reading uses registered App access independently of the commenter proof');
     const creation = { type: 'comment', body: 'A native contribution' }, submission = key();
     const providerFetch = service.github.fetch.bind(service.github);
-    const ack = await json(await post('contribute', { config, key: submission, action: creation, content: 'github',
+    const beforeSession = service.github.calls.length;
+    const localIdentity = await json(await post('session',{repo:config.repo,origin:config.origin},cap));
+    assert.equal(localIdentity.principal,'U_reader');
+    assert.equal(localIdentity.profile.login,'reader');
+    assert.equal(service.github.calls.length,beforeSession,'Local session verification and its stored display need no provider request');
+    const displayedIdentity = await json(await post('identity',{repo:config.repo,origin:config.origin},cap));
+    assert.equal(displayedIdentity.principal,'U_reader');
+    assert.deepEqual(service.github.calls.slice(beforeSession).map(call=>call.path),['/user'],'Explicit identity display acquisition requires only its one user lookup');
+    const afterDisplay = service.github.calls.length;
+    assert.deepEqual(await json(await post('session',{repo:config.repo,origin:config.origin},cap)),localIdentity);
+    assert.equal(service.github.calls.length,afterDisplay,'The acquired profile is reused by subsequent local session verification');
+    const authority = await json(await post('access',{config,ids:[first.id,'Unknown_Comment']},cap));
+    assert.equal(authority.principal,'U_reader');
+    assert.equal(authority.permissions['Unknown_Comment'].canUpdate,false);
+    assert.ok(Object.values(authority.reactions['Unknown_Comment']).every(selected=>selected===false),'A missing target cannot retain any prior account selection');
+    const accountQuery = service.github.calls.at(-1);
+    assert.equal(accountQuery.operation,'ViewerAccess');
+    assert.ok(!/\b(?:body|bodyHTML|login|avatarUrl|createdAt)\b/.test(accountQuery.query),'Authority acquires target permissions and selections without content or a public profile');
+    const ack = await json(await post('contribute', { config, key: submission, action: creation, providerHTML: true,
         creation: { description: 'Original article title',  } }, cap));
     assert.equal(ack.patch.nodes[ack.id].body, creation.body, 'The contribution delivers its operation-owned canonical writing');
-    const htmlReplay = await json(await post('contribute', { config, key: submission, action: creation, content: 'github' }, cap));
+    assert.equal(ack.patch.metadata,undefined,'An existing-target effect does not reacquire or republish the discussion summary');
+    const newConfig = {...config,pageURL:blog+'/first-publication',returnURL:blog+'/first-publication',selector:{kind:'page',key:'first-publication'}};
+    const newlyCreated = await json(await post('contribute',{config:newConfig,key:key(),action:{type:'comment',body:'A first publication in a new discussion'},creation:{description:'A newly published article'}},cap));
+    const createdThread = service.github.discussions.find(thread=>thread.id===newlyCreated.patch.metadata.thread.id);
+    assert.ok(createdThread,'The provider independently creates the selected new discussion');
+    assert.equal(newlyCreated.patch.metadata.thread.title,createdThread.title);
+    assert.equal(newlyCreated.patch.metadata.thread.url,createdThread.url);
+    assert.equal(newlyCreated.patch.metadata.thread.locked,createdThread.locked);
+    assert.ok(newlyCreated.patch.metadataObservedAt<=newlyCreated.patch.observedAt,'The created discussion and ensuing contribution retain their independently acquired observation ages');
+    const htmlReplay = await json(await post('contribute', { config, key: submission, action: creation, providerHTML: true }, cap));
     assert.deepEqual(htmlReplay.patch, ack.patch, 'A confirmed receipt retains its original facts and observation age');
-    const replay = await json(await post('contribute', { config: { ...config, pageURL: config.pageURL + '#updated-heading' }, key: submission, action: creation, content: 'source',
+    const replay = await json(await post('contribute', { config: { ...config, pageURL: config.pageURL + '#updated-heading' }, key: submission, action: creation, providerHTML: false,
         creation: { description: 'Updated article title',  } }, cap));
     assert.equal(replay.id, ack.id, 'Changing delivery URL, article preparation and presentation retains the confirmed contribution');
     assert.equal(replay.patch.nodes[ack.id].body, creation.body, 'receipt replay observes current content without another effect');
@@ -193,7 +229,7 @@ try {
     assert.equal(readback.window.count.count, discussion.comments.length);
     assert.equal((await json(await read('page', { config, read: { kind: 'selected', ids: [ack.id] } }, cap))).nodes[ack.id].body, 'Revised contribution');
     assert.equal((await json(await read('counts', { repo: config.repo, origin: config.origin, targets: [rootTarget('article'), rootTarget('missing')], fresh: true }))).observations[articleKey].count, discussion.comments.length);
-    const prepared = await json(await read('page', { config, read: { kind: 'selected', ids: [ack.id] }, content: 'prepared' }, cap));
+    const prepared = await json(await read('page', { config, read: { kind: 'selected', ids: [ack.id] }, providerHTML: false }, cap));
     assert.equal(prepared.nodes[ack.id].body, root.body, 'Canonical source arrives without waiting for content preparation');
     assert.equal(prepared.nodes[ack.id].prepared, undefined, 'Reading is independent of interpretation execution');
     const input = { markdown: root.body, purpose: 'comment', repo: config.repo, pageURL: config.pageURL, comment: { id: ack.id, url: root.url, parentId: null } };
@@ -271,11 +307,11 @@ try {
     service.github.failAfterMutation = true;
     assert.equal((await json(await contribute(uncertain, cap, uncertainKey), 502)).error.code, 'WRITE_UNCERTAIN');
     await service.restart();
-    assert.equal((await json(await post('access', { config, ids: [] }, cap))).principal.login, 'reader');
+    assert.equal((await json(await post('access', { config, ids: [] }, cap))).principal, 'U_reader');
     assert.equal((await json(await contribute(uncertain, cap, uncertainKey), 409)).error.code, 'WRITE_UNCERTAIN');
     service.github.setLogin('reader', 'renamed-reader');
     const renamed = cap;
-    assert.equal((await json(await post('access', { config, ids: [] }, cap))).principal.login, 'renamed-reader', 'fresh Page display is observed from GitHub without reissuing the capability');
+    assert.equal((await json(await post('identity', { repo:config.repo,origin:config.origin }, cap))).profile.login, 'renamed-reader', 'Fresh identity display is independent of discussion reading and capability issuance');
     assert.equal((await json(await contribute(uncertain, renamed, uncertainKey), 409)).error.code, 'WRITE_UNCERTAIN');
     service.github.setLogin('visitor', 'reader');
     const other = await signIn('visitor');
@@ -286,10 +322,10 @@ try {
     let clientIdentity = { capability: renamed, id: 'U_reader' };
     const issuedRequests = [], responseGates = [];
     const holdResponse = (operation, matches) => {
-        let arrived, release;
-        const seen = new Promise(resolve => { arrived = resolve; }), held = new Promise(resolve => { release = resolve; });
-        responseGates.push({ operation, matches, arrived, held });
-        return { seen, release };
+        let arrived, release, timeout;
+        const seen = new Promise((resolve,reject) => { arrived=value=>{clearTimeout(timeout);resolve(value);};timeout=setTimeout(()=>reject(Error('Expected '+operation+' response was not issued: '+JSON.stringify(service.github.calls.slice(-8).map(call=>call.operation)))),5000); }), held = new Promise(resolve => { release = resolve; });
+        const gate={ operation, matches, arrived, held };responseGates.push(gate);
+        return { seen, release:()=>{clearTimeout(timeout);const index=responseGates.indexOf(gate);if(index!==-1)responseGates.splice(index,1);release();} };
     };
     const transport = {
         get principal() { return clientIdentity.id; },
@@ -308,10 +344,89 @@ try {
     clientSelection.selector = { kind: 'page', key: 'another-article' }; // A caller can reuse its options without retargeting an acquired discussion.
     await client.loadMore();
     assert.deepEqual(client.document.roots.ids, discussion.comments.slice(0, 40).map(comment => comment.id), 'Two acquired windows expose real provider contribution destinations');
+    clientIdentity={capability:other,id:'U_visitor'};client.changeIdentity();await client.refreshViewer();
+    const initializingConfig = {...config,pageURL:blog+'/pending-first-publication',returnURL:blog+'/pending-first-publication',selector:{kind:'page',key:'pending-first-publication'}};
+    const initializing = new PageModel(initializingConfig,transport); await initializing.start();
+    assert.equal(initializing.document.metadata.thread,null);
+    let creationArrived,releaseCreation;
+    const creationSeen = new Promise(resolve=>{creationArrived=resolve;}),creationHeld=new Promise(resolve=>{releaseCreation=resolve;});
+    service.github.fetch = async request=>{
+        const envelope=request.method==='POST'&&new URL(request.url).pathname==='/graphql'?await request.clone().json():null;
+        if(envelope?.query.startsWith('mutation CreateDiscussion')&&envelope.variables.input.title==='pending-first-publication'){creationArrived();await creationHeld;}
+        return providerFetch(request);
+    };
+    try {
+        const writing=initializing.writing().show();writing.update('A pending first discussion publication');
+        const submitted=writing.submit();await Promise.race([creationSeen,submitted.then(result=>{throw Error('First creation did not reach its provider: '+JSON.stringify(result));})]);
+        await Promise.race([initializing.revalidate(0,[]),new Promise((_,reject)=>setTimeout(()=>reject(Error('Reading during pending first creation did not finish: '+JSON.stringify(service.github.calls.slice(-5).map(call=>call.operation)))),5000))]);
+        assert.equal(initializing.document.metadata.thread,null,'Reading while first creation is pending observes actual absence');
+        releaseCreation();assert.equal((await submitted).status,'saved');
+        assert.equal(initializing.document.metadata.thread.title,'pending-first-publication','The real creation summary initializes the discussion despite an overlapping absent read');
+        assert.equal(initializing.document.nodes[initializing.document.roots.ids[0]].body,'A pending first discussion publication','The first contribution is readable in its created discussion');
+    } finally {releaseCreation();service.github.fetch=providerFetch;initializing.dispose();}
+    const heldProviderPublication = async (body, beforeCommit) => {
+        let arrived, release;
+        const seen = new Promise(resolve => { arrived = resolve; }), held = new Promise(resolve => { release = resolve; });
+        service.github.fetch = async request => {
+            const envelope = request.method === 'POST' && new URL(request.url).pathname === '/graphql' ? await request.clone().json() : null;
+            if (!envelope?.query.startsWith('mutation AddComment') || envelope.variables.input.body !== body) return providerFetch(request);
+            if (beforeCommit) { arrived(); await held; return providerFetch(request); }
+            const response = await providerFetch(request); arrived(); await held; return response;
+        };
+        const writing = client.newWriting({kind:'comment'}).show(); writing.update(body);
+        const submitted = writing.submit();
+        try {await Promise.race([seen,submitted.then(result=>{throw Error('Held publication did not reach its provider: '+JSON.stringify(result));}),new Promise((_,reject)=>setTimeout(()=>reject(Error('Provider gate not reached: '+JSON.stringify({body,composition:client.composition,acquisition:client.acquisition(),operations:service.github.calls.slice(-5).map(call=>call.operation)}))),5000))]);}
+        catch(error){release();service.github.fetch=providerFetch;throw error;}
+        return {submitted,release,restore:()=>{release();service.github.fetch=providerFetch;}};
+    };
+    const beforeCommit = await heldProviderPublication('Publication held before provider commit',true);
+    try {
+        await client.revalidate(0,[first.id]);
+        assert.equal(client.document.roots.count.count,discussion.comments.length,'The intervening read observes the actual pre-commit total');
+        beforeCommit.release(); assert.equal((await beforeCommit.submitted).status,'saved');
+        for(let attempt=0;client.document.roots.count.count!==discussion.comments.length&&attempt<500;attempt++)await new Promise(resolve=>setTimeout(resolve,10));
+        assert.equal(client.document.roots.count.count,discussion.comments.length,'Confirmation after an intervening pre-commit read establishes the committed total');
+    } finally { beforeCommit.restore(); }
+    const beforeHeldRead = await heldProviderPublication('Publication while its pre-commit reading response is held',true);
+    const staleReading = holdResponse('page',input=>input.read?.kind==='observe'&&input.read.ids.includes(first.id));
+    try {
+        const reading = client.revalidate(0,[first.id]);
+        await Promise.race([staleReading.seen,reading.then(result=>{throw Error('The held reading did not issue: '+JSON.stringify({result,acquisition:client.acquisition(),lastRefresh:client.lastRefresh,now:Date.now()}));})]);
+        beforeHeldRead.release(); assert.equal((await beforeHeldRead.submitted).status,'saved');
+        assert.equal(client.document.roots.count.count,discussion.comments.length,'The completed effect is observed before its earlier snapshot is delivered');
+        staleReading.release(); await reading;
+        for(let attempt=0;client.counts.state(rootTarget('article')).stale&&attempt<500;attempt++)await new Promise(resolve=>setTimeout(resolve,10));
+        assert.equal(client.document.roots.count.count,discussion.comments.length,'A higher read-start age cannot overwrite an effect committed after that snapshot was captured');
+        assert.equal(client.counts.state(rootTarget('article')).stale,false,'The overlapping read resolves through current provider facts');
+    } finally { staleReading.release(); beforeHeldRead.restore(); }
+    const afterCommit = await heldProviderPublication('Provider response held after its commit',false);
+    try {
+      await Promise.race([(async()=>{
+        const committed = discussion.comments.find(comment=>comment.body==='Provider response held after its commit');
+        await json(await contribute({type:'edit',id:committed.id,body:'Subsequently edited provider publication'},other));
+        await json(await contribute({type:'reaction',subject:{kind:'comment',id:committed.id},reaction:'HEART',selected:true},other));
+        service.github.addComment(discussion,'An independent contribution after the held provider commit');
+        await client.restart(); await client.loadMore(); await client.loadMore(); await client.refreshViewer();
+        assert.equal(client.document.roots.count.count,discussion.comments.length,'A read during held provider response observes the subsequently changed total');
+        afterCommit.release(); assert.equal((await afterCommit.submitted).status,'saved');
+        for(let attempt=0;client.counts.state(rootTarget('article')).stale&&attempt<500;attempt++)await new Promise(resolve=>setTimeout(resolve,10));
+        assert.equal(client.counts.state(rootTarget('article')).stale,false,'An overlapping provider payload is reconciled through one current observation');
+        assert.equal(client.document.roots.count.count,discussion.comments.length,'A late provider payload cannot replace a genuinely later count with its earlier committed total');
+        assert.equal(client.document.nodes[committed.id].body,committed.body,'A late provider creation payload retains subsequently observed canonical writing');
+        assert.equal(client.reaction(committed.id,'HEART').confirmed.selected,true,'A late provider creation payload retains subsequently observed account selection');
+      })(),new Promise((_,reject)=>setTimeout(()=>reject(Error('Post-commit provider phase did not settle: '+JSON.stringify({operations:service.github.calls.slice(-8).map(call=>call.operation),acquisition:client.acquisition(),count:client.document.roots.count}))),5000))]);
+    } catch(error){console.error('native: post-commit first failure',error);throw error;
+    } finally { afterCommit.restore(); }
+    report.checks.push({workflow:'actual pending first creation and overlapping pre-commit reading, held reading delivered after confirmation, and post-commit provider delivery preserve canonical content/counts/account selection; confirmed writing releases before reconciliation',status:'passed'});
+    clientIdentity={capability:renamed,id:'U_reader'};client.changeIdentity();await client.refreshViewer();
+    const readyForReading = async()=>{
+        for(let attempt=0;(client.acquisition()||Date.now()<client.lastRefresh)&&attempt<500;attempt++)await new Promise(resolve=>setTimeout(resolve,10));
+        assert.equal(client.acquisition(),undefined,'A distinct held-reading scenario begins after the previous reading has settled');
+    };
     const heldRoot = holdResponse('contribute', input => input.action.type === 'comment' && input.action.body === 'First independent root');
     const rootA = client.newWriting({ kind: 'comment' }).show(); rootA.update('First independent root');
     const rootB = client.newWriting({ kind: 'comment' }).show(); rootB.update('Second independent root');
-    const publishingA = rootA.submit(); await heldRoot.seen;
+    const publishingA = rootA.submit(); await Promise.race([heldRoot.seen,publishingA.then(result=>{throw Error('Independent root did not reach its expected response: '+JSON.stringify(result));})]);
     const publishingB = await rootB.submit();
     assert.equal(publishingB.status, 'saved', 'An independent root completes while another confirmation is held');
     assert.equal(discussion.comments.filter(comment => ['First independent root', 'Second independent root'].includes(comment.body)).length, 2, 'Independent roots have two actual provider effects');
@@ -323,6 +438,7 @@ try {
     assert.equal((await replyB.submit()).status, 'saved', 'Replies to one collection dispatch independently');
     heldReply.release(); assert.equal((await replyingA).status, 'saved');
     assert.equal(first.replies.filter(reply => reply.body.includes('independent reply')).length, 2, 'Independent replies retain their actual intended destination');
+    await readyForReading();
     const oldRead = holdResponse('page', input => input.read?.kind === 'observe' && input.read.ids.includes(first.id));
     const freshness = client.revalidate(0, [first.id]); await oldRead.seen;
     const delayedHeart = holdResponse('contribute', input => input.action.type === 'reaction' && input.action.reaction === 'HEART');
@@ -337,6 +453,7 @@ try {
     assert.equal(first.votes.HEART.includes('reader'), false, 'The provider reaches the latest requested reaction state');
     assert.equal(client.reaction(first.id, 'HEART').confirmed.selected, false, 'A delayed reaction receipt cannot replace the newer desired state');
     assert.equal(client.reaction(first.id, 'ROCKET').confirmed.selected, true, 'Another reaction and an older full read cannot erase a newer confirmed group');
+    await readyForReading();
     const oldIdentityRead = holdResponse('page', input => input.read?.kind === 'observe' && input.read.ids.includes(first.id));
     const previousReading = client.revalidate(0, [first.id]); await oldIdentityRead.seen;
     const oldAuthorEffect = holdResponse('contribute', input => input.action.type === 'reaction' && input.action.reaction === 'EYES');
@@ -348,7 +465,7 @@ try {
     assert.equal(client.viewer, null, 'Account retirement removes previous authority immediately');
     await client.refreshViewer();
     oldAuthorEffect.release(); oldIdentityRead.release(); await Promise.allSettled([previousAuthor, previousReading]);
-    assert.equal(client.viewer.principal.id, 'U_visitor', 'An old reading response cannot restore the previous account');
+    assert.equal(client.viewer.principal, 'U_visitor', 'An old reading response cannot restore the previous account');
     assert.equal(client.reaction(first.id, 'EYES').selected, false, 'An old author receipt cannot project that author selection into the current account');
     assert.equal(first.votes.EYES.includes('reader'), true, 'Retiring a client account does not undo its already committed provider effect');
     clientIdentity = { capability: renamed, id: 'U_reader' }; client.changeIdentity(); await client.refreshViewer(); await client.loadMore();
@@ -464,7 +581,7 @@ try {
     report.checks.push({ workflow: 'ambiguous remote commit survives native restart and account rename without replay or ownership transfer; logout revokes', status: 'passed' });
     const open = await nativeService({origin,blog,entry,contentEntry,repositories:{},openHosting:{origins:[blog],category:'Announcements'}});
     try {
-      const call = (name,input,cap='',method='POST') => open.fetch(origin+'/api/v6/'+name+(method==='GET'?'?'+new URLSearchParams({input:JSON.stringify(input)}):''),{method,headers:{Origin:origin,...(method==='POST'?{'Content-Type':'application/json'}:{}),...(cap?{Authorization:'Bearer '+cap}:{})},...(method==='POST'?{body:JSON.stringify(input)}:{})});
+      const call = (name,input,cap='',method='POST') => open.fetch(origin+api+name+(method==='GET'?'?'+new URLSearchParams({input:JSON.stringify(input)}):''),{method,headers:{Origin:origin,...(method==='POST'?{'Content-Type':'application/json'}:{}),...(cap?{Authorization:'Bearer '+cap}:{})},...(method==='POST'?{body:JSON.stringify(input)}:{})});
       assert.equal((await call('counts',{repo:config.repo,origin:blog,targets:[rootTarget('article')]},'','GET')).status,403,'Open hosting requires a service-issued repository registration');
       assert.equal(open.github.calls.length,0,'Unknown open-hosting requests cannot initiate provider discovery');
       const registered = await json(await call('registration',{repo:config.repo,origin:blog,category:'Announcements'}));

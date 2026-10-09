@@ -15,7 +15,7 @@ export const Comment = v.object({
 });
 export const Replies = v.object({ totalCount: Count, pageInfo: PageInfo, nodes: v.pipe(v.array(Comment), v.maxLength(100)) });
 export const RootComment = v.object({ ...Comment.entries, replies: Replies, discussion: v.lazy(() => DiscussionIdentity) });
-export const Scope = v.object({ repository: v.object({ id: NodeID, nameWithOwner: v.string(), isPrivate: v.boolean() }), category: v.object({ id: NodeID, name: v.string() }) });
+export const Scope = v.object({ repository: v.object({ id: NodeID, nameWithOwner: v.string(), isPrivate: v.boolean() }), category:v.object({id:NodeID}) });
 export const DiscussionIdentity = v.object({ ...Scope.entries, id: NodeID, number: PositiveInteger });
 export const DiscussionAccess = v.object({ ...DiscussionIdentity.entries, locked: v.boolean() });
 export const DiscussionSummary = v.object({
@@ -34,10 +34,9 @@ export const OAuthToken = v.pipe(v.object({
     access_token: Token, token_type: v.optional(v.string()), expires_in: v.optional(PositiveInteger),
     refresh_token: v.optional(Token), refresh_token_expires_in: v.optional(PositiveInteger),
 }), v.check(x => !x.refresh_token || Boolean(x.refresh_token_expires_in)));
-export const Viewer = v.object({ node_id: NodeID });
+export const Viewer=v.object({node_id:NodeID,login:User.entries.login,avatar_url:User.entries.avatarUrl,html_url:User.entries.url});
 export const GraphQLError = v.object({ type: v.optional(v.string()), message: v.optional(v.string()), path: v.optional(v.array(v.union([v.string(), v.number()]))) });
 export const GraphQLEnvelope = v.object({ data: v.optional(v.unknown()), errors: v.optional(v.array(GraphQLError)) });
-export const CreateResponse = v.object({ createDiscussion: v.object({ discussion: DiscussionAccess }) });
 export type Comment = v.InferOutput<typeof Comment>;
 export type RootComment = v.InferOutput<typeof RootComment>;
 export type DiscussionSummary = v.InferOutput<typeof DiscussionSummary>;

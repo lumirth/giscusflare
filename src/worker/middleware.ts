@@ -7,6 +7,7 @@ import { Capability } from '../contracts/primitives.js';
 import type { AppEnv } from './types.js';
 import * as C from '../contracts/rpc.js';
 import { bodyBytes } from '../domain/body.js';
+import {API_PREFIX} from '../contracts/protocol.js';
 
 /** Read untrusted transport input once, before scope and schema validation. */
 export const boundedJSON: MiddlewareHandler<AppEnv> = async (c, next) => {
@@ -24,7 +25,7 @@ export const boundedJSON: MiddlewareHandler<AppEnv> = async (c, next) => {
   }else{
   const type = (c.req.header('Content-Type') || '').split(';')[0]?.trim().toLowerCase();
   requireCondition(type==='application/json'||type==='text/plain'&&c.req.path===C.operations.counts.path, 415, 'MEDIA_TYPE', 'Use application/json.');
-  const max=c.req.path==='/api/v6/content'?4*1024*1024:96*1024, declared = c.req.header('Content-Length');
+  const max=c.req.path===API_PREFIX+'/content'?4*1024*1024:96*1024, declared = c.req.header('Content-Length');
   if (declared) requireCondition(/^\d+$/.test(declared) && Number(declared) <= max, 413, 'BODY_TOO_LARGE', 'Request body is too large.');
   const bytes = await bodyBytes(c.req.raw.body, max, new AppError(400, 'BAD_INPUT', 'A JSON body is required.'), new AppError(413, 'BODY_TOO_LARGE', 'Request body is too large.'));
   try { value = JSON.parse(new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes)) as unknown; }

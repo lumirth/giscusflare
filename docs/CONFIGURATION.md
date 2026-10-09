@@ -56,7 +56,9 @@ See [Cloudflare usage](../FREE-TIER.md#reads-contributions-and-freshness) to cho
 
 Set a CSS URL as the theme in your embed or JavaScript configuration. It can come from your comments service or one of the repository's allowed websites. For CSS hosted elsewhere, add its origin to `customThemeOrigins`. Add external font origins there too.
 
-Native embedding also follows your website's Content Security Policy. See [customization](EXTENDING.md#replace-standard-controls) for theme and component options.
+Mona is inline SVG. Custom themes set `--mona-ink` and `--mona-face` for its two colors instead of supplying a loading GIF.
+
+Native embedding also follows your website's Content Security Policy. See [customization](API.md#content-and-counts) for theme and component options.
 
 ## Sort by reactions or reply counts
 
@@ -114,12 +116,12 @@ To let other website owners use your service with their own public repositories,
 }
 ```
 
-Website owners install your GitHub App on their public repository, then obtain a registration reference from POST `/api/v6/registration` with `{ repo, origin, category }`. Include the returned `registration` in native page options or `data-registration` on the iframe script. The service verifies installation/public scope before issuing this policy-bound reference; ordinary requests do not allocate repository state from arbitrary unregistered input. Owners must register again when the hosting policy or installation changes. Their traffic uses your Cloudflare and GitHub allowances.
+Website owners install your GitHub App on their public repository, then obtain a registration reference from POST `/api/v7/registration` with `{ repo, origin, category }`. Include the returned `registration` in native page options or `data-registration` on the iframe script. The service verifies installation/public scope before issuing this policy-bound reference; ordinary requests do not allocate repository state from arbitrary unregistered input. Owners must register again when the hosting policy or installation changes. Their traffic uses your Cloudflare and GitHub allowances.
 
 To obtain a reference from an open deployment:
 
 ```js
-const response = await fetch(service + '/api/v6/registration', {
+const response = await fetch(service + '/api/v7/registration', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ repo: 'you/comments', origin: location.origin, category: 'Announcements' }),

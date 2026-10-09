@@ -1,4 +1,6 @@
 import { html, render, nothing } from "lit-html";
+import { unsafeHTML } from "lit-html/directives/unsafe-html.js";
+import { mona } from "../mona.js";
 import { repeat } from "lit-html/directives/repeat.js";
 import type { Presentation, Comment, Discussion } from "../headless.js";
 import { strings, message } from "../i18n.js";
@@ -59,7 +61,7 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
         if (error?.name !== 'AbortError') context.report(error);
       });
     };
-    const loading = (label: string) => html`<div class="gsc-loading" role="status"><div class="gsc-loading-image" aria-hidden="true"></div><p class="gsc-loading-text">${label}</p></div>`;
+    const loading = (label: string) => html`<div class="gsc-loading" role="status"><div class="gsc-loading-image" aria-hidden="true">${unsafeHTML(mona)}</div><p class="gsc-loading-text">${label}</p></div>`;
     const replyTo = (id: string) => () => {
       if (!scope.signal.aborted) runtime.interactions.focus(runtime.writing({kind:'reply',id}).show().id);
     };
@@ -215,14 +217,13 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
             </ul>
             ${discussion ? actions(context, target, discussion) : nothing}
           </div>
-          ${!initial && (preparing || (runtime.ready && runtime.acquisition()?.purpose !== 'revalidate' && runtime.acquisition())) ? loading(t.loading) : nothing}
+          ${initial || preparing || (runtime.ready && runtime.acquisition()?.purpose !== 'revalidate' && runtime.acquisition()) ? loading(t.loading) : nothing}
           ${restartAvailable ? html`<p class="color-text-secondary text-sm">${runtime.continuity.reason || 'New comments are available.'}<button type="button" class="ml-2 color-text-link" @click=${attempt(() => runtime.restart())}>${t.retry}</button></p>` : nothing}
           <div class="gsc-timeline">${repeat(comments, node => node.id, comment)}</div>
           ${roots.cursor ? html`<div class="gsc-pagination"><button type="button" class="gsc-pagination-button"
             ?disabled=${runtime.acquisition()} @click=${attempt(() => runtime.loadMore())}>${t.more}</button></div>` : nothing}
         </section>`;
         render(html`
-          ${initial ? loading(t.loading) : nothing}
           ${saved.length ? html`<section class="flash" aria-label="Saved writing">
             <p>Choose writing to resume.</p>
             ${saved.map(record => html`<button type="button" class="btn mr-2 mb-2"

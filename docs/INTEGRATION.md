@@ -6,7 +6,7 @@
 
 ```html
 <script
-  src="https://your-comments.workers.dev/client.js"
+  src="https://your-comments.workers.dev/client.js?v=7"
   data-repo="you/comments"
   data-page-key="post:hello-world"
   data-theme="preferred_color_scheme"
@@ -16,6 +16,8 @@
 </script>
 ```
 
+When upgrading from v6, regenerate the embed or update its script URL to `client.js?v=7`. The new service versions its own fixed assets and revalidates their future requests. A previously cached unversioned third-party embed can retain its old 300-second freshness deadline; deployment cannot revoke that existing browser cache or update every already-open client. Rebuild package consumers against the matching release.
+
 Use your service address and registered repository. The loader uses an existing `.giscus` container or creates one after the script; `data-container` selects a container by ID. It resizes the iframe as its installed layout changes. Other appearance settings are `data-lang`, `data-reactions-enabled`, `data-input-position` and `data-emit-metadata`.
 
 ## Page identity
@@ -24,14 +26,14 @@ Use your service address and registered repository. The loader uses an existing 
 
 To display an existing discussion, use `data-discussion-number="123"` instead of a page key. Optional `data-discussion-id` verifies its immutable GitHub ID. Explicit discussion selection never creates a replacement when the discussion disappears. For an existing giscus site, use the known discussion number or the exact existing hash-backed page key and verify the selected discussion before switching embeds. There is no fuzzy title matching or strictness switch.
 
-The website origin authorizes embedding. The canonical page URL resolves relative content links and supplies the discussion backlink; the return URL sends authentication back to the current page. The return URL belongs to the authorized website origin; the rendering URL can preserve a separate canonical address, including in local previews. Open-hosting embeds additionally include the `data-registration` reference returned by POST `/api/v6/registration` for the configured hosting category. Paste it into setup’s embed generator or native page options; see [open hosting](CONFIGURATION.md#offer-open-hosting).
+The website origin authorizes embedding. The canonical page URL resolves relative content links and supplies the discussion backlink; the return URL sends authentication back to the current page. The return URL belongs to the authorized website origin; the rendering URL can preserve a separate canonical address, including in local previews. Open-hosting embeds additionally include the `data-registration` reference returned by POST `/api/v7/registration` for the configured hosting category. Paste it into setup’s embed generator or native page options; see [open hosting](CONFIGURATION.md#offer-open-hosting).
 
 ## Native rendering
 
 Install an archive from the chosen [release](https://github.com/lumirth/giscusflare/releases), commit its lockfile and use the matching service version:
 
 ```sh
-npm install https://github.com/lumirth/giscusflare/releases/download/v6.0.0/giscusflare-6.0.0.tgz
+npm install https://github.com/lumirth/giscusflare/releases/download/v7.0.0/giscusflare-7.0.0.tgz
 ```
 
 ```html
@@ -58,19 +60,7 @@ const comments = mountComments(document.querySelector('#comments'), {
 
 ## Choose content delivery
 
-Select a complete content profile instead of pairing unrelated renderer and transport settings:
-
-```js
-import { preparedContent } from 'giscusflare/content';
-
-const comments = mountComments(target, {
-  service,
-  page,
-  content: preparedContent(),
-});
-```
-
-`preparedContent()` uses your service's separately deployed, commenter-safe producer. `stockContent({ service })` selects the standard GitHub interpretation, required styles and controls. `browserContent(renderer)` deliberately interprets canonical Markdown in the browser. See [customization](EXTENDING.md) for producer deployment and feature replacement.
+The native default is the stock rich-content profile. For a site-owned compiler, pass `content: preparedContent({ resources })`; [customization](EXTENDING.md) gives the complete producer/consumer example. [API](API.md#content-and-counts) defines browser rendering and replacement contracts.
 
 ## Counts on listings
 
@@ -90,8 +80,6 @@ A string subscription selects the exact page’s root count. Pass a typed `Count
 
 Iframe embedding needs the service in `script-src`, `style-src` and `frame-src`; native rendering needs it in `connect-src`. Profile styles, modules, images and optional browser compilers follow the website's own CSP. The service iframe's policy does not apply to DOM installed directly in your page.
 
-## Reading and writing recovery
+## Navigation and recovery
 
-Background observations retain loaded traversal; deliberate restart or sorting starts a new one. Counts, readable bodies, optional enhancements and account access have independent availability. Open tabs refresh on configured focus/reconnect events rather than polling.
-
-Writing records retain independent intent IDs and immutable destinations. Issued unresolved submissions keep their original author, body and key through reload and sign-out. Readers choose saved records explicitly and retry as the original author. Optional storage can fail without destroying current in-memory writing. Disable persistence with `data-writing-recovery="off"` or `writingRecovery: false`. See the [API](API.md) for recovery and action commands.
+Call `dispose()` when the mount leaves the page. For client-side navigation, use `replacePage(nextPage)` and rebind subscriptions to the returned owner. Set `writingRecovery: false` or `data-writing-recovery="off"` to disable retention. [API](API.md#actions-reactions-and-session) describes independent records, original-author retries and recovery commands.

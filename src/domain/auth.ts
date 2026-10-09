@@ -1,7 +1,9 @@
 import { parse } from '../contracts/parse.js';
 import * as R from '../contracts/requests.js';
-import * as C from '../contracts/rpc.js';
+import type * as C from '../contracts/rpc.js';
 import * as S from '../contracts/storage.js';
+import {User} from '../contracts/primitives.js';
+import type {Viewer,Person} from '../contracts/document.js';
 import type { OAuthToken } from '../contracts/github.js';
 import type { PublicConfig, RepositoryPolicy, SecretConfig } from '../contracts/config.js';
 import { parentOrigin } from './authorization.js';
@@ -30,8 +32,7 @@ export class Auth {
     return { accessToken: data.access_token, accessExpires: now + (data.expires_in ? data.expires_in * 1000 : 30 * DAY),
       refreshToken: data.refresh_token || null, refreshExpires: data.refresh_token_expires_in ? now + data.refresh_token_expires_in * 1000 : 0 };
   }
-  async prepare(input: C.Input<'authPrepare'>): Promise<{ attempt: string; authorizeURL: string }> {
-    const request = input.request;
+  async prepare(request: C.Input<'authPrepare'>,browserCookie:string): Promise<{ attempt: string; authorizeURL: string }> {
     const origin=request.origin;
     const openerOrigin = request.openerOrigin || this.config.origin;
     requireCondition(openerOrigin === this.config.origin || openerOrigin === origin, 403, 'ORIGIN', 'The sign-in opener must be the service or authorized page.');
@@ -42,7 +43,7 @@ export class Auth {
     requireCondition(new URL(request.returnURL).origin===origin,403,'ORIGIN','The return URL belongs to another website.');
     const url=new URL(request.returnURL); url.hash = ''; url.searchParams.delete('giscus');
     const record: S.OAuthAttempt = { origin, returnURL: url.toString(), mode: request.mode, openerOrigin,
-      sessionID: request.proof, githubVerifier, cookieHash: await hash(input.browserCookie), created: now, expires: now + TEN_MINUTES,
+      sessionID: request.proof, githubVerifier, cookieHash: await hash(browserCookie), created: now, expires: now + TEN_MINUTES,
       status: 'pending' };
     await this.store.putSecret('auth:' + attempt, S.OAuthAttempt, record, this.keys.sessionSecret, this.#purpose, record.expires);
     const authorize = new URL('https://github.com/login/oauth/authorize');
@@ -63,11 +64,11 @@ export class Auth {
   async #saveAttempt(id: string, data: S.OAuthAttempt): Promise<void> {
     await this.store.putSecret('auth:' + id, S.OAuthAttempt, data, this.keys.sessionSecret, this.#purpose, data.expires);
   }
-  async callback(input: C.Input<'authCallback'>): Promise<CallbackResult> {
+  async callback(input: C.Input<'authCallback'>,browserCookie:string): Promise<CallbackResult> {
     return this.store.lock('auth:' + input.attempt, async () => {
       const attempt = await this.#attempt(input.attempt);
       requireCondition(attempt, 401, 'OAUTH', 'This sign-in attempt expired or was already used. Start again.');
-      requireCondition(input.browserCookie && equal(await hash(input.browserCookie), attempt.cookieHash), 401, 'OAUTH', 'Sign-in must finish in the browser that started it.');
+      requireCondition(browserCookie && equal(await hash(browserCookie), attempt.cookieHash), 401, 'OAUTH', 'Sign-in must finish in the browser that started it.');
       requireCondition(attempt.status === 'pending', 409, 'OAUTH', 'This sign-in callback was already used.');
       const view = (status: 'ready' | 'denied'): CallbackResult => ({ status, attempt: input.attempt, repo: this.repo, returnURL: attempt.returnURL, mode: attempt.mode, openerOrigin: attempt.openerOrigin || this.config.origin });
       if (input.denied) { this.store.delete('auth:' + input.attempt); return view('denied'); }
@@ -75,13 +76,14 @@ export class Auth {
       attempt.status = 'exchanging'; await this.#saveAttempt(input.attempt, attempt);
       try {
         const token = await this.github.exchange({ code: input.code, code_verifier: attempt.githubVerifier, redirect_uri: this.config.origin + '/auth/callback' });
-        const principal = await this.github.principal(token.access_token), fields = this.#fields(token);
+        const identity=await this.github.identity(token.access_token),principal=identity.id,fields=this.#fields(token);
         const session = { principal, credentials: fields, origin: attempt.origin,
           expires: Math.min(this.store.now() + 30 * DAY, fields.refreshToken ? fields.refreshExpires : fields.accessExpires) };
         await this.store.lock('session:' + attempt.sessionID, async () => {
           requireCondition(attempt.expires > this.store.now(), 401, 'OAUTH', 'This sign-in expired. Start again.');
           requireCondition(!this.store.get('session:' + attempt.sessionID, S.EncryptedRecord), 409, 'OAUTH', 'This session already exists. Start a new sign-in.');
           await this.store.consumeSecret('auth:' + input.attempt, 'session:' + attempt.sessionID, S.Session, session, this.keys.sessionSecret, this.#purpose, session.expires);
+          this.remember(identity);
         });
         return view('ready');
       } catch (error) {
@@ -135,6 +137,12 @@ export class Auth {
       const expected=this.store.get(key,S.EncryptedRecord);
       if(expected&&data?.credentials?.accessToken===token)await this.store.putSecret(key,S.Session,{...data,credentials:null},this.keys.sessionSecret,this.#purpose,data.expires,expected);
     });
+  }
+  profile(principal:string):Person|null{return this.store.get('profile:'+principal,User);}
+  remember(viewer:Viewer):Person{
+    const {id,...profile}=viewer;
+    this.store.put('profile:'+id,User,profile,this.store.now()+30*DAY);
+    return profile;
   }
   async logout(capability: string, origin: string): Promise<{ ok: true }> {
     const allowedOrigin=origin;

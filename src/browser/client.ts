@@ -1,7 +1,10 @@
+import {assetURL} from '../contracts/protocol.js';
 import {hostStorage} from './host-storage.js';
 import {browserWritingStore} from './writing-store.js';
 import {fetchPolicy} from '../conversation/fetch-policy.js';
 import {conversationSettings} from './options.js';
+import {validLogin} from './session.js';
+import {recoveredWriting} from '../conversation/writing.js';
 import type {ConversationInitialization} from './runtime.js';
 (() => {
   const script = document.currentScript;
@@ -35,12 +38,12 @@ import type {ConversationInitialization} from './runtime.js';
   let host = (data.container ? document.getElementById(data.container) : document.querySelector('.giscus')) as Host | null;
   if (!host) { host = document.createElement('div');host.className = 'giscus';script.after(host); }
   host.__gwCleanup?.();host.replaceChildren(frame);
-  if (![...document.querySelectorAll<HTMLLinkElement>('link[data-gw-style]')].some(link => link.dataset.gwStyle === service)) {
-    const style = document.createElement('link');style.rel = 'stylesheet';style.href = service + '/embed.css';style.dataset.gwStyle = service;document.head.append(style);
-  }
+  let style = [...document.querySelectorAll<HTMLLinkElement>('link[data-gw-style]')].find(link => link.dataset.gwStyle === service);
+  if (!style) { style = document.createElement('link');style.rel = 'stylesheet';style.dataset.gwStyle = service;document.head.append(style); }
+  style.href = service + assetURL('/embed.css');
   persistence.usePage(config);
   const post = (value: unknown) => frame.contentWindow?.postMessage({giscus: value}, service);
-  const initialize = (init: ConversationInitialization) => post({init});
+  const initialize = (init: ConversationInitialization & {availableWriting?: readonly import('../conversation/writing.js').SavedWriting[]}) => post({init});
   let initialization = 0, interrupted = false;
   const interrupt = () => { interrupted = true; };
   for (const name of ['pointerdown', 'keydown', 'wheel', 'touchstart']) window.addEventListener(name, interrupt, {signal: lifetime.signal, passive: true});
@@ -57,13 +60,18 @@ import type {ConversationInitialization} from './runtime.js';
       const generation = ++initialization, returning = handoff;handoff = undefined;
       initialize({session: persistence.session(), fetching, handoff: returning, ...(composer ? {position: {composer}} : {})});composer = undefined;
       void persistence.recover().then(writing => {
-        if (!lifetime.signal.aborted && generation === initialization) initialize({writing});
+        if (!lifetime.signal.aborted && generation === initialization) initialize({writing,availableWriting:persistence.records()});
       }).catch(cause => {
-        if (!lifetime.signal.aborted && generation === initialization) initialize({writing: {records: [], selected: [], available: [], error: cause instanceof Error ? cause.message : 'Unable to restore writing.'}});
+        if (!lifetime.signal.aborted && generation === initialization) initialize({writing: {records: [], selected: [], error: cause instanceof Error ? cause.message : 'Unable to restore writing.'}});
       });
     }
     if (typeof message.resizeHeight === 'number' && Number.isFinite(message.resizeHeight)) frame.style.height = `${Math.min(100000, Math.max(80, Math.ceil(message.resizeHeight)))}px`;
-    persistence.receive(message);
+    if (typeof message.session === 'string') persistence.saveSession(message.session);
+    if (message.clearPending === true || typeof message.clearPending === 'string') persistence.clearPending(message.clearPending === true ? undefined : message.clearPending);
+    if (validLogin(message.pending)) { const pending = message.pending as import('./session.js').Login & {composer?: unknown};persistence.pendingLogin({...pending,composer:typeof pending.composer === 'string' ? pending.composer : undefined}); }
+    if (Array.isArray(message.writingSelected) && message.writingSelected.every(id => typeof id === 'string')) persistence.selectWriting(message.writingSelected);
+    if (message.writingRecord) { const record = recoveredWriting([message.writingRecord])[0];if (record) persistence.saveWriting(record); }
+    if (typeof message.writingRemoved === 'string') persistence.removeWriting(message.writingRemoved);
     if (typeof message.restoreWriting === 'string') {
       const id = message.restoreWriting;
       void persistence.restoreWriting(id).then(record => {
