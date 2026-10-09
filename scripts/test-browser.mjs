@@ -97,8 +97,9 @@ try {
           for (const capability of capabilities) for (const request of requests) assert.ok(!request.url.includes(capability) && !request.referer.includes(capability) && !request.body.includes(capability), 'the preallocated capability never travels in URLs, referrers or request bodies');
           const resize = async () => {
             await textarea.scrollIntoViewIfNeeded();
+            const grip = await textarea.boundingBox();
+            await textarea.hover({ position: { x: grip.width - 10, y: grip.height - 10 } });
             const box = await textarea.boundingBox();
-            await page.mouse.move(box.x + box.width - 10, box.y + box.height - 10);
             await page.mouse.down();
             await page.mouse.move(box.x + box.width - 10, box.y + box.height + 70, { steps: 8 });
             await page.mouse.up();
