@@ -13,6 +13,7 @@ import { AppError, failure, requireCondition, unwrap } from '../domain/errors.js
 import { boundedJSON, rateLimit } from './middleware.js';
 import { authHTML, json, security, widgetHTML } from './html.js';
 import type { AppEnv, Env } from './types.js';
+import { version } from '../../package.json';
 
 async function invoke<K extends C.Operation>(env: Env, name: K, input: C.Input<K>) {
   const call = input as C.Input<C.Operation>;
@@ -46,7 +47,7 @@ app.get('/api/v5/setup',c=>{
   try{configuration(c.env);secrets(c.env);configured=true;}catch{/* First deployment opens setup. */}
   return security(json({configured,origin:new URL(c.req.url).origin}));
 });
-app.get('/healthz',c=>security(json({status:'ok',version:'5.0.1'})));
+app.get('/healthz',c=>security(json({status:'ok',version})));
 app.use('*', async (c, next) => {
   if(!/^\/(?:api\/|auth\/|(?:[a-z-]+\/)?widget(?:$|\/))/.test(c.req.path)){await next();return;}
   const config = configuration(c.env); c.set('config', config);
