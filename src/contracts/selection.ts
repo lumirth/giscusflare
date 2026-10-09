@@ -1,6 +1,3 @@
 import type { Selection } from './requests.js';
-/** Strip presentation and creation values from a page's data identity. */
-export function selection(page: Selection): Selection {
-  const { repo, term, number, strict, origin } = page;
-  return { repo, term, number, strict, origin };
-}
+/** Strip presentation and creation values from canonical selection. */
+export function selection(page:Selection):Selection { const {repo,selector,origin,pageURL,returnURL,registration}=page; return {repo,selector,origin,pageURL,returnURL,...(registration?{registration}:{})}; }

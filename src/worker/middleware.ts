@@ -5,6 +5,7 @@ import { hash } from '../domain/crypto.js';
 import { parse } from '../contracts/parse.js';
 import { Capability } from '../contracts/primitives.js';
 import type { AppEnv } from './types.js';
+import * as C from '../contracts/rpc.js';
 import { bodyBytes } from '../domain/body.js';
 
 /** Read untrusted transport input once, before scope and schema validation. */
@@ -12,7 +13,7 @@ export const boundedJSON: MiddlewareHandler<AppEnv> = async (c, next) => {
   requireCondition(['GET','POST'].includes(c.req.method),405,'METHOD','Use GET to read or POST to write.');
   const origin = c.req.header('Origin') || (c.req.method==='GET'?new URL(c.req.url).origin:undefined);
   const native = origin !== c.get('config').origin;
-  requireCondition(origin && (!native || c.req.path !== '/api/v4/auth/prepare'), 403, 'ORIGIN', 'This operation must originate at the comments service.');
+  requireCondition(origin && (!native||!Object.values(C.operations).some(operation=>operation.path===c.req.path&&operation.sameOrigin)), 403, 'ORIGIN', 'This operation must originate at the comments service.');
   const site = c.req.header('Sec-Fetch-Site');
   requireCondition(native || !site || site === 'same-origin', 403, 'ORIGIN', 'Invalid service request origin.');
   let value:unknown;
@@ -22,23 +23,18 @@ export const boundedJSON: MiddlewareHandler<AppEnv> = async (c, next) => {
     try{value=JSON.parse(url.searchParams.get('input')!);}catch{throw new AppError(400,'BAD_INPUT','Invalid read input.');}
   }else{
   const type = (c.req.header('Content-Type') || '').split(';')[0]?.trim().toLowerCase();
-  requireCondition(type === 'application/json', 415, 'MEDIA_TYPE', 'Use application/json.');
-  const max = 96 * 1024, declared = c.req.header('Content-Length');
+  requireCondition(type==='application/json'||type==='text/plain'&&c.req.path===C.operations.counts.path, 415, 'MEDIA_TYPE', 'Use application/json.');
+  const max=c.req.path==='/api/v6/content'?4*1024*1024:96*1024, declared = c.req.header('Content-Length');
   if (declared) requireCondition(/^\d+$/.test(declared) && Number(declared) <= max, 413, 'BODY_TOO_LARGE', 'Request body is too large.');
   const bytes = await bodyBytes(c.req.raw.body, max, new AppError(400, 'BAD_INPUT', 'A JSON body is required.'), new AppError(413, 'BODY_TOO_LARGE', 'Request body is too large.'));
   try { value = JSON.parse(new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes)) as unknown; }
   catch { throw new AppError(400, 'BAD_INPUT', 'The request body is not valid JSON.'); }
   }
   if (native) {
-    // Preflight permits known hosts; the actual request also binds that host to
-    // this repository and the page in the request. No ambient cookie authority.
-    const scope = value && typeof value === 'object' ? value as Record<string, unknown> : {};
-    const raw = scope.config && typeof scope.config === 'object' ? scope.config as Record<string, unknown> : scope;
-    const repositories = c.get('config').repositories;
-    requireCondition(typeof raw.repo === 'string' && typeof raw.origin === 'string', 403, 'ORIGIN', 'A page and repository are required.');
-    const repoPolicy = Object.hasOwn(repositories,raw.repo)?repositories[raw.repo]:c.get('config').openHosting;
-    let pageOrigin = ''; try { pageOrigin = new URL(raw.origin).origin; } catch { /* rejected below */ }
-    requireCondition((repoPolicy?.origins==='*'||repoPolicy?.origins.includes(origin)) && pageOrigin === origin, 403, 'ORIGIN', 'This page is not allowed to use this repository.');
+    // The route owns repository admission. Bind its declared website to transport.
+    const scope=value&&typeof value==='object'?value as Record<string,unknown>:{};
+    const raw=scope.config&&typeof scope.config==='object'?scope.config as Record<string,unknown>:scope;
+    requireCondition(raw.origin===origin,403,'ORIGIN','The declared website does not match this request.');
   }
   c.set('input', value);
   const header = c.req.header('Authorization');

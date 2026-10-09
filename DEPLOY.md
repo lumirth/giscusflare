@@ -1,70 +1,74 @@
 # Deploy giscusflare
 
-Deploy the comments service to your Cloudflare account, connect GitHub, then add the embed code to your website. You need a Cloudflare account and a public GitHub repository with Discussions enabled.
+Deploy the API and its internal content Worker to Cloudflare, register a public GitHub discussion repository, then generate your website embed. You need a Cloudflare account and a public repository with Discussions enabled.
 
 ## Build and deploy from source
 
-Install the locked dependencies with `npm ci`, configure `wrangler.jsonc`, then run `npm run deploy:check`. Deploy with `npm run deploy`. The public deploy button uses the source revision available on GitHub.
+Install locked dependencies with `npm ci` and run `npm run build`. The standard content producer has its own configuration in `wrangler.content.jsonc`; deploy it with `npm run deploy:content`. Add its service name as the API's `CONTENT` binding:
 
-For an existing service, preserve its Worker identity, Durable Object binding, platform migration history and secrets. Update the service and website package together when their public protocol changes.
+```json
+"services": [{ "binding": "CONTENT", "service": "giscusflare-content" }]
+```
 
-## Deploy to Cloudflare
+The content Worker has no public route or commenter credentials. Choose unique Worker names for your deployment and keep the binding consistent. The API's source config owns static assets and the Repository Durable Object. After configuring GitHub and repository registration below, run `npm run deploy:check` and deploy the API with `npm run deploy`.
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/lumirth/giscusflare)
-
-The button creates a copy of the giscusflare source and deploys a Worker. Open its `workers.dev` address to reach the setup page. You will use that setup page to connect GitHub and generate your website's embed.
-
-Choose the repository where you want comments to appear. It can be an existing repository, a dedicated comments repository or the source copy you just created. Enable Discussions in its GitHub settings.
+The [Deploy to Cloudflare button](https://deploy.workers.cloudflare.com/?url=https://github.com/lumirth/giscusflare) creates a source copy and initial API service. Open its address to reach setup; provision the internal content Worker and binding before using the standard rich-content profile.
 
 ## Connect GitHub
 
-1. Enter your website address on the setup page and follow its link to register a GitHub App. It fills in the callback address and required permissions.
-2. On GitHub, clear **Allow wildcard matching** for the callback address and register the App. Keep the generated public visibility so visitors can sign in.
-3. Note the App ID and client ID. Generate a client secret and download a private key.
-4. Install the App on your comments repository.
-5. Choose a discussion category. Announcements works well if you want new discussions to start through your website.
+1. Enter your website address on setup and follow its GitHub App registration link.
+2. Register a public App, with Discussions read/write and Metadata read permissions. Clear callback wildcard matching.
+3. Record the App ID and client ID, create a client secret, and download its private key.
+4. Install the App on the chosen public repository and enable Discussions.
+5. Choose its exact category name, such as Announcements.
+
+The callback is your service origin plus `/auth/callback`. Enter App ID and client ID in the source configuration or setup form. Store the downloaded private key locally for the registration command and as an encrypted Worker secret.
+
+## Register the repository
+
+Repository setup resolves its immutable repository, installation and category IDs once. Run the operator command against your source configuration:
+
+```sh
+npm run register -- --config wrangler.jsonc --secrets .dev.vars --repo you/comments --category Announcements
+```
+
+The secrets file supplies the existing `GITHUB_PRIVATE_KEY`; alternatively supply that environment variable. The command reads the App ID from `config.vars.GITHUB_APP_ID` and prints only public registration facts. Configuration files use JSON syntax. Paste that returned JSON into setup's registration field, or copy repositoryId, installationId and categoryId into the repository policy:
+
+```json
+{
+  "you/comments": {
+    "repositoryId": "COPY_FROM_REGISTRATION",
+    "installationId": 123456,
+    "categoryId": "COPY_FROM_REGISTRATION",
+    "category": "Announcements",
+    "origins": ["https://your-site.example"]
+  }
+}
+```
+
+Use the actual returned installation ID as a number. Normal reads reuse this registration and one credential owner; they do not repeat installation discovery. Current provider results still establish scope, visibility and permissions. Re-register when the App installation or selected category changes. Open hosting uses an explicit installation-backed registration reference; see [configuration](docs/CONFIGURATION.md#offer-open-hosting).
 
 ## Configure Cloudflare
 
-Return to the setup page and enter the App ID, client ID, repository, category and website address. Generate the configuration values.
-
-Open your Worker in the Cloudflare dashboard, then **Settings → Variables and Secrets**. Copy these generated values into its variables:
+Set public variables in source or the API Worker's **Settings → Variables and Secrets**:
 
 | Variable | Value |
 | --- | --- |
-| `PUBLIC_ORIGIN` | Your service's address, without a trailing slash |
-| `GITHUB_APP_ID` | The numeric App ID shown by GitHub |
-| `GITHUB_CLIENT_ID` | The App's client ID |
-| `REPOSITORIES` | The generated JSON, including your repository, category and allowed website |
+| `PUBLIC_ORIGIN` | Service origin, without a trailing slash |
+| `GITHUB_APP_ID` | Numeric App ID as a string |
+| `GITHUB_CLIENT_ID` | App client ID |
+| `REPOSITORIES` | Registered repository policies with exact website origins |
 
-Add these as encrypted secrets:
+Store `GITHUB_CLIENT_SECRET`, `GITHUB_PRIVATE_KEY` and `SESSION_SECRET` as encrypted secrets. The private key is the complete downloaded PEM; setup generates the random session key. Setup uses its own service origin and accepts repository, website, category, App ID, client ID and the registration JSON. It does not retain those values on your behalf.
 
-| Secret | Value |
-| --- | --- |
-| `GITHUB_CLIENT_SECRET` | The client secret generated on GitHub |
-| `GITHUB_PRIVATE_KEY` | The full contents of the downloaded PEM file |
-| `SESSION_SECRET` | The random key generated on the setup page |
+Deploy the configured API and open setup again. Choose an exact page key or explicit existing discussion number, then generate the script. Test anonymous reading, prepared preview and a real sign-in/contribution against GitHub. The setup/configuration check does not establish authenticated participation.
 
-Save and deploy the changes. For more than one website, add each exact origin to the repository's `origins` list. For example, `https://example.com` and `https://www.example.com` are separate entries.
+## Update an existing deployment
 
-## Add comments
+Preserve Worker names, routes, Repository binding/class identity, platform migration history, session secret and existing repository IDs. Browser and API packages must agree on protocol 6. Existing durable addresses, receipt identities and browser storage formats remain stable; there is no runtime migration/importer.
 
-Return to the setup page. Enter your repository and website, choose how pages map to discussions, and generate the embed code.
-
-Paste the script where you want comments to appear. Open your website, sign in and post a comment. The comment should appear both on your website and in the selected GitHub discussion category.
-
-For JavaScript embedding and page identifiers, see [website integration](docs/INTEGRATION.md). See [configuration](docs/CONFIGURATION.md) to add websites or change service settings.
+Build immutable profile resources, upload matching content/API/website versions, then activate content, API and website in that order. Cloudflare service deployments are separate; record exact version IDs and complete or roll back a partial publication deliberately. A new Worker needs one initial deployment before inactive version uploads are supported. [Deployment management](https://developers.cloudflare.com/workers/versions-and-deployments/deployment-management/).
 
 ## Use a custom domain
 
-To use an address such as `comments.example.com`, add a Custom Domain in the Worker's **Settings → Domains & Routes**. Use a domain in an active Cloudflare zone.
-
-Update these together:
-
-- `PUBLIC_ORIGIN` to `https://comments.example.com`.
-- The GitHub App's callback URL to `https://comments.example.com/auth/callback`.
-- The service address in your website's embed code or JavaScript configuration.
-
-See [operations](docs/OPERATIONS.md#update-and-restore) when updating your deployment.
-
-Cloudflare documents [Deploy to Cloudflare](https://developers.cloudflare.com/workers/platform/deploy-buttons/) and [custom domains](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/). GitHub documents the [App registration parameters](https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-using-url-parameters) used by setup.
+Add a Custom Domain to the API Worker's **Settings → Domains & Routes** using an active Cloudflare zone. Update PUBLIC_ORIGIN, the GitHub callback and website service URL together. Keep the content Worker internal. Follow [operations](docs/OPERATIONS.md) for verification and rollback.

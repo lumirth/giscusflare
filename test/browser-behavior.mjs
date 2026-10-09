@@ -3,18 +3,19 @@ import assert from 'node:assert/strict';
 /** Custom consumers and content run against the same native service as the embedding journey. */
 export async function browserBehavior({ browser, service, blog, report, capability }) {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  await page.context().route(service + '/api/v6/**', route => route.continue({headers:{...route.request().headers(),'CF-Connecting-IP':browser.browserType().name()==='chromium'?'192.0.2.180':'192.0.2.181'}}));
   const errors = [], providerPreviews = [], contentReads = [];
   page.on('request', request => {
     const url = new URL(request.url());
-    if (url.pathname === '/api/v5/preview') providerPreviews.push(url.href);
-    if (url.pathname === '/api/v5/page') contentReads.push(JSON.parse(url.searchParams.get('input')));
+    if (url.pathname === '/api/v6/content' && request.method() === 'POST' && request.postDataJSON().inputs?.some(input => input.purpose === 'preview')) providerPreviews.push(url.href);
+    if (url.pathname === '/api/v6/page') contentReads.push(JSON.parse(url.searchParams.get('input')));
   });
   page.on('pageerror', error => errors.push(error.message));
   try {
     await page.goto(blog + '/__behavior');
     await page.evaluate(async ({ service, blog, capability }) => {
       const api = await import(service + '/headless.js');
-      const { mountContent } = await import(service + '/content.js');
+      const { mountContent, browserContent, preparedHTML } = await import(service + '/content.js');
       const { githubContent } = await import(service + '/github-content.js');
       const { forumPresentation } = await import(service + '/forum-example.js');
       const check = (condition, message) => { if (!condition) throw new Error(message); };
@@ -50,6 +51,12 @@ export async function browserBehavior({ browser, service, blog, report, capabili
       const failedCode = await content('<pre><code>fn main() {}</code></pre>', { code: async () => { throw Error('offline'); } });
       await new Promise(resolve => setTimeout(resolve, 0));
       check(failedCode.querySelector('pre').textContent === 'fn main() {}', 'Failed enhancement keeps readable code');
+      const enhancementHost = document.createElement('div'); contentHost.append(enhancementHost);
+      const enhancement = mountContent(enhancementHost, preparedHTML({resources:{revision:'qualified-resources-1',styles:[],scripts:[blog + '/missing-content-enhancement.js']}}), { signal: lifetime.signal });
+      await enhancement.update({ markdown: 'Canonical source', prepared: { html: '<p>Readable prepared output</p>', revision: 'qualified-1', resources:'qualified-resources-1' }, repo: 'example/comments', pageURL: blog + '/article', purpose: 'comment' });
+      check(enhancement.ready && enhancementHost.textContent === 'Readable prepared output', 'Prepared output becomes readable independently of optional enhancement');
+      await new Promise(resolve => setTimeout(resolve, 0));
+      check(enhancementHost.textContent === 'Readable prepared output', 'Enhancement failure cannot erase installed readable output');
       let copied;
       Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async value => { copied = value; } } });
       const code = await content('<pre><code>first line\n  second line\n' + 'a'.repeat(200) + '</code></pre>');
@@ -78,6 +85,28 @@ export async function browserBehavior({ browser, service, blog, report, capabili
       lifetime.abort();
       contentHost.remove();
 
+      const contentScope = new AbortController(), batches = [], ownedHosts = [];
+      const preparedOwner = api.createContentOwner({repo:'example/comments',pageURL:blog+'/article',profile:api.preparedContent(),signal:contentScope.signal,batch(inputs,signal) {
+        return new Promise(resolve => batches.push({inputs,signal,resolve}));
+      }});
+      const ownedMount = () => { const host = document.createElement('div'); document.body.append(host); ownedHosts.push(host); return {host,mount:preparedOwner.mount(host)}; };
+      const a = ownedMount(), b = ownedMount(), failed = ownedMount();
+      const sameInput = {markdown:'Shared prepared source',purpose:'preview',draft:'shared'};
+      const first = a.mount.update(sameInput), sibling = b.mount.update(sameInput), bad = failed.mount.update({markdown:'Failed prepared source',purpose:'preview',draft:'failed'}).catch(() => {});
+      await until(() => batches.length === 1);
+      check(batches[0].inputs.length === 2,'Concurrent mounts share one exact preparation while batching independent input');
+      a.mount.dispose(); await first;
+      check(!batches[0].signal.aborted,'Retiring one mount cannot cancel preparation still owned by a sibling');
+      batches[0].resolve({results:batches[0].inputs.map(input=>input.markdown==='Failed prepared source'?{error:'Independent preparation failed'}:{prepared:{html:'<p>Shared prepared output</p>',revision:'qualified-owner'}})});
+      await Promise.all([sibling,bad]);
+      check(!a.host.hasChildNodes() && b.host.textContent==='Shared prepared output','A shared result publishes only into the surviving mount');
+      check(failed.host.textContent.includes('Failed prepared source') && failed.host.querySelector('button')?.textContent==='Retry','One failed batch row retains readable source and recovery without discarding its successful sibling');
+      const last = ownedMount(), pending = last.mount.update({markdown:'Retired pending source',purpose:'preview',draft:'retired'});
+      await until(() => batches.length === 2); last.mount.dispose(); await pending;
+      check(batches[1].signal.aborted && !last.host.hasChildNodes(),'The final preparation owner cancels acquisition and cannot publish late output');
+      batches[1].resolve({results:[{prepared:{html:'<p>Late output</p>',revision:'qualified-owner'}}]});
+      contentScope.abort(); for (const host of ownedHosts) host.remove();
+
       const target = document.createElement('div');
       document.body.append(target);
       let editor, enhancementSignal, releaseEnhancement, releases = 0;
@@ -92,7 +121,7 @@ export async function browserBehavior({ browser, service, blog, report, capabili
         void mountContent(body, githubContent({ math: (_feature, context) => {
           enhancementSignal = context.signal;
           return new Promise(resolve => { releaseEnhancement = resolve; });
-        } }), { signal: scope.signal }).update({ markdown: 'x', html: '<math-renderer>x</math-renderer>', purpose: 'comment', repo: owner.config.repo, pageURL: owner.config.origin });
+        } }), { signal: scope.signal }).update({ markdown: 'x', html: '<math-renderer>x</math-renderer>', purpose: 'comment', repo: owner.config.repo, pageURL: owner.config.pageURL });
       };
       const rendering = { disposals: 0, updates: 0, inputs: [] }, waitingUpdates = new Map();
       let coldPreparation, coldComment;
@@ -112,7 +141,7 @@ export async function browserBehavior({ browser, service, blog, report, capabili
           rendering.inputs.push(next); return () => { source.textContent = next.markdown; };
         }, dispose() { rendering.disposals++; } };
       };
-      const mounted = api.mountPresentation(target, { service, page: { repo: 'example/comments', origin: blog + '/article', term: 'article' }, content: localMarkdown, contentSource: 'source', fetching: { onFocus: true, staleAfterMs: 0 }, writingRecovery: false, host: { emit() {}, navigate() { throw Error('Unexpected custom-consumer navigation'); } } }, custom);
+      const mounted = api.mountPresentation(target, { service, page: { repo: 'example/comments', origin: blog, pageURL: blog + '/article', returnURL: blog + '/article', selector: { kind: 'page', key: 'article' } }, content: browserContent(localMarkdown), fetching: { onFocus: true, staleAfterMs: 0 }, writingRecovery: false, host: { emit() {}, navigate() { throw Error('Unexpected custom-consumer navigation'); } } }, custom);
       const owner = mounted.conversation;
       owner.initialize({ session: capability });
       await until(() => owner.ready);
@@ -123,7 +152,7 @@ export async function browserBehavior({ browser, service, blog, report, capabili
       check(rendering.inputs.at(-1).purpose === 'preview' && rendering.inputs.at(-1).draft === owner.writing().id, 'The preview renderer receives original writing identity and purpose');
       editor.write(); owner.writing().update('Failed custom rendering remains readable');
       await editor.preview();
-      check(editor.previewElement.textContent === 'Failed custom rendering remains readable' && editor.error.includes('Renderer offline'), 'Failed website preview retains original writing alongside its error');
+      check(editor.previewElement.textContent.includes('Failed custom rendering remains readable') && editor.previewElement.querySelector('button')?.textContent === 'Retry', 'Failed website preview retains original writing alongside shared content recovery');
       editor.write(); owner.writing().update('Writing belongs to this page');
       const oldInput = editor.textarea;
       check(oldInput.value === 'Writing belongs to this page', 'Custom native editor receives model writing');
@@ -133,23 +162,20 @@ export async function browserBehavior({ browser, service, blog, report, capabili
       mounted.replacePresentation(createStandardPresentation());
       check(mounted.conversation === owner && target.querySelector('textarea').value === 'Writing belongs to this page', 'Changing design keeps the actual page and writing');
       await new Promise(resolve => requestAnimationFrame(resolve));
-      check(target.querySelector('.gsc-comments').hidden && [...target.querySelectorAll('.gsc-comment,.gsc-reply')].every(card => card.hidden), 'The standard view keeps cold comment chrome concealed while their complete bodies prepare');
+      check([...target.querySelectorAll('.gsc-comment,.gsc-reply')].every(card => card.hidden), 'Cold comment cards wait for readable bodies');
+      check(target.querySelector('.gsc-comments-count').textContent.includes(String(owner.document.roots.count.count)), 'Known count remains published while bodies prepare');
+      check(target.querySelector('textarea').value === 'Writing belongs to this page', 'Writing remains available while body preparation is held');
       check([...target.querySelectorAll('.gsc-comment,.gsc-reply')].every(card => !card.getClientRects().length), 'Cold standard comment shells occupy no visible layout at a real paint boundary');
       check(target.querySelector('.gsc-loading') && !target.querySelector('.gsc-loading').hidden, 'Cold presentation keeps its existing loading indication');
       releaseCold(); coldPreparation = undefined;
-      await until(() => !target.querySelector('.gsc-comments').hidden);
+      await until(() => [...target.querySelectorAll('.gsc-comment,.gsc-reply')].every(card => !card.hidden));
       check([...target.querySelectorAll('.gsc-comment,.gsc-reply')].every(card => !card.hidden && card.querySelector('[data-host-markdown="comment"]')), 'The first published standard discussion contains its readable bodies');
       coldComment = owner.document.roots.ids[0];
       coldPreparation = new Promise(resolve => { releaseCold = resolve; });
       mounted.replacePresentation(createStandardPresentation());
       await until(() => target.querySelectorAll('[data-host-markdown="comment"]').length > 0);
-      check(target.querySelector('.gsc-comments').hidden, 'One unresolved body holds only the initial reading publication');
-      const replacementWriting = owner.writing({ kind: 'edit', id: coldComment }).show();
-      await until(() => !target.querySelector('.gsc-comments').hidden);
-      check(target.querySelector('#comment-' + coldComment + ' textarea'), 'Replacing a cold body with its editor removes that body from the initial readiness barrier');
-      replacementWriting.hide();
-      await until(() => target.querySelector('#comment-' + coldComment).hidden);
-      check([...target.querySelectorAll('.gsc-comment')].some(card => !card.hidden) && target.querySelector('.gsc-loading'), 'A later cold body keeps its loading indication while already readable comments remain visible');
+      check(target.querySelector('#comment-' + coldComment).hidden && [...target.querySelectorAll('.gsc-comment')].some(card => !card.hidden), 'One held body does not conceal independent readable cards');
+      check(target.querySelector('.gsc-loading'), 'Held content keeps a visible loading indication without blocking independent reading');
       releaseCold(); coldPreparation = undefined; coldComment = undefined;
       await until(() => !target.querySelector('#comment-' + owner.document.roots.ids[0]).hidden);
       check(!target.querySelector('.gsc-loading'), 'The later loading indication retires when its current body becomes readable');
@@ -181,19 +207,19 @@ export async function browserBehavior({ browser, service, blog, report, capabili
       const host = document.createElement('div'); target.append(host);
       const readiness = [];
       const shared = mountContent(host, localMarkdown, { onReady: ready => readiness.push(ready) });
-      await shared.update({ markdown: 'First mounted value', purpose: 'comment', repo: owner.config.repo, pageURL: owner.config.origin });
+      await shared.update({ markdown: 'First mounted value', purpose: 'comment', repo: owner.config.repo, pageURL: owner.config.pageURL });
       const retained = host.firstChild, control = retained.querySelector('button'); control.click();
-      await shared.update({ markdown: 'Second mounted value', purpose: 'comment', repo: owner.config.repo, pageURL: owner.config.origin });
+      await shared.update({ markdown: 'Second mounted value', purpose: 'comment', repo: owner.config.repo, pageURL: owner.config.pageURL });
       check(host.firstChild === retained && control.textContent === 'Clicks 1' && host.textContent.includes('Second mounted value'), 'Changed content updates the same mounted component without losing its state');
-      const olderUpdate = shared.update({ markdown: 'Deferred mounted value older', purpose: 'comment', repo: owner.config.repo, pageURL: owner.config.origin });
+      const olderUpdate = shared.update({ markdown: 'Deferred mounted value older', purpose: 'comment', repo: owner.config.repo, pageURL: owner.config.pageURL });
       check(host.textContent.includes('Second mounted value') && control.textContent === 'Clicks 1', 'A retained website component stays usable while its next output is prepared');
       check(JSON.stringify(readiness) === '[true]', 'Installed output stays readable while replacements prepare');
-      const newestUpdate = shared.update({ markdown: 'Deferred mounted value newest', purpose: 'comment', repo: owner.config.repo, pageURL: owner.config.origin });
+      const newestUpdate = shared.update({ markdown: 'Deferred mounted value newest', purpose: 'comment', repo: owner.config.repo, pageURL: owner.config.pageURL });
       waitingUpdates.get('Deferred mounted value newest')(); await newestUpdate;
       waitingUpdates.get('Deferred mounted value older')(); await olderUpdate;
       check(host.firstChild === retained && host.textContent.includes('Deferred mounted value newest') && !host.textContent.includes('Deferred mounted value older') && control.textContent === 'Clicks 1', 'Reordered rendering completion commits only the newest prepared value without losing mounted state');
       let failedUpdate;
-      await shared.update({ markdown: 'Failed prepared mounted value', purpose: 'comment', repo: owner.config.repo, pageURL: owner.config.origin }).catch(error => { failedUpdate = error; });
+      await shared.update({ markdown: 'Failed prepared mounted value', purpose: 'comment', repo: owner.config.repo, pageURL: owner.config.pageURL }).catch(error => { failedUpdate = error; });
       check(failedUpdate?.message === 'Renderer offline' && host.firstChild === retained && host.textContent.includes('Deferred mounted value newest'), 'Preparation failure reports its error without replacing the last ready component');
       control.click(); check(control.textContent === 'Clicks 2', 'An installed component keeps its interaction lifetime across canceled and failed preparations');
       const beforeDispose = rendering.disposals; shared.dispose();
@@ -203,7 +229,7 @@ export async function browserBehavior({ browser, service, blog, report, capabili
       let releaseLate, lateDisposals = 0;
       const lateReadiness = [];
       const deferred = mountContent(host, () => new Promise(resolve => { releaseLate = resolve; }), { onReady: ready => lateReadiness.push(ready) });
-      const lateWork = deferred.update({ markdown: 'Readable pending source', purpose: 'comment', repo: owner.config.repo, pageURL: owner.config.origin });
+      const lateWork = deferred.update({ markdown: 'Readable pending source', purpose: 'comment', repo: owner.config.repo, pageURL: owner.config.pageURL });
       check(!host.hasChildNodes(), 'Cold content is published only when its complete output is ready');
       deferred.dispose(); await lateWork;
       releaseLate({ node: document.createElement('span'), dispose() { lateDisposals++; } }); await until(() => lateDisposals === 1);
@@ -211,12 +237,64 @@ export async function browserBehavior({ browser, service, blog, report, capabili
       check(lateReadiness.length === 0, 'Canceled preparation never publishes readiness from promise settlement');
       const failedReadiness = [];
       const offline = mountContent(host, async () => { throw Error('Renderer offline'); }, { onReady: ready => failedReadiness.push(ready) });
-      await offline.update({ markdown: 'Readable failed source', purpose: 'comment', repo: owner.config.repo, pageURL: owner.config.origin }).catch(() => {});
-      check(host.textContent === 'Readable failed source' && failedReadiness[0] === true, 'Cold renderer failure publishes readable original writing');
+      await offline.update({ markdown: 'Readable failed source', purpose: 'comment', repo: owner.config.repo, pageURL: owner.config.pageURL }).catch(() => {});
+      check(host.textContent.includes('Readable failed source') && failedReadiness[0] === true, 'Cold renderer failure publishes readable original writing');
       offline.clear(); check(failedReadiness[1] === false && !host.hasChildNodes(), 'Clearing fallback writing retires its readiness'); offline.dispose(); host.remove();
       window.consumer = { mounted, owner, target, until, check, capability };
     }, { service, blog, capability });
-    const textarea = page.locator('.forum-composer textarea');
+    await page.evaluate(async ({service,blog}) => {
+      const {createCounts} = await import(service + '/counts.js');
+      const values = [], badge = document.createElement('span'); document.body.append(badge);
+      const counts = createCounts({service,repo:'example/comments',origin:blog,storage:null});
+      const release = counts.subscribe('article', value => { values.push(value); badge.textContent = String(value.count); });
+      await counts.read(['article']);
+      const before = values.length; counts.observe(values.at(-1));
+      if (values.length !== before) throw Error('Reusing the exact count observation emitted a new fact');
+      window.consumer.counts = {counts,values,badge,release};
+    }, {service,blog});
+    let countArrived, releaseCount;
+    const countSeen = new Promise(resolve => {countArrived=resolve;}), countHeld = new Promise(resolve => {releaseCount=resolve;});
+    await page.context().route(service + '/api/v6/counts?*', async route => {
+      const response = await route.fetch(); countArrived(); await countHeld; await route.fulfill({response});
+    });
+    await page.evaluate(() => {
+      const {counts,values} = window.consumer.counts;
+      window.consumer.counts.pending = counts.invalidate({target:values.at(-1).target,observedAt:values.at(-1).observedAt});
+    });
+    await countSeen;
+    await page.evaluate(async () => {
+      const {owner,counts:{counts,values,badge},check} = window.consumer;
+      const before = values.at(-1), writing = owner.newWriting({kind:'comment'}).show();
+      writing.update('Count observation from an independent contribution');
+      const outcome = await writing.submit(); check(outcome.status === 'saved','Count journey publishes a real provider contribution');
+      const observation = outcome.result.patch.roots.count; counts.observe(observation);
+      check(observation.count === before.count + 1 && badge.textContent === String(observation.count),'Confirmed provider facts update the shared count consumer immediately');
+      window.consumer.counts.confirmed = observation;
+    });
+    releaseCount(); await page.evaluate(() => window.consumer.counts.pending);
+    await page.context().unroute(service + '/api/v6/counts?*');
+    await page.evaluate(() => {
+      const {values,badge,confirmed} = window.consumer.counts;
+      if (values.at(-1).count !== confirmed.count || badge.textContent !== String(confirmed.count)) throw Error('A held older count replaced the confirmed contribution observation');
+    });
+    await page.context().route(service + '/api/v6/counts?*', async route => {
+      const response = await route.fetch(), result = await response.json();
+      const unavailableKey = JSON.stringify(['page','unavailable',null,'roots',null]);
+      delete result.observations[unavailableKey];
+      result.errors = {[unavailableKey]:{status:410,code:'NOT_FOUND',message:'The mapped discussion is unavailable.'}};
+      await route.fulfill({response,json:result});
+    });
+    await page.evaluate(async () => {
+      const {counts,values,badge} = window.consumer.counts, known = values.at(-1);
+      const renewed = counts.invalidate({target:known.target,observedAt:known.observedAt});
+      let failed = false; const unavailable = counts.invalidate({target:{selector:{kind:'page',key:'unavailable'},window:{kind:'roots'}},observedAt:known.observedAt}).catch(() => {failed=true;});
+      await Promise.all([renewed,unavailable]);
+      if (!failed || values.at(-1).count !== known.count || badge.textContent !== String(known.count)) throw Error('One unavailable count discarded an independently successful observation');
+    });
+    await page.context().unroute(service + '/api/v6/counts?*');
+    await page.evaluate(() => { const {counts,badge,release} = window.consumer.counts; release();counts.dispose();badge.remove(); });
+    const activeWriting = await page.evaluate(() => window.consumer.owner.writing().id);
+    const textarea = page.locator('.forum-composer[data-writing-id="' + activeWriting + '"] textarea');
     await textarea.focus();
     await page.keyboard.type('Forum native editing survives refresh');
     await textarea.evaluate(element => element.setSelectionRange(2, 6));
@@ -228,7 +306,7 @@ export async function browserBehavior({ browser, service, blog, report, capabili
     await textarea.press(modifier + '+Shift+z');
     assert.equal(await textarea.inputValue(), 'Forum native editing survives refresh');
     const reactionRequests = [];
-    await page.context().route(service + '/api/v5/contribute', route => {
+    await page.context().route(service + '/api/v6/contribute', route => {
       reactionRequests.push(route.request().postDataJSON()); return route.abort('failed');
     });
     await page.evaluate(async () => {
@@ -238,13 +316,13 @@ export async function browserBehavior({ browser, service, blog, report, capabili
       await owner.setReaction(id, 'HEART', window.consumer.recoverySelected).catch(() => {});
       check(owner.reaction(id, 'HEART').recovery?.status === 'uncertain' && owner.reaction(id, 'HEART').recover.status === 'available', 'A custom presentation can identify an unresolved reaction without inspecting private intents');
     });
-    await page.context().unroute(service + '/api/v5/contribute');
-    await page.context().route(service + '/api/v5/contribute', route => {
+    await page.context().unroute(service + '/api/v6/contribute');
+    await page.context().route(service + '/api/v6/contribute', route => {
       reactionRequests.push(route.request().postDataJSON()); return route.continue();
     });
     await page.getByRole('article').filter({ has: page.getByRole('button', { name: 'Recover ❤️', exact: true }) }).getByRole('button', { name: 'Recover ❤️', exact: true }).click();
     await page.waitForFunction(() => !window.consumer.owner.reaction(window.consumer.recoverySubject, 'HEART').recovery);
-    await page.context().unroute(service + '/api/v5/contribute');
+    await page.context().unroute(service + '/api/v6/contribute');
     assert.equal(reactionRequests[1].key, reactionRequests[0].key, 'Reaction recovery retains the issued receipt identity');
     assert.deepEqual(reactionRequests[1].action, reactionRequests[0].action, 'Reaction recovery retains the issued effect');
     await page.evaluate(async () => {
@@ -270,7 +348,7 @@ export async function browserBehavior({ browser, service, blog, report, capabili
       const outcome = await reply.submit(); check(outcome.status === 'saved', 'Reopened reply publishes');
       check(owner.document.nodes[outcome.result.id]?.parentId === root && !owner.document.roots.ids.includes(outcome.result.id), 'A dismissed and reopened reply retains its original destination');
 
-      mounted.replacePage({ repo: 'example/comments', origin: owner.config.origin, term: 'Another page' });
+      mounted.replacePage({ repo: 'example/comments', origin: owner.config.origin, pageURL: owner.config.pageURL, returnURL: owner.config.returnURL, selector: { kind: 'page', key: 'Another page' } });
       check(owner.signal.aborted, 'Navigation retires the former document owner');
       mounted.conversation.initialize({ session: capability });
       await until(() => mounted.conversation.ready);
@@ -297,22 +375,29 @@ export async function browserBehavior({ browser, service, blog, report, capabili
     await page.locator('#configuration-form [name="appId"]').fill('1234');
     await page.locator('#configuration-form [name="clientId"]').fill('Iv1.example');
     await page.locator('#configuration-form [name="repo"]').fill('Example/Comments');
+    await page.locator('textarea[name="registration"][form="configuration-form"]').fill(JSON.stringify({ repo: 'example/comments', category: 'Announcements', repositoryId: 'R_fixture', installationId: 123, categoryId: 'CAT_fixture' }));
     await page.locator('#configuration-form button').click();
     const values = await page.locator('#configuration-values').evaluate(list => Object.fromEntries([...list.querySelectorAll('dt')].map(label => [label.textContent, label.nextElementSibling.textContent])));
     assert.deepEqual(JSON.parse(values.REPOSITORIES)['example/comments'].origins, [blog]);
+    const registeredPolicy = JSON.parse(values.REPOSITORIES)['example/comments'];
+    assert.equal(registeredPolicy.repositoryId, 'R_fixture');
+    assert.equal(registeredPolicy.installationId, 123);
+    assert.equal(registeredPolicy.categoryId, 'CAT_fixture');
     assert.equal(values.PUBLIC_ORIGIN, service);
     assert.equal('GITHUB_PRIVATE_KEY' in values, false);
     await page.locator('#generate-secret').click();
     const secret = await page.locator('#session-secret').textContent();
     assert.match(secret, /^[A-Za-z0-9_-]{43}$/);
     assert.equal(requests.length, 1, 'Configuration and generated secrets stay local');
+    await page.locator('#setup-form [name="term"]').fill('article');
     await page.locator('#setup-form button[type="submit"]').click();
     await page.waitForFunction(() => !document.getElementById('setup-result').hidden);
-    assert.equal(requests.length, 2, 'Only deployment status and explicit repository verification use the network');
+    assert.equal(requests.length, 2, 'Only deployment status and registered repository information use the network');
     assert.ok(!requests.some(url => url.includes(secret)));
     assert.ok((await page.locator('#setup-code').textContent()).includes(`src="${service}/client.js"`));
+    assert.ok((await page.locator('#setup-code').textContent()).includes('data-page-key="article"'));
     assert.deepEqual(errors, [], 'Setup page errors');
-    report.checks.push({ engine: browser.browserType().name(), workflow: 'local configuration and explicit provider verification', status: 'passed' });
+    report.checks.push({ engine: browser.browserType().name(), workflow: 'local registered configuration and typed embed generation', status: 'passed' });
     console.log('PASS', browser.browserType().name(), 'setup privacy');
   } finally { await page.close(); }
 }

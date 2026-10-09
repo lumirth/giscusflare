@@ -1,13 +1,14 @@
 import { hostStorage } from './host-storage.js';
+import { createCounts } from './counts.js';
 import { InteractionRegistry } from './interactions.js';
 import { fetchPolicy, type FetchPolicy } from '../conversation/fetch-policy.js';
 import { browserWritingStore, type WritingRecovery } from './writing-store.js';
-import { recoveredWriting, writingTargetKey, type SavedWriting, type Writing } from '../conversation/writing.js';
+import { recoveredWriting, type SavedWriting, type Writing } from '../conversation/writing.js';
 import { PageModel, type CommentOrder } from '../conversation/page.js';
 import { conversationSettings, type Page, type Appearance } from './options.js';
-import { BrowserSession, type SessionHost } from './session.js';
-import type { ContentRenderer } from './content.js';
-import type { ContentSource } from '../contracts/content.js';
+import { BrowserSession, type Login, type SessionHost } from './session.js';
+import { createContentOwner, type ContentProfile, type ContentOwner } from './content.js';
+import { selection } from '../contracts/selection.js';
 import type { WindowPage } from '../contracts/document.js';
 import type { Presentation, MountedConversation, ResourceScope } from './presentation.js';
 
@@ -33,15 +34,39 @@ export interface ConversationOptions {
   order?: CommentOrder;
   bootstrap?: { view: WindowPage; expires: number };
   host?: SessionHost;
-  content: ContentRenderer;
-  contentSource: ContentSource;
+  content: ContentProfile;
+}
+/** Browser storage recovery travels as records, never as serialized model state. */
+export interface WritingRestoration {
+  records: readonly SavedWriting[];
+  selected: readonly string[];
+  available: readonly SavedWriting[];
+  error?: string;
+}
+/** The same initialization event is used by native hosts and the iframe adapter. */
+export interface ConversationInitialization {
+  session?: string;
+  handoff?: Login;
+  fetching?: Partial<FetchPolicy> | false;
+  writing?: WritingRestoration;
+  availableWriting?: readonly SavedWriting[];
+  loginError?: string;
+  position?: {scroll?: number;composer?: string};
+}
+/** Presentations publish when their installed reading layout can position a return. */
+export interface ReadingLayout {
+  readonly ready: boolean;
+  publish(): void;
+  subscribe(listener: () => void): () => void;
+  reset(): void;
 }
 /** The portable page owner with its actual browser capabilities attached. */
 export type Conversation = PageModel & {
   session: BrowserSession;
   appearance: Appearance;
   interactions: InteractionRegistry;
-  content: ContentRenderer;
+  content: ContentOwner;
+  readingLayout: ReadingLayout;
   recovery: {
     readonly ready: Promise<void>;
     records(): readonly SavedWriting[];
@@ -51,7 +76,7 @@ export type Conversation = PageModel & {
   };
   own(cleanup: () => void): () => void;
   updateAppearance(value: Partial<Appearance>): void;
-  initialize(data: Record<string, unknown>): void;
+  initialize(data: ConversationInitialization): void;
 };
 
 export function createConversation(options: ConversationOptions): Conversation {
@@ -63,7 +88,7 @@ export function createConversation(options: ConversationOptions): Conversation {
   const persistence = options.host ? undefined
     : hostStorage(options.service, settings.page.repo, recovery, () => ({ composer: interactions.active }), lifetime.signal);
   persistence?.usePage(settings.page);
-  let initialized = false, savedWritingRecords: SavedWriting[] = [], recoveryError = '';
+  let initialized = false, savedWritingRecords: readonly SavedWriting[] = [], recoveryError = '';
   const restoring = new Set<string>();
   let recovered!: () => void;
   const writingReady = new Promise<void>(resolve => { recovered = resolve; });
@@ -77,14 +102,18 @@ export function createConversation(options: ConversationOptions): Conversation {
   const host: SessionHost = {
     emit(value) {
       if (lifetime.signal.aborted) return;
-      delegate.emit(value);
+      delegate.emit(value.pending && typeof value.pending === 'object' ? {...value, pending: {...value.pending, composer: interactions.active}} : value);
     },
     navigate: url => delegate.navigate(url),
   };
-  const session = new BrowserSession(options.service, settings.page, host, identity => {
-    if (identity) { page.changeIdentity(); if (!page.signal.aborted) void page.start(); }
+  const session = new BrowserSession(options.service, settings.page, host, change => {
+    if (change === 'identity') page.changeIdentity();
+    else if (change === 'verified') void page.refreshViewer(true);
     else page.notify();
   }, lifetime.signal);
+  const content = createContentOwner({repo: settings.page.repo, pageURL: settings.page.pageURL, profile: options.content, signal: lifetime.signal,
+    batch: (inputs, signal) => session.request('content', {config: selection(settings.page), inputs, content: options.content.delivery}, signal),
+  });
   const saveWriting = (writing?: Writing) => {
     for (const current of writing ? [writing] : page.writings.values()) {
       if (current.text || current.protected || current.actions.undoClear) host.emit({ writingRecord: current.save() });
@@ -92,9 +121,38 @@ export function createConversation(options: ConversationOptions): Conversation {
     }
     host.emit({ writingSelected: page.selectedWriting });
   };
+  let layoutReady = false;
+  const layoutListeners = new Set<() => void>();
+  lifetime.signal.addEventListener('abort', () => layoutListeners.clear(), {once: true});
+  const readingLayout: ReadingLayout = {
+    get ready() { return layoutReady; },
+    publish() { if (layoutReady || lifetime.signal.aborted) return;layoutReady = true;for (const listener of layoutListeners) listener(); },
+    subscribe(listener) { layoutListeners.add(listener);return () => { layoutListeners.delete(listener); }; },
+    reset() { layoutReady = false; },
+  };
+  const returnPosition = (position: NonNullable<ConversationInitialization['position']>) => {
+    const positioning = new window.AbortController();
+    const release = own(lifetime.signal, () => positioning.abort());
+    positioning.signal.addEventListener('abort', release, {once: true});
+    let stop: () => void = () => {};
+    const cancel = () => { stop();positioning.abort(); };
+    for (const name of ['pointerdown', 'keydown', 'wheel', 'touchstart']) window.addEventListener(name, cancel, {signal: positioning.signal, passive: true});
+    const restore = () => {
+      if (!readingLayout.ready) return;
+      stop();requestAnimationFrame(() => {
+        if (positioning.signal.aborted) return;
+        if (position.scroll !== undefined) window.scrollTo({top: position.scroll});
+        if (position.composer) void writingReady.then(() => {
+          if (!positioning.signal.aborted) interactions.focus(position.composer!);
+        }).finally(cancel);
+        else cancel();
+      });
+    };
+    stop = readingLayout.subscribe(restore);restore();
+  };
   const page: Conversation = Object.assign(new PageModel(settings.page, session, options.order, lifetime), {
     session, appearance: settings.appearance, interactions,
-    content: options.content,
+    content, readingLayout,
     recovery: {
       ready: writingReady,
       records: () => [
@@ -111,7 +169,7 @@ export function createConversation(options: ConversationOptions): Conversation {
         try {
           const saved = persistence ? await persistence.restoreWriting(id) : await options.host?.restoreWriting?.(id);
           if (!saved || lifetime.signal.aborted) { recoveryError = persistence?.error || 'This writing is open in another window or is no longer saved.';return; }
-          page.recoverWriting(JSON.stringify({ version: 5, writing: [saved] }));
+          page.recoverWriting([saved]);
           return page.selectWriting(saved.id)?.show();
         } catch (cause) { recoveryError = cause instanceof Error ? cause.message : 'Unable to restore writing.'; }
         finally { restoring.delete(id);if (!lifetime.signal.aborted) page.notify(); }
@@ -123,36 +181,21 @@ export function createConversation(options: ConversationOptions): Conversation {
       Object.assign(settings.appearance, conversationSettings(settings.page, { ...settings.appearance, ...value }).appearance);
       page.notify();
     },
-    initialize(data: Record<string, unknown>) {
+    initialize(data: ConversationInitialization) {
       if (lifetime.signal.aborted) return;
       initialized = true;
-      if (typeof data.loginError === 'string') { session.fail(data.loginError.slice(0, 300)); return; }
-      if (data.fetching === false || data.fetching && typeof data.fetching === 'object') {
-        try { Object.assign(policy, fetchPolicy(data.fetching as Partial<FetchPolicy> | false)); }
-        catch { /* Invalid host settings do not replace validated policy. */ }
-        page.replyPrefetch = policy.replyPrefetch;
+      if (data.position) returnPosition(data.position);
+      if (data.loginError) session.fail(data.loginError);
+      if (data.fetching !== undefined) { Object.assign(policy, fetchPolicy(data.fetching));page.replyPrefetch = policy.replyPrefetch; }
+      if (data.availableWriting) { savedWritingRecords = recoveredWriting(data.availableWriting);page.notify(); }
+      if (data.writing) {
+        const {records, selected, available, error} = data.writing;
+        savedWritingRecords = available;recoveryError = error || '';
+        page.recoverWriting(records, selected);
+        recovered();page.notify();
       }
-      if (Array.isArray(data.savedWritingRecords)) savedWritingRecords = recoveredWriting(JSON.stringify({ version: 5, writing: data.savedWritingRecords }));
-      if (typeof data.recoveryError === 'string') recoveryError = data.recoveryError;
-      if (Array.isArray(data.writingRecords)) {
-        const authored = new Map([...page.writings.values()].filter(writing => page.selectedWriting.includes(writing.id) && (writing.text || writing.protected || writing.actions.undoClear)).map(writing => [writingTargetKey(writing.target), writing]));
-        page.recoverWriting(JSON.stringify({ version: 5, writing: data.writingRecords }));
-        for (const writing of authored.values()) page.selectWriting(writing.id);
-        if (Array.isArray(data.writingSelected)) for (const id of data.writingSelected) {
-          const saved = typeof id === 'string' ? page.writings.get(id) : undefined;
-          if (saved && !authored.has(writingTargetKey(saved.target))) page.selectWriting(saved.id);
-        }
-        recovered();
-      }
-      if (typeof data.session === 'string') session.setSession(data.session);
-      if (data.handoff && typeof data.handoff === 'object') {
-        const login = data.handoff as Record<string, unknown>;
-        if (login.version === 5 && typeof login.created === 'number' &&
-            ['capability', 'attempt'].every(key => typeof login[key] === 'string' && /^[A-Za-z0-9_-]{43}$/.test(login[key] as string))) {
-          void session.adopt({ capability: login.capability as string, attempt: login.attempt as string, created: login.created, version: 5, ...(login.status === 'denied' ? { status: 'denied' as const } : {}) });
-          return;
-        }
-      }
+      if (data.session !== undefined) session.setSession(data.session);
+      if (data.handoff) void session.adopt(data.handoff);
       if (!page.acquisition() && !page.ready) void page.start();
     },
     dispose() {
@@ -162,14 +205,19 @@ export function createConversation(options: ConversationOptions): Conversation {
   try {
     page.own(() => interactions.clear());
     page.replyPrefetch = policy.replyPrefetch;
-    page.contentSource = options.contentSource;
-    if (options.bootstrap && options.bootstrap.expires > Date.now()) page.bootstrap(options.bootstrap.view);
+    page.contentSource = options.content.delivery;
+    const counts = createCounts({service: options.service, repo: settings.page.repo, origin: settings.page.origin, registration: settings.page.registration});
+    page.own(() => counts.dispose());
     let revision = page.writingRevision;
-    page.own(page.subscribe((_page, writing) => {
-      if (revision === page.writingRevision) return;
-      revision = page.writingRevision; saveWriting(writing);
+    page.own(page.subscribe((_page, writing, observation) => {
+      if (observation) content.observe(observation, page.document.nodes);
+      for (const window of [page.document.roots, ...Object.values(page.document.replies)]) if (window.count) counts.observe(window.count);
+      for (const invalidation of observation?.invalidatedCounts || []) void counts.invalidate(invalidation).then(value => { if (value) page.observeCount(value); }).catch(() => {});
+      if (revision !== page.writingRevision) { revision = page.writingRevision;saveWriting(writing); }
     }));
+    if (options.bootstrap && options.bootstrap.expires > Date.now()) page.bootstrap(options.bootstrap.view);
     const fresh = (event: Event) => {
+      if (initialized && !document.hidden && navigator.onLine !== false && session.signedIn && !session.principal) void session.verify();
       if ((event.type === 'online' ? policy.onReconnect : policy.onFocus) && initialized && !document.hidden && navigator.onLine !== false && !session.pending && !page.acquisition() && !interactions.active)
         void page.revalidate(policy.staleAfterMs);
     };
@@ -180,19 +228,9 @@ export function createConversation(options: ConversationOptions): Conversation {
     window.addEventListener('pagehide', () => saveWriting(), events);
     if (persistence) {
       window.addEventListener('storage', event => { if (event.key === persistence.sessionKey) session.setSession(persistence.session(event.newValue));else if (event.key?.startsWith(persistence.writingPrefix)) page.notify(); }, events);
-      const returned = persistence.returning(), position = returned?.position;
-      if (position) {
-        const stop = page.subscribe(() => {
-          if (page.acquisition() || !page.ready) return;
-          stop(); requestAnimationFrame(() => {
-            if (lifetime.signal.aborted) return;
-            window.scrollTo({ top: position.scroll || 0 });
-            if (position.composer) interactions.focus(position.composer);
-          });
-        });
-      }
-      page.initialize({ session: persistence.session(), handoff: returned?.handoff });
-      void persistence.recover().then(state => { if (!lifetime.signal.aborted) page.initialize(state);else recovered(); }, cause => { recoveryError = cause instanceof Error ? cause.message : 'Unable to restore writing.';recovered();page.notify(); });
+      const returned = persistence.returning();
+      page.initialize({session: persistence.session(), handoff: returned?.handoff, position: returned?.position});
+      void persistence.recover().then(state => { if (!lifetime.signal.aborted) page.initialize({writing: state});else recovered(); }, cause => { recoveryError = cause instanceof Error ? cause.message : 'Unable to restore writing.';recovered();page.notify(); });
     }
   } catch (error) { try { page.dispose(); } finally { throw error; } }
   return page;
@@ -206,7 +244,7 @@ export function mountPresentation(target: HTMLElement, options: ConversationOpti
     return conversation;
   };
   const draw = () => {
-    const page = active();view?.abort();
+    const page = active();view?.abort();page.readingLayout.reset();
     const lifetime = view = new window.AbortController();
     const release = page.own(() => lifetime.abort());
     lifetime.signal.addEventListener('abort', release, { once: true });

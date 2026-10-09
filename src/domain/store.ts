@@ -38,9 +38,15 @@ export class Store {
     const record = this.get(key, EncryptedRecord);
     return record ? decrypt(schema, record, secret, context + ':' + key) : null;
   }
-  async putSecret<S extends Schema>(key: string, schema: S, value: v.InferInput<S>, secret: string, context: string, expires: number): Promise<void> {
-    const normalized = parse(schema, value, 'storage');
-    this.put(key,EncryptedRecord,await encrypt(normalized,secret,context+':'+key),expires);
+  /** Optional ciphertext matching keeps asynchronous encryption from reviving a removed proof. */
+  async putSecret<S extends Schema>(key: string, schema: S, value: v.InferInput<S>, secret: string, context: string, expires: number, expected?:v.InferOutput<typeof EncryptedRecord>): Promise<v.InferOutput<typeof EncryptedRecord>|null> {
+    const record=await encrypt(parse(schema,value,'storage'),secret,context+':'+key);
+    if(expected){
+      const changed=[...this.sql.exec('UPDATE records SET value=?,expires=? WHERE key=? AND value=? RETURNING key',JSON.stringify(record),expires,key,JSON.stringify(expected))].length;
+      if(!changed)return null;
+      this.#expiryRevision++;
+    }else this.put(key,EncryptedRecord,record,expires);
+    return record;
   }
   async consumeSecret<S extends Schema>(source: string, key: string, schema: S, value: v.InferInput<S>, secret: string, context: string, expires: number): Promise<void> {
     const transaction = this.transactionSync;

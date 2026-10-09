@@ -16,11 +16,11 @@ A customizable comments system powered by GitHub Discussions, self-hosted on Clo
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/lumirth/giscusflare)
 
-Deploy to your Cloudflare account, then open your new service's address. Its setup page helps you connect GitHub and generate the code to add comments to your website. Follow the [setup guide](DEPLOY.md).
+Deploy to your Cloudflare account, then open your new service's address. Its setup page helps you connect GitHub and generate the code to add comments to your website. Follow the [setup guide](DEPLOY.md) to deploy the internal content Worker and register repository identities.
 
 ## How it works
 
-Choose a public GitHub repository for your comments. giscusflare finds the discussion for each page and creates one when someone first comments or reacts. Visitors use their GitHub accounts to participate, and you can read and manage the discussions on GitHub too.
+Choose a public GitHub repository for your comments. giscusflare selects each discussion by an exact page key or explicit discussion reference and creates one when someone first comments or reacts. Visitors use their GitHub accounts to participate, and you can read and manage the discussions on GitHub too.
 
 Optional [named weighted sorts](docs/CONFIGURATION.md#sort-by-reactions-or-reply-counts) return a complete captured traversal and report the interval used to acquire its inputs. `refreshSeconds` controls acquisition cadence; it does not promise that every source value is younger than that interval.
 

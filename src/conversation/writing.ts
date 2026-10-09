@@ -13,13 +13,14 @@ export interface WritingOwner {
   changed(redraw?: boolean): void;
   eligible(target: WritingTarget): boolean;
   principal(): string | null;
+  authorized(): boolean;
   initialText(target: WritingTarget): string;
   contribute(issued: IssuedWriting): Promise<ContributionResult>;
 }
 export const writingTargetKey = (target: WritingTarget): string => target.kind === 'comment' ? 'main' : target.kind + ':' + target.id;
 export function contributionFailure(cause: unknown): WritingFailure {
-  const value = Object(cause), status = Number(value.status ?? 0);
-  return { status: !status || status >= 500 || ['WRITE_UNCERTAIN', 'OPERATION_EXPIRED'].includes(value.code) ? 'uncertain' : 'failed',
+  const value = Object(cause);
+  return { status: value.phase === 'not-issued' ? 'failed' : 'uncertain',
     message: cause instanceof Error ? cause.message : 'Unable to complete the action.' };
 }
 const unresolved = (): WritingFailure => ({ status: 'uncertain', message: 'This submission may already be on GitHub. Retry it to recover its outcome.' });
@@ -29,32 +30,34 @@ export class Writing {
   readonly id: string;
   readonly target: WritingTarget;
   #text: string;
+  #touched = false;
   #open: boolean;
   #undo?: string;
   #issued?: IssuedWriting;
   #error?: WritingFailure;
   #pending?: Promise<WritingOutcome>;
   constructor(target: WritingTarget, private owner: WritingOwner, text = '', id: string = crypto.randomUUID()) {
-    this.target = Object.freeze({ ...target });this.id = id;
+    this.target = Object.freeze(target.kind === 'comment' ? {kind:'comment'} : {kind:target.kind,id:target.id});this.id = id;
     this.#text = text;this.#open = target.kind === 'comment';
   }
   get text(): string { return this.#text; }
+  get touched(): boolean { return this.#touched; }
   get open(): boolean { return this.#open; }
   get pending(): boolean { return Boolean(this.#pending); }
   get error(): WritingFailure | undefined { return this.#error; }
   get protected(): boolean { return this.pending || Boolean(this.#issued); }
   get actions() {
-    const editable = !this.protected, eligible = this.owner.eligible(this.target), signedIn = Boolean(this.owner.principal());
+    const editable = !this.protected, eligible = this.owner.eligible(this.target), signedIn = Boolean(this.owner.principal()), authorized = signedIn && this.owner.authorized();
     return { edit: editable, hide: this.target.kind !== 'comment', clear: editable && Boolean(this.#text),
       undoClear: editable && this.#undo !== undefined, abandon: !this.pending && Boolean(this.#issued),
-      signIn: this.#open && !this.pending && !signedIn && Boolean(this.#text.trim()) && (editable && eligible || Boolean(this.#issued)),
-      submit: this.#open && editable && eligible && signedIn && Boolean(this.#text.trim()),
+      signIn: this.#open && !this.pending && (!signedIn || !this.#issued && !authorized) && Boolean(this.#text.trim()) && (editable && eligible || Boolean(this.#issued)),
+      submit: this.#open && editable && eligible && authorized && Boolean(this.#text.trim()),
       retry: this.#open && !this.pending && Boolean(this.#issued) && this.#issued?.principal === this.owner.principal() };
   }
   update(text: string): void {
     if (text === this.#text) return;
     if (!this.actions.edit) throw new Error('Recover the issued submission before changing its writing.');
-    this.#text = text;this.#undo = undefined;this.#error = undefined;this.owner.changed();
+    this.#touched = true;this.#text = text;this.#undo = undefined;this.#error = undefined;this.owner.changed();
   }
   show(): Writing {
     if (!this.#open && this.target.kind === 'edit' && !this.#text && !this.protected && this.#undo === undefined) this.#text = this.owner.initialText(this.target);
@@ -114,20 +117,19 @@ export class Writing {
 }
 
 /** Reject malformed recovery as a whole; recovered identities never come from editor state. */
-export function recoveredWriting(raw: string): SavedWriting[] {
+export function recoveredWriting(value: unknown): SavedWriting[] {
   try {
-    const value = JSON.parse(raw);
-    if (value.version !== 5 || !Array.isArray(value.writing)) return [];
+    if (!Array.isArray(value)) return [];
     const target = (v: WritingTarget): boolean => Boolean(v && (v.kind === 'comment' ||
       (['reply', 'edit'].includes(v.kind) && 'id' in v && typeof v.id === 'string' && v.id.length > 0 && v.id.length <= 256)));
     const text = (v: unknown): boolean => typeof v === 'string' && v.length <= 60000;
-    for (const saved of value.writing as SavedWriting[]) {
+    for (const saved of value as SavedWriting[]) {
       if (typeof saved.id !== 'string' || !/^[A-Za-z0-9_.-]{1,160}$/.test(saved.id) || !target(saved.target) || !text(saved.text) || typeof saved.open !== 'boolean' || saved.undo !== undefined && !text(saved.undo)) return [];
       const issued = saved.issued;
       if (issued && (!target(issued.target) || writingTargetKey(issued.target) !== writingTargetKey(saved.target) || !text(issued.body) || issued.body !== saved.text ||
         !/^3\.\d{13}\.[A-Za-z0-9_-]{16,86}$/.test(issued.key) || typeof issued.principal !== 'string' || !issued.principal || issued.principal.length > 256)) return [];
       if (saved.error && (!['failed', 'uncertain'].includes(saved.error.status) || typeof saved.error.message !== 'string')) return [];
     }
-    return value.writing;
+    return value;
   } catch { return []; }
 }

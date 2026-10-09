@@ -1,181 +1,158 @@
 # JavaScript and HTTP API
 
-`giscusflare/model` exposes the actual portable page owner. `giscusflare/headless` attaches browser session, persistence, interactions and explicit content; `giscusflare` adds the standard presentation and GitHub defaults. These are layers around one model, not separate state projections.
-
-## Portable model
-
-```ts
-import { PageModel, type Transport } from 'giscusflare/model';
-
-const transport: Transport = {
-  principal: null,
-  request: (operation, input, signal, method) => appTransport.request(operation, input, signal, method),
-};
-const page = new PageModel({
-  repo: 'you/comments',
-  origin: 'https://your-site.example/posts/hello',
-  term: 'post:hello-world',
-  strict: true,
-}, transport);
-page.contentSource = 'source';
-const stop = page.subscribe(() => render(page.document));
-await page.start();
-// Retire the owner when it is no longer used.
-stop();
-page.dispose();
-```
-
-`Transport` supplies optional immutable-account `principal: string | null` and `request<T>(operation, body, signal?, method?)`. It maps operations such as `page`, `contribute`, `preview` and `ranking` to the host's transport, including authorization. The constructor accepts `(config, transport, order?, lifetime?)`; `order` defaults to `oldest`. Config contains repository, full website URL, term/number, strictness and optional new-discussion details. No browser or DOM is needed. The package also exports writing, document, patch, reaction and action types.
+`giscusflare/model` supplies the portable `PageModel`. `giscusflare/headless` attaches browser authentication, persistence, native interactions and a selected content owner. `giscusflare` adds the standard presentation and stock rich-content profile. All use the same reading and intent owners.
 
 ## Browser construction and mounting
 
 ```js
 import { createConversation } from 'giscusflare/headless';
-import { githubContent } from 'giscusflare/content/github';
+import { preparedContent } from 'giscusflare/content';
 
 const conversation = createConversation({
   service: 'https://your-comments.workers.dev',
-  page: { repo: 'you/comments', origin: location.href, term: 'post:hello-world', strict: true },
-  contentSource: 'github',
-  content: githubContent(),
+  page: {
+    repo: 'you/comments',
+    selector: { kind: 'page', key: 'post:hello-world' },
+    origin: location.origin,
+    pageURL: new URL(location.pathname, location.origin).href,
+    returnURL: location.href,
+  },
+  content: preparedContent(),
 });
 const stop = conversation.subscribe(() => render(conversation.document));
-// When the component is removed:
-stop();
-conversation.dispose();
+// On removal: stop(); conversation.dispose();
 ```
 
-`createConversation` and `mountPresentation` require `contentSource` and `content`. `mountComments` defaults to `github` delivery with `githubContent()` when neither is provided; supplying a custom renderer without a delivery selection defaults to `source`. Set both explicitly when using host-prepared output.
-
-A mount returns `conversation`, `replacePage(page)`, `replacePresentation(presentation)` and `dispose()`. Replacing the page saves writing, retires its owner and creates a new one; retained old owners cannot act on the replacement. Replacing presentation retains reading and writing. Rebind subscriptions after page replacement.
+Headless construction requires `content: ContentProfile`, pairing delivery with rendering. `mountComments` supplies the stock profile by default. Complete profile choices are documented in [customization](EXTENDING.md).
 
 | Option | Meaning |
 | --- | --- |
 | `service` | Comments service origin |
-| `page.repo`, `page.origin` | GitHub repository and full embedding URL |
-| `page.term` or `page.number` | Stable lookup term or positive existing discussion number |
-| `page.strict` | Match term hash; default false |
-| `page.backLink`, `page.description` | New-discussion details |
-| `contentSource` | `source`, `github` or `prepared` service delivery |
-| `content` | DOM renderer for published bodies and previews |
-| `appearance` | Theme, language, reactions, input position and metadata |
+| `page.repo` | Registered public discussion repository |
+| `page.selector` | `{ kind: 'page', key }` or `{ kind: 'discussion', number, id? }` |
+| `page.origin` | Exact authorized website origin |
+| `page.pageURL`, `page.returnURL` | Canonical rendering/backlink URL and current authentication return URL; the return URL stays on the authorized origin |
+| `page.registration` | Open-hosting registration reference, when required |
+| `page.description` | Optional first-discussion description |
+| `content` | Selected complete content profile |
+| `appearance` | Theme, language, reactions, input position and emitted metadata |
 | `order` | `oldest`, `newest` or `{ profile }` |
 | `fetching` | Focus/reconnect freshness and reply prefetch |
-| `writingRecovery` | Retention/store, or false to disable browser persistence |
-| `bootstrap` | Unexpired anonymous `{ view, expires }` acquisition |
-| `host` | Custom browser session host for navigation, persistence messages and `restoreWriting(id)` |
+| `writingRecovery` | Retention/store settings, or false |
+| `bootstrap` | Unexpired public `{ view, expires }` observation |
+| `host` | Browser session host for navigation, persistence messages and record restoration |
 
-Number selection never creates a missing replacement discussion. Appearance defaults are `preferred_color_scheme`, `en`, enabled reactions, bottom input and disabled emitted metadata. `updateAppearance()` retains reading and writing.
+`mountPresentation(target, options, presentation)` and `mountComments` return `conversation`, `replacePage(page)`, `replacePresentation(view)` and `dispose()`. Page replacement retires the current owner and creates another; rebind subscriptions. Presentation replacement retains reading and writing. `updateAppearance()` changes appearance without replacing their owners.
 
-`fetching` accepts `onFocus`, `onReconnect`, `staleAfterMs` and `replyPrefetch`. Defaults revalidate on focus/reconnect after 60 seconds and prefetch five replies per root. `fetching: false` disables automatic revalidation. There is no polling timer; server cache lifetime and reply bounds still apply.
+`fetching` accepts `onFocus`, `onReconnect`, `staleAfterMs` and `replyPrefetch`; defaults revalidate after 60 seconds on focus/reconnect and prefetch five replies per root. `false` disables automatic revalidation. There is no polling timer. Default appearance is preferred color scheme, English, enabled reactions, bottom input and disabled emitted metadata.
+
+## Portable model
+
+`new PageModel(page, transport, order?, lifetime?)` uses the same exact page selection without browser dependencies. `Transport` exposes optional immutable-account `principal: string | null` and `request<T>(operation, input, signal?, method?)`. The host supplies protocol and authentication. Subscribe before `start()`, retire with `dispose()`, and use `settled()` when joining already-issued work. A dispatched external effect can finish after retirement but cannot publish into a replacement owner.
 
 ## Reading document
 
-Treat `document` as read-only. `nodes[id]` contains one canonical comment (`parentId: null` for a root). `roots` and `replies[parentId]` contain ordered IDs, continuation cursors and observed totals. `total: null` means no authoritative count was observed. `metadata` contains thread identity/title/URL/lock/closed/answer/reactions, viewer or null, repository availability and enabled ranking profiles.
+Treat `document` as read-only. `nodes[id]` contains canonical Markdown, author/dates, public moderation facts, reaction totals and upvotes; it contains no account permissions or selected reactions. `roots` and `replies[parentId]` hold ordered IDs, continuation cursor and `count: CountObservation | null`. Metadata contains public thread identity/state, repository availability and enabled ranking profiles. Public page requests omit commenter credentials; `/access` supplies the separate `AccessResult` exported by `giscusflare/model`.
 
-Comments include canonical Markdown, author/dates, permission flags, upvotes and reactions. `github` delivery adds provider HTML; `prepared` delivery adds `{ html, revision, resources? }`. Reaction groups map names to `{ count, selected }`; absent groups mean zero and unselected. Window IDs resolve through `nodes`; consumers do not reconstruct nested canonical trees.
+```ts
+interface CountTarget {
+  selector: { kind: 'page'; key: string } | { kind: 'discussion'; number: number; id?: string };
+  window: { kind: 'roots' } | { kind: 'replies'; parentId: string };
+}
+interface CountObservation {
+  target: CountTarget;
+  count: number;
+  discussion: { id: string; number: number } | null;
+  observedAt: number;
+  expiresAt: number;
+}
+```
+
+Null means no authoritative count has been observed. Preserve original observation time and reuse deadline; receiving cached data or replaying a receipt does not make it fresh. Loaded membership is the captured reading traversal, not a source from which to invent a total.
 
 | Method/state | Meaning |
 | --- | --- |
-| `start()` | Acquire initial window when needed |
-| `restart()` | Deliberately replace loaded traversal |
-| `loadMore()` | Continue root reading |
-| `loadReplies(rootId)` | Acquire earlier replies |
-| `revalidate(staleAfterMs?, observedIds?)` | Observe loaded content while preserving traversal |
-| `setOrder('oldest' \| 'newest' \| { profile })` | Start a new traversal in selected order |
-| `acquisition(parentId?)` | Active `{ purpose, started }` or undefined |
-| `continuity` | `current` or `restart-required` with reason |
-| `preview(body, signal?, draft?)` | Obtain selected preview delivery |
+| `start()` | Acquire the initial reading window |
+| `restart()` | Deliberately replace traversal |
+| `loadMore()`, `loadReplies(rootId)` | Continue the respective reading window |
+| `revalidate(staleAfterMs?, observedIds?)` | Observe up to 100 loaded IDs while retaining traversal |
+| `setOrder(order)` | Start a traversal in the chosen order |
+| `acquisition(parentId?)` | Current `{ purpose, started }`, or undefined |
+| `continuity` | Current traversal or explicit restart requirement |
+| `ready`, `error`, `lastRefresh` | Public read acquisition state |
+| `notice` | Confirmed effect whose optional observation needs refreshing |
 
-Acquisition purposes are `initial`, `restart`, `continue`, `revalidate` and `change-order`. `ready`, `error`, `order`, `ranking` and `lastRefresh` belong to the page. Observation is bounded to 100 loaded IDs; automatic observations rotate through loaded content. Explicit `observedIds` prioritizes a bounded visible set. This does not discover new membership or continuously refresh all content. Changed discussion identity or invalid continuation requires deliberate restart. Reads started before accepted contributions cannot overwrite newer overlapping facts.
+Acquisition purposes are initial, restart, continue, revalidate and change-order. Background observation does not discover new membership or continuously update every loaded body. Changed discussion identity or invalid continuation requires deliberate restart. Adoption compares ownership and original observation age so delayed broad reads cannot overwrite newer accepted facts.
 
-Ranked reading captures a complete root ID sequence and hydrates bounded pages without reordering mid-traversal. `ranking` is null for chronological reading; otherwise results report `ready`, `preparing` or `paused`. Ready results report acquisition interval and oldest required observation. Preparation stops after two minutes. See [ranking configuration](CONFIGURATION.md#sort-by-reactions-or-reply-counts).
+Ranked reading captures root IDs from a completed order and hydrates bounded windows without reordering that traversal. Results report ready, preparing or paused; ready includes the acquisition interval and next-refresh time. It does not promise an atomic remote snapshot or uniform source age. See [ranking configuration](CONFIGURATION.md#sort-by-reactions-or-reply-counts).
+
+## Account, actions and reactions
+
+`viewer` is an independently acquired account projection: principal profile, comment permissions, selected reactions and relevant target state. `viewerPending`, `viewerError` and `refreshViewer()` manage its acquisition and retry. Account changes retire authority and incoming account work while retaining public reading. `session.signedIn` means a capability is present; verified principal and usable permissions arrive independently. `session.needsAuthorization` asks the original author to reconnect GitHub while retaining their local session and protected issued writing.
+
+`actions(subjectId?)` derives reply, edit, remove, moderate, react, recover and abandon availability. Status is available, sign-in, pending, recovery or unavailable, with an optional cause/reason. `composition` provides shared base participation availability independently of reading traversal: unknown target is pending; archive, lock and unavailable targets have distinct causes. Use these results rather than reconstructing permissions from public comments.
+
+`reaction(id, name)` exposes confirmed count/selection, desired state, projected count/selection, pending work and recovery availability. `setReaction(id, name, selected)`, `retryReaction(id, name)` and `abandonReaction(id, name)` address that independent stream. `reactions(id)` supplies projected groups. `removeComment(id)` and `moderateComment(id, minimized, reason?)` use retained subject intent; `retryAction(id)` and `abandonAction(id)` manage it. Independent contributions dispatch independently; only conflicting streams serialize.
+
+Reaction names are THUMBS_UP, THUMBS_DOWN, LAUGH, HOORAY, CONFUSED, HEART, ROCKET and EYES. GitHub upvotes are separate. Moderation reasons are ABUSE, DUPLICATE, OFF_TOPIC, OUTDATED, RESOLVED and SPAM.
 
 ## Writing
 
-A target is `{ kind: 'comment' }`, `{ kind: 'reply', id }` or `{ kind: 'edit', id }`. The target identifies destination; `Writing.id` identifies one independent intent. Editing begins with loaded canonical source. Several records can share a destination.
+A destination is `{ kind: 'comment' }`, `{ kind: 'reply', id }` or `{ kind: 'edit', id }`. Each persistent writing record has its own immutable intent ID and destination; several records may share a destination.
 
-| Method/state | Meaning |
+| Member | Meaning |
 | --- | --- |
-| `writing(target?)` | Active writer for destination, creating one when absent |
-| `newWriting(target?)` | New independent writer, selected for its destination |
-| `activeWriting(target?)` | Selected writer or undefined |
-| `selectedWriting` | Selected record IDs across destinations |
-| `selectWriting(id)` | Select an already attached record |
-| `writings` | Read-only map keyed by persistent record ID |
-| `saveWriting()` | Serialize current records/selections for explicit backup |
-| `recoverWriting(raw)` | Attach validated backup records without replacing another record |
+| `writing(target?)`, `newWriting(target?)` | Selected writer or a new independent writer |
+| `activeWriting(target?)`, `selectWriting(id)` | Read/select an attached record |
+| `writings`, `selectedWriting` | Records and current destination selections |
+| Writing `text`, `open`, `pending`, `error`, `protected`, `actions` | Derived writing and recovery state |
+| Writing `update`, `show`, `hide`, `clear`, `undoClear` | Local writing/visibility commands |
+| Writing `submit`, `abandon` | Issue/recover intent, or deliberately release uncertain recovery |
 
-The default target is the main comment destination. Browser `conversation.recovery` exposes `ready: Promise<void>`, `records(): readonly SavedWriting[]`, `restore(id): Promise<Writing | undefined>`, `pending: boolean` and `error: string`. Await `ready` before presenting recovery choices. `records()` includes saved records and attached writers that are not currently selected. `restore(id)` selects and opens a local record or claims a stored record before attaching it; undefined means it could not restore that ID. A claim covers only that record, so another independent writer for the same destination remains possible. Closing its previous context releases the claim. Previously selected or unambiguous saved writing can recover automatically; additional same-destination records remain explicit choices.
+`submit()` returns saved with result, failed with error, or blocked with reason. Issuing freezes original body, destination, author and key. Unknown issued outcomes remain protected from editing and clearing. Retry uses that exact effect and original author. Preflight rejection before issue leaves ordinary editable writing. Confirmation clears text and closes reply/edit writing even if optional readback later fails.
 
-| Writing member | Meaning |
-| --- | --- |
-| `id`, `target` | Persistent intent ID and immutable destination |
-| `text`, `open`, `pending`, `error`, `protected` | Current text, visibility and issued state |
-| `actions` | Derived edit/hide/clear/undo/sign-in/submit/retry/abandon permissions |
-| `update(text)` | Change editable text |
-| `show()`, `hide()` | Change editor visibility |
-| `clear()`, `undoClear()` | Clear ordinary text and restore it |
-| `submit()` | Issue editable intent or retry its original unresolved submission |
-| `abandon()` | Deliberately release recovery of an issued outcome |
+Abandonment cannot cancel a remote effect. Explain that it might already be saved and obtain a deliberate reader decision before abandoning its recovery identity.
 
-`submit()` returns `{ status: 'saved', result }`, `{ status: 'failed', error }` or `{ status: 'blocked', reason }`. Issuing freezes target/body/key/immutable author. Protected writing cannot be edited or cleared; hiding preserves it, and hidden writing must reopen before submitting. Retry requires the original author. Confirmed saving clears text and closes reply/edit writers. A definite initial rejection permits editing; failed recovery still cannot establish the original outcome and remains protected.
+`conversation.recovery` exposes `ready`, `records()`, `restore(id)`, `pending` and `error`. Storage recovery starts independently of identity and reading. Restoration claims only the selected record, preserving separate same-destination writers. Ordinary browser records default to five-minute retention; unresolved issued records survive that retention and sign-out. Storage failure preserves current in-memory writing but cannot promise reload recovery.
 
-Abandonment cannot cancel the external effect: the contribution might already exist. Explain this consequence and obtain a deliberate reader decision before calling `abandon()`. Presentations choose the recovery indicator and whether protected editors can hide.
+`writingRecovery` accepts `{ retentionMs, store }` or false. A custom `WritingStore` implements load, acquire, save and remove for scoped records; keep a claim until its lifetime retires and remove only the owned record. `saveWriting()` returns typed records/selections; `recoverWriting(records, selected?)` attaches validated typed restoration. Normal persistence is record-level, not repeated whole-page snapshots.
 
-`writingRecovery` accepts `{ retentionMs, store }`. Default browser storage expires ordinary records after five minutes; issued unresolved records survive ordinary retention and sign-out until a known outcome or deliberate abandonment. Each intent has a separate durable key, and admission claims only the chosen record. Storage failure leaves in-memory writing available but cannot promise reload recovery. `writingRecovery: false` disables persistence.
+`createEditor(conversation, writing, { signal, render, writeWhileSignedOut, submitted })` supplies the actual form, textarea and preview nodes. Retain them through redraws to preserve native selection/undo. Project its mode, pending states and error; commands include write, preview, font toggle, submit, clear/undo and disposal. Local drafting can start before sign-in; sign-in never publishes automatically. Previews are independent of participation sign-in. Prepared/source profiles interpret locally; GitHub/stock profiles use the service’s selected provider interpreter without commenter credentials.
 
-Normal browser persistence sends record-level `writingRecord`, `writingRemoved` and `writingSelected` messages. Whole-page `saveWriting()`/`recoverWriting()` are backup/import APIs, not the normal persistence boundary. In iframe embedding the website parent owns storage and claims.
+## Content and counts
 
-A custom `WritingStore` implements `load(scope): SavedWriting[]`, `acquire(scope, id, lifetime): Promise<boolean>`, `save(scope, writing)` and `remove(scope, id)`. Protect unresolved records from ordinary expiry, remove only the owned record, and keep claims until the supplied lifetime retires. A false acquisition means another context owns that record; do not restore or overwrite it.
+`conversation.content.mount(target, comment, { signal, onReady })` binds canonical source once. The owner supplies rendering context, batches acquisition, accepts source/metadata/provider-hint changes and retains installed output during replacement. Explicit preview/custom input uses `{ markdown, purpose, draft? }` through the same method. Mounts expose ready, pending, update, clear and dispose. Preview pending state comes from this same current preparation owner. See [content lifetime](EXTENDING.md#mount-published-bodies).
 
-`createEditor(conversation, writing, { signal, render, writeWhileSignedOut, submitted })` optionally supplies native form/textarea/preview. Keep actual nodes inside the form through unrelated updates. Project `mode`, `fixedWidth`, `pending`, `previewPending` and `error` into controls. Commands are `write()`, `preview()`, `toggleFixedWidth()`, `submit()`, `clear()`, `undoClear()` and `dispose()`. `submitted` receives the outcome even when saving retires the editor, but is suppressed after page/caller retirement.
+`createCounts({ service, repo, origin, registration?, storage? })` from `giscusflare/counts` returns subscribe, read, observe, invalidate and dispose. Subscribing to an exact page key (root count) or typed `CountTarget` batches missing/expired observations automatically. `countKey(target)` is the shared stable map identity for explicit selectors and root/reply windows. Optional same-tab storage and conversation observations use the same scoped owner; null explicitly disables storage. Hosts retain stale useful labels while refreshing and never infer zero from failure.
 
-`writeWhileSignedOut: true` permits local text before authentication. Submit starts sign-in and retains intent without automatically publishing on return. Source and prepared previews can work anonymously; GitHub preview requires sign-in. Standard main input retains its native nodes, with CSS controlling top/bottom placement.
+## Browser session and initialization
 
-## Actions, reactions and session
+`session.signIn()` uses full-page return; `signIn('popup')` explicitly requests a popup. `signOut()` ends local capability use immediately and separately removes the server session. A future capability is generated before OAuth; verified return adoption requires no polling. Return acceptance expires after ten minutes. Full-page recovery depends on browser session storage.
 
-`actions(subjectId?)` derives `reply`, `edit`, `remove`, `moderate`, `react`, `recover` and `abandon`. Omit ID or use `discussion` for discussion actions. Availability is `available`, `sign-in`, `pending`, `recovery` or `unavailable`, with optional reason. `retryAction(id)` and `abandonAction(id)` operate on retained deletion/moderation intent. Writing and each reaction have their own recovery owners.
-
-`setReaction(id, reaction, selected)`, `removeComment(id)` and `moderateComment(id, minimized, reason?)` issue contributions. Reaction names are `THUMBS_UP`, `THUMBS_DOWN`, `LAUGH`, `HOORAY`, `CONFUSED`, `HEART`, `ROCKET` and `EYES`; GitHub Discussions upvotes are separate.
-
-`reaction(id, name)` returns `permission`, `confirmed: { count, selected }`, `desired`, projected `selected`/`count`, `pending`, optional `recovery`, derived `recover` availability and `abandon`. Use `retryReaction(id, name)` or `abandonReaction(id, name)` for that stream. `reactions(id)` returns projected groups. Independent streams dispatch independently; successive desired states coalesce within immutable author/subject/reaction identity. Optional observation/preparation does not reopen a confirmed effect. Narrow patches merge only their owned comment fields or reaction groups.
-
-Browser authentication belongs to `session`: read `signedIn`, `pending`, `error`; call `signIn()` or `signOut()`. Sign-in defaults to full-page return; `signIn('popup')` uses popup with redirect fallback. Capability adoption needs no polling. Return acceptance expires after ten minutes; a lost return needs a new sign-in. Full-page return requires session storage.
-
-`subscribe(listener)` observes the actual page including browser session/appearance/writing changes. Call instance methods through their owners. `signal` retires descendants; browser `own(cleanup)` registers acquired resources and returns an idempotent release. `dispose()` retires the owner; `settled()` waits for issued work. Dispatched external effects can finish afterward but cannot publish into replacement page/account identity.
+Native hosts call `initialize(ConversationInitialization)` with typed session, handoff, fetching, writing restoration, recovery choices or return position. The iframe adapter decodes messages into this same initialization. Storage and login envelopes retain their version 5 identities independently of protocol 6. No runtime legacy importer is involved. `readingLayout.publish()` reports necessary installed reading for return positioning; native reader interaction cancels automatic repositioning.
 
 ## HTTP protocol
 
-Matching version 5 browser and Worker packages use `/api/v5/`. Retired/unknown protocols return HTTP 409 `VERSION_MISMATCH`. The Worker enforces repository scope, website policy and authorization independently of presentation. Clients supply selection, not category or immutable repository authority hints.
-
-GET inputs are JSON in the `input` query parameter. POST inputs are JSON bodies. `config` is `{ repo, origin, term?, strict?, number? }`; `origin` is a full embedding URL. Public policy remains required for anonymous requests.
+Matching browser and Worker packages use `/api/v6/`. Unknown/retired protocols return 409 VERSION_MISMATCH. GET JSON is in the input query parameter; POST JSON is in the body. Website policy applies independently of presentation. Selection is the page object shown above, without appearance or description; clients do not supply repository/installation/category authority IDs.
 
 | Endpoint | Request |
 | --- | --- |
-| GET `/api/v5/page` | `{ config, order?, cursor?, parentId?, ids?, observe?, replyPrefetch?, content? }` |
-| GET `/api/v5/counts` | `{ repo, origin, strict?, terms }`, up to 20 terms |
-| GET `/api/v5/ranking` | `{ config, profile }` |
-| POST `/api/v5/preview` | `{ config, body, content?, draft? }` |
-| POST `/api/v5/contribute` | `{ config, key, action, creation?, content? }`, bearer capability required |
+| GET `/api/v6/page` | `{ config, read, fresh?, content? }` |
+| GET or POST `/api/v6/counts` | `{ repo, origin, targets, registration?, fresh? }`, at most 20 typed count targets |
+| GET `/api/v6/ranking` | `{ config, profile }` |
+| POST `/api/v6/session` | `{ repo, origin, registration? }`; verifies the capability principal |
+| POST `/api/v6/access` | `{ config, ids? }`; bearer capability required |
+| POST `/api/v6/content` | `{ config, inputs, content? }`; at most 20 canonical inputs |
+| POST `/api/v6/contribute` | `{ config, key, action, creation?, content? }`; bearer capability required |
+| POST `/api/v6/logout` | `{ repo, origin, registration? }`; bearer capability required |
+| POST `/api/v6/registration` | `{ repo, origin, category }`; setup or explicit open-hosting registration |
 
-Page and contribution `content` default to `source`; preview defaults to `github`. `source` delivers canonical Markdown, `github` adds provider HTML, and `prepared` adds trusted producer output. `observe: true` requires IDs, zero reply prefetch and no parent/cursor; it observes metadata and loaded IDs without a new traversal. Explicit IDs are bounded to 100. Counts return `counts`, `observedAt` and `expiresAt` in Unix milliseconds: preserve original expiry, and never turn acquisition failure into zero comments.
+`read` selects roots with order/cursor/replyPrefetch, replies with parentId/cursor, observe with up to 100 loaded IDs, or selected with captured IDs and optional replyPrefetch. These are explicit request intents rather than a flag combination.
 
-Preview returns `{ html? , prepared? }`. Prepared preview is anonymous and source preview needs no provider rendering; GitHub preview requires a valid capability. Prepared output is `{ html: string, revision: string, resources?: { styles: string[], scripts: string[] } }`.
+Content delivery is source for deliberate local interpretation, github for provider HTML interpreted by a chosen browser renderer, prepared for the host producer, or stock for the service’s default rich interpretation. GitHub and stock previews use the service’s installation-token provider interpreter; all content requests omit commenter credentials. Prepared/source profiles need no provider calls. The browser GitHub choice bypasses the stock producer, so it does not compile output that the selected renderer would discard.
 
-Contribution actions are:
+Public pages carry canonical source and optional reusable content hints, never expensive completed interpretation. Count results contain observations by `countKey(target)`, with each observation retaining its exact selector and root/reply window identity. The shared client uses GET when encoded input fits the service URL limit, otherwise POST with text/plain JSON to avoid an extra native preflight. Content results preserve input order as `{ results: [{ prepared?, html? } | { error }] }`; one failed body does not discard other results. Prepared output includes HTML, revision, optional resources manifest fingerprint requirement and declared anchor prefixes. The selected profile owns the one manifest with its resource revision and required stylesheet/optional module URLs; bodies do not repeat those arrays. The internal producer binding receives only `{ inputs }`, without commenter credentials.
 
-```ts
-{ type: 'comment', body, replyToId? }
-{ type: 'edit', id, body }
-{ type: 'delete', id }
-{ type: 'moderate', id, minimized, reason? }
-{ type: 'reaction', subject: { kind: 'discussion' }, reaction, selected }
-{ type: 'reaction', subject: { kind: 'comment', id }, reaction, selected }
-```
+Contributions describe comment/reply, edit, delete, moderate or selected-state reaction intent. A confirmed result has phase confirmed, ID, discussion number, optional parent and narrow patch. Patches establish only their owned node fields, reaction groups, window membership/counts and metadata. They do not redefine unrelated accepted facts.
 
-Moderation reasons are `ABUSE`, `DUPLICATE`, `OFF_TOPIC`, `OUTDATED`, `RESOLVED` and `SPAM`. `creation` supplies optional `description` and `backLink` for a missing discussion. A reaction selects a tagged subject rather than inferring discussion/comment from an ID or sending add/remove toggles.
-
-Confirmed results contain `id`, discussion `number`, optional `parentId` and operation-owned `patch`. A patch may contain partial `nodes` (null deletes), reaction groups by subject ID, root/reply window deltas and partial metadata. Merge partial node fields and individual reaction groups; do not replace unrelated canonical facts. Window deltas contain `add`, `remove`, `total` or `cursor` where established.
-
-A receipt binds immutable original author/key to normalized discussion selection and action. Reusing a key with changed effect identity conflicts. Origin remains subject to current policy; content delivery and creation details do not redefine the effect. Retry the unchanged effect as its original author with its original key. A new key is a new effect. The retained `3.` key prefix identifies durable receipt format, independently of version 5 package/protocol naming.
+Preflight errors report not-issued; lost/ambiguous issued effects report unknown. A durable receipt binds original principal/key to exact selection and action. Retry unchanged with its original key; a new key means a new effect. The retained `3.` key format and Repository addresses are independent of protocol 6.

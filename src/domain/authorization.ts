@@ -1,10 +1,10 @@
 import { isNamedTheme } from '../themes.js';
 import type { PublicConfig, RepositoryPolicy } from '../contracts/config.js';
 import type { Widget, Selection } from '../contracts/requests.js';
-import type { DiscussionSummary, Repository, RepositoryHead } from '../contracts/github.js';
+import type { DiscussionSummary } from '../contracts/github.js';
 import { requireCondition } from './errors.js';
 export function policy(config: PublicConfig, repo: string): RepositoryPolicy {
-  if(!Object.hasOwn(config.repositories,repo)&&config.openHosting)return config.openHosting;
+  if(!Object.hasOwn(config.repositories,repo)&&config.openHosting)return config.openHosting as RepositoryPolicy;
   requireCondition(Object.hasOwn(config.repositories, repo), 403, 'PERMISSION', 'This repository is not enabled on this service.');
   return config.repositories[repo]!;
 }
@@ -26,13 +26,8 @@ export function authorizePresentation(publicConfig: PublicConfig, widget: Widget
   }
   return p;
 }
-export function repositoryIdentityScope(meta: RepositoryHead, category: {id:string;name:string} | undefined, repo: string, p: RepositoryPolicy): string {
-  requireCondition(!meta.isPrivate && meta.nameWithOwner.toLowerCase() === repo, 403, 'PUBLIC_ONLY', 'Only the configured public repository is available.');
-  requireCondition(category && category.name === p.category && (!p.categoryId || category.id === p.categoryId), 403, 'CATEGORY', 'The configured category name or ID does not match GitHub.');
-  return category.id;
-}
-export function repositoryScope(meta: Repository, repo: string, p: RepositoryPolicy): string {
-  return repositoryIdentityScope(meta,meta.discussionCategories.nodes.find(x => x.name === p.category),repo,p);
+export function categoryScope(category:{id:string;name:string}|undefined,p:RepositoryPolicy):void {
+  requireCondition(category&&category.id===p.categoryId,403,'CATEGORY','The discussion does not belong to the registered category.');
 }
 export function discussionScope(discussion: Pick<DiscussionSummary, "repository" | "category">, repo: string, repositoryId: string, categoryId: string): void {
   requireCondition(!discussion.repository.isPrivate && discussion.repository.nameWithOwner.toLowerCase() === repo && discussion.repository.id === repositoryId,

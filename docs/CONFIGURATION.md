@@ -10,14 +10,17 @@ Edit your Worker's variables in Cloudflare under **Settings → Variables and Se
 {
   "you/comments": {
     "origins": ["https://example.com", "https://www.example.com"],
-    "category": "Announcements"
+    "category": "Announcements",
+    "repositoryId": "COPY_FROM_REGISTRATION",
+    "installationId": 123456,
+    "categoryId": "COPY_FROM_REGISTRATION"
   }
 }
 ```
 
 Add each website's origin, including the protocol and any port. For example, local development at `http://localhost:4321` needs its own entry. Paths and wildcard subdomains are not accepted. An empty `origins` list allows no websites.
 
-To use another comments repository, add another entry with its category and websites, and install your GitHub App on that repository.
+To add a discussion repository, install the App, run the [registration command](../DEPLOY.md#register-the-repository), and add its returned immutable identities with the category and website policy.
 
 ## Repository settings
 
@@ -27,7 +30,9 @@ The fields below go inside each repository's entry in `REPOSITORIES`.
 | --- | --- | --- |
 | `origins` | Required | Up to 30 website origins, or `"*"` for any website |
 | `category` | Required | Exact discussion category name |
-| `categoryId` | Empty | Optional category ID, checked against the name |
+| `repositoryId` | Required | Immutable repository ID returned by registration |
+| `installationId` | Required | App installation ID returned by registration, as a number |
+| `categoryId` | Required | Registered discussion category ID |
 | `defaultCommentOrder` | `oldest` | `oldest` or `newest` |
 | `maxReplyPrefetch` | `20` | Maximum replies fetched initially per comment, from 0 to 100; the browser requests 5 by default |
 | `customThemeOrigins` | `[]` | Up to 20 extra origins for theme CSS and fonts |
@@ -41,9 +46,9 @@ Set these per repository:
 | Setting | Default | Value |
 | --- | --- | --- |
 | `displayCacheMs` | `60000` | Public comment and reply cache lifetime in milliseconds |
-| `countCacheMs` | `300000` | Post-count cache lifetime in milliseconds |
+| `countCacheMs` | `300000` | Count-observation reuse lifetime in milliseconds |
 
-Both accept 0 to 3600000 milliseconds. Zero disables that cache. For example, `"displayCacheMs": 180000` caches public comments for three minutes. Readers still see their own successful changes immediately.
+Public count observations reuse the edge response and shared browser capability; actor selection deduplicates active work. Both settings accept 0 to 3600000 milliseconds. Zero disables that cache. For example, `"displayCacheMs": 180000` caches public comments for three minutes. Readers still see their own successful changes immediately.
 
 See [Cloudflare usage](../FREE-TIER.md#reads-contributions-and-freshness) to choose lifetimes for your traffic.
 
@@ -109,7 +114,20 @@ To let other website owners use your service with their own public repositories,
 }
 ```
 
-Website owners install your GitHub App on their repository and use your setup page to generate an embed. Their traffic uses your Cloudflare and GitHub allowances.
+Website owners install your GitHub App on their public repository, then obtain a registration reference from POST `/api/v6/registration` with `{ repo, origin, category }`. Include the returned `registration` in native page options or `data-registration` on the iframe script. The service verifies installation/public scope before issuing this policy-bound reference; ordinary requests do not allocate repository state from arbitrary unregistered input. Owners must register again when the hosting policy or installation changes. Their traffic uses your Cloudflare and GitHub allowances.
+
+To obtain a reference from an open deployment:
+
+```js
+const response = await fetch(service + '/api/v6/registration', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ repo: 'you/comments', origin: location.origin, category: 'Announcements' }),
+});
+const { registration } = await response.json();
+```
+
+Use the configured hosting category. Paste the returned reference into setup's embed-generator registration field, or put it directly in `data-registration`/native page options. This sealed reference is distinct from the operator's public repository-ID JSON used to configure an explicit policy.
 
 An explicit `REPOSITORIES` entry overrides `OPEN_HOSTING` for that repository. Use an explicit entry to offer sorting profiles as well.
 
@@ -123,6 +141,8 @@ An explicit `REPOSITORIES` entry overrides `OPEN_HOSTING` for that repository. U
 | `REPOSITORIES` | Repository settings shown above |
 | `OPEN_HOSTING` | Default settings for other public repositories with your App installed |
 | `RANKING_BUDGET` | Resource limits for custom sorting |
+
+Bind a separately deployed content Worker as `CONTENT`. Its profile owns interpretation and disposable result reuse; it does not hold GitHub credentials or Repository storage. [Content setup](EXTENDING.md#prepare-content-in-your-deployment).
 
 Store `GITHUB_CLIENT_SECRET`, `GITHUB_PRIVATE_KEY` and `SESSION_SECRET` as encrypted secrets. See [setup](../DEPLOY.md#configure-cloudflare) for their values and [operations](OPERATIONS.md#credentials-and-logs) when rotating credentials.
 

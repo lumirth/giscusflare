@@ -1,4 +1,3 @@
-import { mountContent } from "./content.js";
 import { writingTargetKey, type Writing, type WritingOutcome } from "../conversation/writing.js";
 import type { Conversation } from "./runtime.js";
 
@@ -59,17 +58,15 @@ export function createEditor(runtime: Conversation, writing: Writing, options: {
   form.dataset.composer = writingTargetKey(writing.target);
   form.dataset.writingId = writing.id;
   textarea.rows = 4;textarea.maxLength = 60000;textarea.dir = 'auto';
-  let mode: 'write' | 'preview' = 'write', fixedWidth = false, error = '', previewPending = false,
-    changing = false, previewVersion = 0, clearedSelection: [number, number, 'forward' | 'backward' | 'none'] | undefined, stop: (() => void) | undefined, unregister: (() => void) | undefined;
-  const content = mountContent(previewElement, runtime.content, { signal: events.signal,
-    preview: (input, signal) => runtime.preview(input.markdown, signal, input.draft) });
+  let mode: 'write' | 'preview' = 'write', fixedWidth = false, error = '',
+    changing = false, clearedSelection: [number, number, 'forward' | 'backward' | 'none'] | undefined, stop: (() => void) | undefined, unregister: (() => void) | undefined;
+  const content = runtime.content.mount(previewElement, undefined, { signal: events.signal });
   const disposed = () => events.signal.aborted;
   const dispose = runtime.own(() => {
     options.signal?.removeEventListener('abort', dispose);
     events.abort();content.dispose();stop?.();unregister?.();form.remove();form.replaceChildren();
   });
   options.signal?.addEventListener('abort', dispose, { once: true });
-  const pending = () => writing.pending;
   const focus = () => textarea.focus({ preventScroll: true });
   const draw = () => { if (!disposed()) options.render(editor); };
   const sync = () => {
@@ -89,9 +86,9 @@ export function createEditor(runtime: Conversation, writing: Writing, options: {
   const editor: Editor = {
     form, textarea, previewElement, signal: events.signal, writing,
     get mode() { return mode; }, get fixedWidth() { return fixedWidth; },
-    get error() { return error || writing.error?.message || runtime.session.error; }, get previewPending() { return previewPending; },
-    get pending() { return pending(); },
-    write() { if (!disposed()) { previewVersion++;content.clear();mode = 'write';previewPending = false;draw();focus(); } },
+    get error() { return error || writing.error?.message || runtime.session.error; }, get previewPending() { return content.pending; },
+    get pending() { return writing.pending; },
+    write() { if (!disposed()) { content.clear();mode = 'write';draw();focus(); } },
     toggleFixedWidth() { if (!disposed()) { fixedWidth = !fixedWidth;draw();focus(); } },
     clear() {
       if (disposed() || !writing.actions.clear) return false;
@@ -100,7 +97,7 @@ export function createEditor(runtime: Conversation, writing: Writing, options: {
       changing = true;
       try { writing.clear();replace(''); }
       finally { changing = false;sync(); }
-      previewVersion++;content.clear();mode = 'write';previewPending = false;draw();return true;
+      content.clear();mode = 'write';draw();return true;
     },
     undoClear() {
       if (disposed() || !writing.actions.undoClear) return false;
@@ -114,13 +111,13 @@ export function createEditor(runtime: Conversation, writing: Writing, options: {
       if (writing.pending) return writing.submit();
       error = '';
       try {
-        if (!runtime.session.signedIn) {
+        if (!runtime.session.signedIn || runtime.session.needsAuthorization && !writing.protected) {
           await runtime.session.signIn();return { status: 'blocked', reason: 'Sign in before submitting.' };
         }
         writing.update(textarea.value);
         const outcome = await writing.submit();
         if (outcome.status === 'blocked') error = outcome.reason;
-        if (!disposed() && outcome.status === 'saved') { previewVersion++;content.clear();mode = 'write';previewPending = false; }
+        if (!disposed() && outcome.status === 'saved') { content.clear();mode = 'write'; }
         if (options.submitted) queueMicrotask(() => { if (!runtime.signal.aborted && !options.signal?.aborted) options.submitted?.(outcome); });
         return outcome;
       } catch (cause) {
@@ -129,17 +126,13 @@ export function createEditor(runtime: Conversation, writing: Writing, options: {
     },
     async preview() {
       if (disposed()) return;
-      content.clear();const version = ++previewVersion, body = textarea.value;
-      mode = 'preview';error = '';previewPending = Boolean(body.trim());
-      previewElement.replaceChildren();
+      const body = textarea.value;
+      mode = 'preview';error = '';
+      if (!body.trim()) { content.clear();draw();return; }
+      const work = content.update({ markdown: body, purpose: 'preview', draft: writing.id });
       draw();
-      if (!previewPending) return;
-      try {
-        await content.update({ markdown: body, purpose: 'preview', draft: writing.id, repo: runtime.config.repo, pageURL: runtime.config.origin });
-      } catch (cause) {
-        if (disposed() || version !== previewVersion || mode !== 'preview') return;
-        error = errorText(cause, 'Unable to preview.');
-      } finally { if (!disposed() && version === previewVersion) { previewPending = false;draw(); } }
+      await work.catch(() => {}); // The content owner preserves readable output and offers recovery.
+      draw();
     },
     dispose,
   };
@@ -149,7 +142,7 @@ export function createEditor(runtime: Conversation, writing: Writing, options: {
       if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault();form.requestSubmit(); }
     }, { signal: events.signal });
     form.addEventListener('submit', event => { event.preventDefault();void editor.submit(); }, { signal: events.signal });
-    unregister = runtime.interactions.register(name, { focus, active: () => form.contains(document.activeElement) });
+    unregister = runtime.interactions.register(name, { focus: () => editor.write(), active: () => form.contains(document.activeElement) });
     stop = runtime.subscribe(sync);sync();
   } catch (cause) { dispose();throw cause; }
   return editor;

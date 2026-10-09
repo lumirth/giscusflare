@@ -11,7 +11,12 @@ For a custom website interface, install the browser package using [native integr
 | `giscusflare/headless` | Browser authentication, persistence and explicit content for a custom interface |
 | `giscusflare/model` | Portable page owner with a supplied transport, without browser APIs |
 | `giscusflare/interactions` | Connecting composers and menus to your controls |
-| `giscusflare/content` | Shared content mounting, host-prepared DOM rendering and portable producer contracts |
+| `giscusflare/content` | Complete profiles, shared content owner and installed-output contracts |
+| `giscusflare/counts` | Lightweight shared count acquisition, observation and reuse |
+| `giscusflare/content/stock` | Complete standard service/browser content profile |
+| `giscusflare/content/worker` | Isolated safe-producer factory |
+| `giscusflare/content/worker/stock` | Ready-to-deploy stock interpretation Worker |
+| `giscusflare/registration` | Operator repository/installation/category registration |
 | `giscusflare/content/github` | Optional GitHub HTML interpretation, code and math defaults/replacements |
 | `giscusflare/content.css` | Built-in content structure without the standard comments layout |
 | `giscusflare/worker` | Building a custom Worker deployment |
@@ -27,7 +32,7 @@ import { copyAssets } from 'giscusflare/assets';
 await copyAssets('worker-assets', ['auth', 'setup', 'iframe']);
 ```
 
-Point Wrangler's `assets.directory` at `worker-assets`. Each group includes its required JavaScript chunks.
+Point Wrangler's `assets.directory` at `worker-assets`. Each group includes its required JavaScript chunks. API exports default and Repository from `giscusflare/worker`; bind an independently deployed stock or custom interpretation Worker as CONTENT. Preserve the existing Durable Object class/binding/history.
 
 | Group | Contents |
 | --- | --- |
@@ -44,6 +49,6 @@ Start with an empty generated asset directory on each build. `copyAssets` preser
 
 ## Build and check a release package
 
-`npm run build` produces Worker and browser bundles, type declarations and static assets under `dist/assets`. `npm run build:test` also builds local examples and simulated sign-in.
+`npm run build` produces API/producer/browser bundles, registration entry point, type declarations and static assets under `dist/assets`. `npm run build:test` also builds local examples and simulated sign-in.
 
 Run `npm run test:package` to extract the archive outside the checkout and check its public imports and selected assets. The check verifies public entry points and that development assets stay out of the package. Headless consumers explicitly select content and import no default UI or content interpretation.

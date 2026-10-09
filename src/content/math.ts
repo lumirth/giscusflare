@@ -6,10 +6,9 @@ import { RegisterHTMLHandler } from 'mathjax-full/js/handlers/html.js';
 import { SerializedMmlVisitor } from 'mathjax-full/js/core/MmlTree/SerializedMmlVisitor.js';
 import { STATE } from 'mathjax-full/js/core/MathItem.js';
 import { AllPackages } from 'mathjax-full/js/input/tex/AllPackages.js';
-import DOMPurify from 'dompurify';
 RegisterHTMLHandler(liteAdaptor());
 /** Isolated macro scope per expression; no dynamic TeX package/network loading. */
-export function renderMath(source: string, display: boolean): DocumentFragment {
+export function renderMathML(source: string, display: boolean): string {
   if(source.length>10000)throw new Error('Math expression exceeds the rendering limit.');
   const input=new TeX({packages:AllPackages.filter(name=>!['require','autoload','html'].includes(name)),maxBuffer:10000,maxMacros:1000});
   const doc=mathjax.document('',{InputJax:input,OutputJax:new SVG({fontCache:'none'})});
@@ -17,5 +16,7 @@ export function renderMath(source: string, display: boolean): DocumentFragment {
   const serialized=new SerializedMmlVisitor().visitTree(node);
   // MathJax represents parse failures as merror nodes instead of throwing.
   if (serialized.includes('<merror')) throw new Error('Invalid math expression.');
-  return DOMPurify.sanitize(serialized,{USE_PROFILES:{mathMl:true},RETURN_DOM_FRAGMENT:true,FORBID_ATTR:['href','xlink:href','style','id','class'],FORBID_TAGS:['annotation-xml']});
+  // This is generated MathML, never raw commenter HTML; navigation and application styles are excluded.
+  return serialized.replace(/\s(?:href|xlink:href|style|id|class)="[^"]*"/g, '')
+    .replace(/<annotation-xml\b[^>]*>[\s\S]*?<\/annotation-xml>/g, '');
 }

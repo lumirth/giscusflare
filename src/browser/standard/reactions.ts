@@ -15,7 +15,7 @@ const contents = Object.keys(reactionEmoji) as Reaction[];
 export const reactions: ReactionSlot = ({ runtime, report, scope }, { subject, position }) => {
   let lifetime = scope.signal;
   const lang = runtime.appearance.lang, t = strings(lang), id = subject?.id || 'discussion',
-    groups = subject ? runtime.reactions(id) : {}, signedIn = runtime.session.signedIn,
+    groups = subject ? runtime.reactions(id) : {}, signedIn = runtime.session.signedIn && !runtime.session.needsAuthorization,
     blocked = (reaction: Reaction) => { const state = runtime.reaction(id, reaction); return state.permission.status !== 'available' || state.recovery?.status === 'uncertain'; },
     uncertain = contents.filter(reaction => runtime.reaction(id, reaction).recovery?.status === 'uncertain');
   const [before = '', signIn = t.signIn, after = ''] = message(lang, 'signInToAddYourReaction').split(/<a>|<\/a>/);
@@ -27,7 +27,7 @@ export const reactions: ReactionSlot = ({ runtime, report, scope }, { subject, p
     catch (error) { if (!lifetime.aborted) report(error); }
   };
   const signInText = html`${before}<button type="button" class="color-text-link hover:underline"
-    @click=${() => { if (!lifetime.aborted) void runtime.session.signIn().catch(report); }}>${signIn}</button>${after}`;
+    @click=${() => { if (!lifetime.aborted) void runtime.session.signIn().catch(report); }}>${runtime.session.needsAuthorization ? 'Reconnect GitHub' : signIn}</button>${after}`;
   return html`<div class="gsc-reaction-group">
     <details class="gsc-reactions-menu" ${resource(scope, (menu, signal, fresh) => {
       lifetime = signal; if (fresh) bindDismissableMenu(menu as HTMLDetailsElement, signal);

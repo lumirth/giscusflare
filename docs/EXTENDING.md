@@ -1,156 +1,123 @@
 # Customize comments
 
-Choose service content delivery, browser rendering and presentation separately. `mountComments` supplies the standard interface and GitHub defaults. `mountPresentation` uses your interface; `createConversation` supplies the browser page owner for a framework. Both headless paths require explicit `contentSource` and `content`. `giscusflare/model` supplies the same portable owner without browser adapters.
+Use `mountComments` for the standard interface and optional component replacements. Use `mountPresentation` or `createConversation` from `giscusflare/headless` for a custom interface, explicitly selecting a complete content profile. `giscusflare/model` supplies the portable owner without browser APIs.
 
-## Choose content rendering
+## Choose a content profile
 
-| Delivery | Browser renderer | Use |
-| --- | --- | --- |
-| `contentSource: 'github'` | `githubContent()` | Default safe GitHub HTML, code and math |
-| `contentSource: 'prepared'` | `preparedHTML()` | Trusted deployed host's HTML and required resources |
-| `contentSource: 'source'` | Your renderer | Browser preparation from canonical Markdown |
+| Selection | Responsibility |
+| --- | --- |
+| `stockContent({ service })` from `giscusflare/content/stock` | Standard GitHub interpretation, rich code/math, required styles and copy controls |
+| `preparedContent()` from `giscusflare/content` | Your deployed safe interpretation and declared resources |
+| `browserContent(renderer)` from `giscusflare/content` | Deliberate commenter-safe browser interpretation |
 
-Delivery controls HTTP acquisition, independently of renderer implementation. The renderer receives original Markdown, `purpose: 'comment' | 'preview'`, repository, page URL and optional comment identity/draft, alongside delivered `html` or `prepared` data. `revision` can identify changed external browser inputs. Canonical GitHub Markdown stays authoritative even when a host dialect displays it differently.
+Canonical GitHub Markdown stays authoritative. The profile pairs acquisition with rendering; custom presentations consume its content owner rather than constructing requests or deciding which data to retain.
 
 ## Prepare content in your deployment
 
-A custom Worker can install a trusted portable producer in the existing repository Durable Object:
+Keep the API and Repository coordinator separate from interpretation:
 
 ```js
-import worker, { createRepository } from 'giscusflare/worker';
+// comments-worker.js
+export { default, Repository } from 'giscusflare/worker';
+```
+
+```js
+// content-worker.js
+import { createContentWorker } from 'giscusflare/content/worker';
 import { prepareComment } from './site-comments.js';
+import resources from './comment-resources.js';
 
 const revision = 'comments-2026-10-08';
-export const Repository = createRepository({
-  content: {
-    revision,
-    async prepare(input, signal) {
-      // This pipeline constrains untrusted commenter HTML, URLs and extensions.
-      const html = await prepareComment(input.markdown, { signal });
-      return {
-        html,
-        revision,
-        resources: {
-          styles: ['https://your-site.example/assets/comments-content.css'],
-          scripts: ['https://your-site.example/assets/comments-content.js'],
-        },
-      };
-    },
+export default createContentWorker({
+  revision,
+  async prepare(input, signal) {
+    return {
+      html: await prepareComment(input.markdown, { signal }),
+      revision,
+      resources: resources.revision,
+      // Declare only generated anchors that must be unique for each installed mount.
+      anchorPrefixes: ['comment-footnote-'],
+    };
   },
 });
-export default worker;
 ```
 
-Keep the deployment's existing Durable Object class name, binding and migration history. The producer receives portable `ContentInputData`, not DOM or viewer credentials. It returns `{ html, revision, resources? }`, where optional resources contain `styles` and `scripts` URL arrays. The producer owns safe interpretation: do not reuse article-author permissions for commenter input. The browser trusts prepared HTML and resource references from this configured producer rather than reinterpreting its source.
+Deploy the producer as an internal Worker with no public route, then bind it as `CONTENT` in the comments Worker's Wrangler configuration:
 
-Change the producer revision whenever interpretation or required resources change. The repository object validates the producer configuration before reuse, coalesces concurrent work and persists eligible artifacts for 24 hours in its existing store. Persistence is bounded to 8 MiB/256 items per object; an item is eligible only when its UTF-8 JSON fits 1 MiB. Valid output can still be delivered if it is too large to retain or cache storage fails. Preparation reuse is independent of viewer state. No additional service or cache platform is required. Prepared preview uses this same producer anonymously, subject to repository and website policy.
-
-```js
-import { mountComments } from 'giscusflare';
-import { preparedHTML } from 'giscusflare/content';
-import 'giscusflare/styles.css';
-
-const comments = mountComments(target, {
-  service: 'https://your-comments.workers.dev',
-  page: { repo: 'you/comments', origin: location.href, term: 'post:hello-world' },
-  contentSource: 'prepared',
-  content: preparedHTML(),
-});
+```json
+"services": [{ "binding": "CONTENT", "service": "your-comment-content" }]
 ```
 
-The renderer loads required styles and module scripts before installing output. Resource references follow the host's CSP. Content styling belongs to the selected producer/renderer; standard presentation styling supplies surrounding layout and controls.
+The producer receives canonical rendering input, never commenter credentials. It owns safe interpretation, URLs and extensions: trusted article-author capabilities must not become commenter permissions. The factory bounds batch input/output, execution concurrency and disposable completed-artifact reuse. Its hot store retains at most 256 items and 8 MiB; individual retained results are at most 2 MB. It has no Repository SQLite artifact store. A cold isolate prepares again, and retention failure does not invalidate otherwise usable output.
 
-## Prepare source in the browser
+Change `revision` when interpretation, trust policy or required resources change. Publish immutable resource URLs, the producer and its consuming website together. Required styles finish before safe HTML is installed; optional module enhancements load independently. A failed enhancement does not erase readable HTML. Declared anchors are rebound per installed mount without rewriting unrelated control identifiers. Select this deployment capability with a manifest produced by the same compiler/resource build:
 
 ```js
-const content = async (input, { signal, lifetime }) => {
+import { preparedContent } from 'giscusflare/content';
+import resources from './comment-resources.js';
+const content = preparedContent({ resources });
+```
+
+The manifest contains its `revision` fingerprint and styles/scripts URL arrays once. Hash the actual immutable resource graph and share this value between the producer and consuming website. Producer output uses `resources: resources.revision` only when its actual generated markup needs that manifest; omit it for prose or other output that needs none. Interpretation revision remains separate, since changing sanitizer or compiler policy need not change the resource graph. An old open page rejects a different resource fingerprint before installing incompatible HTML, preserves installed output or readable source, and offers Reload to acquire the matching website. Known styles start while content is acquired, but unrelated prose does not await them. Script-dependent generated buttons can carry data-content-enhancement: the shared renderer keeps them disabled until modules and enhancement setup finish, retains readable HTML if setup fails, and never reactivates a retired control. Controls deliberately disabled by the producer remain disabled.
+
+For the stock profile, the internal producer can simply export the default from `giscusflare/content/worker/stock`. The supplied source config and `npm run deploy:content` deploy that producer. Keep its service name consistent with the API's `CONTENT` binding.
+
+## Render in the browser
+
+```js
+import { browserContent } from 'giscusflare/content';
+
+const content = browserContent(async (input, { signal, lifetime }) => {
   const node = await siteMarkdown.renderComment(input.markdown, { signal });
   signal.throwIfAborted();
-  // Bind persistent controls to lifetime, which ends when this output retires.
   bindCopyControls(node, lifetime);
   return node;
-};
-const comments = mountComments(target, {
-  service: 'https://your-comments.workers.dev',
-  page: { repo: 'you/comments', origin: location.href, term: 'post:hello-world' },
-  contentSource: 'source',
-  content,
 });
+const comments = mountComments(target, { service, page, content });
 ```
 
-Custom returned DOM is not sanitized again. The renderer owns commenter-safe source interpretation, styles and resources. Source rendering can preview locally without a provider request or sign-in. `context.providerHTML()` and `context.preparedContent()` expose the explicitly selected delivery when needed; they do not change the conversation's delivery mode.
+Returned DOM is not sanitized again. This renderer owns commenter-safe interpretation and resources. Canonical source can be previewed locally before sign-in. Context methods expose explicitly selected provider HTML or prepared content when a custom profile needs them; they do not switch delivery implicitly.
 
-## Preparation and installed lifetime
-
-A `ContentRenderer` returns a `Node`, a promise of one, or `{ node, update?, dispose? }`. `context.signal` cancels one preparation generation. `context.lifetime` belongs to installed output and remains active while a newer generation prepares. Keep persistent controls/resources on the lifetime signal.
-
-For a mounted framework, `update(input, context)` prepares the next revision without changing the live tree, then returns a commit callback (or a promise of one). `mountContent` invokes that callback only if the generation is still current. `dispose()` releases the mounted framework. Unchanged input retains output; changing `revision` forces preparation when external inputs changed. Late output cannot install after replacement or retirement.
+## Mount published bodies
 
 ```js
-import { mountContent } from 'giscusflare/content';
-
-const body = mountContent(target, conversation.content, {
+const body = conversation.content.mount(target, comment, {
   signal: scope.signal,
-  preview: (input, signal) => conversation.preview(input.markdown, signal, input.draft),
+  onReady(ready) { card.hidden = !ready; },
 });
-await body.update({
-  markdown: comment.body,
-  html: comment.bodyHTML,
-  prepared: comment.prepared,
-  purpose: 'comment',
-  repo: conversation.config.repo,
-  pageURL: conversation.config.origin,
-  comment: { id: comment.id, url: comment.url, parentId: comment.parentId },
-});
-// Retire this body when it leaves the presentation.
+// Accepted source/metadata/hint changes update this binding automatically.
+// When this body leaves the view:
 body.dispose();
 ```
 
-`mountContent` serves both published bodies and previews. `clear()` cancels work and removes installed output. An update failure rejects so the host can report it; the last installed output stays available. When there is no installed output, original Markdown remains readable text.
+The selected `ContentOwner` supplies repository, rendering URL, profile, batching, accepted content hints and recovery. Consumers bind a canonical comment once and supply their attachment lifetime. Accepted source, identity metadata and hint changes update its installed mount without redraw-driven update calls. Explicit preview or custom writing input uses the same mount with `{ markdown, purpose, draft? }`. Each mount owns detached current-only preparation and installed output. It retains unchanged content and keeps the installed view usable while a replacement prepares. Failure retains that output or exposes readable source with an owned retry control. `ready` and `onReady` report that mount's installed output; do not make an unrelated count or composer depend on every body being ready.
 
-The optional `onReady(ready)` mount option reports installed readable output, including the cold source fallback. It stays ready while a replacement prepares, and becomes false on clear or disposal. Use it to keep a loading presentation until cold comment bodies can be shown together; data acquisition alone does not mean their presentation is ready. Canceled or superseded work cannot make a body ready.
+A `ContentRenderer` returns a node, an asynchronous node, or `{ node, update?, dispose? }`. `context.signal` cancels one preparation generation; `context.lifetime` owns installed controls and resources. Mounted framework `update(input, context)` prepares without mutating the installed tree and returns a commit callback. The shared mount invokes it only while current. Changing `revision` forces interpretation when external browser inputs changed.
 
-## Replace built-in features
+## Replace rich-content features
+
+The deliberate browser GitHub renderer supports complete code/math replacements:
 
 ```js
+import { browserContent } from 'giscusflare/content';
 import { githubContent } from 'giscusflare/content/github';
 import 'giscusflare/content.css';
 
-const content = githubContent({
-  code({ source, language, origin, file }, { signal, lifetime }) {
-    return siteCode.render({ source, language, origin, file, signal, lifetime });
+const content = browserContent(githubContent({
+  code(input, { signal, lifetime }) {
+    return siteCode.render({ ...input, signal, lifetime });
   },
   math: false,
-});
+}), 'github');
 ```
 
-Use this with `contentSource: 'github'`. `githubContent()` sanitizes provider HTML and supplies code copy controls and math by default. Code replacements receive fence source/language or GitHub file source-link metadata. They own the whole feature, including frame and controls. Math replacements receive `{ source, display }` and own the expression. Both support asynchronous or mounted output through the same lifetime contract. Failed enhancement leaves sanitized readable source.
-
-`code: false` retains sanitized code without default frames/controls; `math: false` retains readable TeX without loading the built-in math renderer; `copy: false` disables the default copy control. Custom feature renderers own their own copy behavior. `labels` supplies `copy`, `copied`, `copyFailed` and `mathFailed` text.
-
-`giscusflare/content.css` supplies built-in structural code/copy, image, math overflow and fallback rules for `.markdown`; website typography remains yours. The standard default uses those rules. Complete host content does not require this stylesheet. The content rules use Primer variables and their giscus theme aliases; presentation layout does not choose your content compiler or typography.
+Code replacements receive source, language and optional GitHub file metadata. Math replacements receive source and display mode. Each owns the complete feature, including frames and controls, through the same asynchronous installed-output contract. `code: false`, `math: false` and `copy: false` disable the respective default feature; `labels` controls copy/failure text. The stock service profile remains the default when no replacement is selected.
 
 ## Build a presentation
 
-A `Presentation` is `(target, conversation, scope) => void`:
+A presentation is `(target, conversation, scope) => void`. Subscribe to the shared owner, render public reading from `document`, account information from `viewer`, and use `actions(id)` and `reaction(id, name)` for controls. The [forum example](https://github.com/lumirth/giscusflare/blob/main/examples/forum.ts) demonstrates a complete custom interface.
 
-```js
-import { mountPresentation } from 'giscusflare/headless';
-
-const presentation = (target, conversation, scope) => {
-  const status = document.createElement('p');
-  target.append(status);
-  scope.own(() => status.remove());
-  const render = () => { status.textContent = conversation.error || conversation.session.error; };
-  scope.own(conversation.subscribe(render));
-  render();
-};
-const comments = mountPresentation(target, { ...options, contentSource: 'source', content }, presentation);
-```
-
-Register cleanup when acquiring resources, since construction can fail. `scope.own()` returns an idempotent early release; `scope.signal` retires presentation work. `conversation.own()` and `conversation.signal` cover the page. `replacePresentation()` preserves reading and writing; `replacePage()` retires both, so rebind observers to the new `comments.conversation`.
-
-The [forum example](https://github.com/lumirth/giscusflare/blob/main/examples/forum.ts) uses the same owners as the standard interface. `actions(id)` supplies authority, pending and recovery availability. `reaction(id, name)` supplies confirmed and desired state for a reaction control. `acquisition()` identifies reading purpose. Hosts choose labels/icons/placement without rebuilding a private operation registry.
+Register resources with `scope.own(cleanup)` as you acquire them; it returns an idempotent early release. `scope.signal` retires the view independently of reading and writing. `replacePresentation()` preserves those owners; `replacePage()` retires them. Publish `conversation.readingLayout.publish()` after the necessary reading DOM is installed to support authentication return positioning. That milestone does not freeze native focus or gate unrelated UI.
 
 ## Add a composer
 
@@ -163,10 +130,10 @@ submit.type = 'submit';
 submit.textContent = 'Publish';
 const editor = createEditor(conversation, writing, {
   signal: scope.signal,
+  writeWhileSignedOut: true,
   render(editor) {
-    if (!editor.form.hasChildNodes()) {
+    if (!editor.form.hasChildNodes())
       editor.form.append(editor.textarea, editor.previewElement, submit);
-    }
     submit.disabled = !(writing.actions.submit || writing.actions.retry || writing.actions.signIn);
     editor.textarea.hidden = editor.mode === 'preview';
     editor.previewElement.hidden = editor.mode === 'write';
@@ -175,20 +142,8 @@ const editor = createEditor(conversation, writing, {
 host.append(editor.form);
 ```
 
-The editor owns native input, shortcuts, submission and preview. Keep its actual textarea and preview element in the form, and retain nodes through unrelated updates to preserve native selection/undo. A framework can use the writing owner directly instead. Persistent intent outlives editor DOM. Await `conversation.recovery.ready`, present `conversation.recovery.records()` and call `conversation.recovery.restore(id)` for the chosen record. That selects and opens the writer while respecting another context's record claim. See [writing commands](API.md#writing) for selection, original-author retry and deliberate abandonment.
+The shared editor owns the actual textarea, form, preview, native shortcuts, submission and recovery. Retain its nodes through unrelated redraws to preserve selection and undo history. Folding, focus restoration, placement and labels remain presentation decisions. Persistent intent outlives editor DOM. Recovery selection uses `conversation.recovery.records()` and `restore(id)`; initialization starts reading and identity independently of storage recovery.
 
 ## Replace standard controls
 
-`mountComments` accepts `header`, `composer` and `reactions` slots through `StandardParts`. Slots return text, a DOM node or a supported `lit-html` template:
-
-```js
-import { html } from 'lit-html';
-
-const comments = mountComments(target, options, {
-  header(context, comment) {
-    return html`<a href=${comment.author?.url ?? comment.url}>${comment.author?.login ?? 'Deleted user'}</a>`;
-  },
-});
-```
-
-Templates retain nodes. Imperative slots should return the same owned node per logical instance when native history matters. Use `context.scope.own(cleanup)` for acquired resources and retire removed bodies independently. `updateAppearance()` retains reading and writing. Native styles obey the website CSP; custom iframe themes need an [allowed CSS origin](CONFIGURATION.md#custom-theme-css).
+`mountComments(target, options, parts)` accepts `header`, `composer` and `reactions` slots. They return text, owned DOM nodes or `lit-html` templates. Retain logical nodes when native history matters, and acquire cleanup through `context.scope`. Use `updateAppearance()` for theme changes without rebuilding reading or writing. Native styles follow the website CSP; iframe themes need an [allowed origin](CONFIGURATION.md#custom-theme-css).

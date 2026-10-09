@@ -1,4 +1,4 @@
-export type AssetGroup = 'auth' | 'setup' | 'iframe' | 'native' | 'headless';
+export type AssetGroup = 'auth' | 'setup' | 'iframe' | 'native' | 'headless' | 'counts' | 'content';
 export const assetManifest: {
   readonly version: 1;
   readonly groups: Readonly<Record<AssetGroup, readonly string[]>>;

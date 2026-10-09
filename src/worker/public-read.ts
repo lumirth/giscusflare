@@ -5,7 +5,8 @@ import type { AppEnv } from './types.js';
 import { configuration } from '../contracts/config.js';
 import { authorizeWidget, parentOrigin, policy } from '../domain/authorization.js';
 import { hash } from '../domain/crypto.js';
-import type { Selection } from '../contracts/requests.js';
+import {countKey} from '../contracts/count.js';
+import type {Selection} from '../contracts/requests.js';
 
 const policyKeys=new WeakMap<object,Promise<string>>();
 function policyKey(config:object):Promise<string>{
@@ -18,25 +19,25 @@ export async function publicRead(c:Context<AppEnv>, input:{repo:string;origin:st
   const config=configuration(c.env);
   if('config' in input)authorizeWidget(config,input.config);
   else parentOrigin(policy(config,input.repo),input.origin);
-  const prepared = 'content' in input && input.content === 'prepared';
-  const respond = async () => {
+  const fresh='fresh'in input&&input.fresh===true;
+  const respond=async()=>{
     const {value,expires} = await read(), response = render(value,expires);
     const remaining = Math.max(0, Math.floor((expires - Date.now()) / 1000));
-    response.headers.set('Cache-Control', !prepared && remaining ? 'public, max-age=' + remaining : 'no-store');
+    response.headers.set('Cache-Control', remaining?'public, max-age=' + remaining : 'no-store');
     response.headers.set('X-Giscusflare-Expires', String(expires));
     return response;
   };
-  // Prepared identity belongs to the actor's producer revision and full rendering context.
-  if(c.get('session')||prepared)return respond();
+
+  if(c.req.method==='POST'||fresh||c.req.header('Cache-Control')?.includes('no-cache'))return respond();
   const cache=typeof caches==='undefined'?null:caches.default;
   if(!cache)return respond();
   const url=new URL(c.req.url);
   // Changed deployment policy cannot reuse entries admitted by an old policy.
   if(url.pathname.startsWith('/api/')){
-    const payload=structuredClone(input) as {config?:Selection;origin?:string;terms?:string[];content?:string};
-    if(payload.config&&payload.content!=='prepared')payload.config.origin=new URL(payload.config.origin).origin;
+    const payload=structuredClone(input) as {config?:Selection;origin?:string;targets?:import('../contracts/count.js').CountTarget[]};
+    if(payload.config){payload.config.origin=new URL(payload.config.origin).origin;payload.config.pageURL=payload.config.origin+'/';payload.config.returnURL=payload.config.origin+'/';}
     else if(payload.origin)payload.origin=new URL(payload.origin).origin;
-    if(payload.terms)payload.terms=[...new Set(payload.terms)].sort();
+    if(payload.targets)payload.targets=[...new Map(payload.targets.map(target=>[countKey(target),target])).values()].sort((a,b)=>countKey(a).localeCompare(countKey(b)));
     url.searchParams.set('input',JSON.stringify(payload));
   }
   url.searchParams.set('policy',await policyKey(config));

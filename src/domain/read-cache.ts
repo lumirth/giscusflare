@@ -15,6 +15,7 @@ export class ReadCache {
   invalidate(matches: (group: string) => boolean): void {
     for (const [key, read] of this.#reads) if (matches(read.group) || (read.alias && matches(read.alias))) this.#remove(key);
   }
+  forget(key:string):void{this.#remove(key);}
   async read<T>(key: string, group: string, ttl: number, load: () => Promise<T>): Promise<ReadValue<T>> {
     const cached = this.#reads.get(key);
     if (cached && (!cached.result || cached.result.expires > this.now())) {

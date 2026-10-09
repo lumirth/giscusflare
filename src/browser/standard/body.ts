@@ -1,12 +1,12 @@
 import { AsyncDirective } from 'lit-html/async-directive.js';
 import { directive } from 'lit-html/directive.js';
-import { mountContent, type ContentMount } from '../content.js';
+import { type OwnedContentMount } from '../content.js';
 import type { Comment } from '../../contracts/document.js';
 import type { StandardContext } from './contracts.js';
 
 class Body extends AsyncDirective {
   #element?: HTMLElement;
-  #mount?: ContentMount;
+  #mount?: OwnedContentMount;
   #signal?: AbortSignal;
   render({ runtime, scope, contentReady }: StandardContext, comment: Comment) {
     scope.signal.throwIfAborted();
@@ -16,12 +16,11 @@ class Body extends AsyncDirective {
     }
     if (!this.#mount || this.#signal !== scope.signal) {
       this.#mount?.dispose(); this.#signal = scope.signal;
-      this.#mount = mountContent(this.#element, runtime.content, { signal: scope.signal,
-        onReady: ready => contentReady(comment.id, ready) });
+      this.#mount = runtime.content.mount(this.#element, comment, { signal: scope.signal,
+        onReady: ready => { this.#element!.dataset.contentReady = String(ready);contentReady(comment.id, ready); } });
     }
-    void this.#mount.update({ markdown: comment.body, html: comment.bodyHTML, prepared: comment.prepared,
-      purpose: 'comment', repo: runtime.config.repo, pageURL: runtime.config.origin,
-      comment: { id: comment.id, url: comment.url, parentId: comment.parentId } }).catch(() => { /* The mount retains readable writing. */ });
+    const mount = this.#mount;this.#element.dataset.contentReady = String(mount.ready);
+    queueMicrotask(() => { if (!scope.signal.aborted && mount === this.#mount) contentReady(comment.id, mount.ready); });
     return this.#element;
   }
   override disconnected() { this.#mount?.dispose(); this.#mount = undefined; }

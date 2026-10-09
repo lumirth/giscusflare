@@ -1,31 +1,21 @@
-# Preparation, effects and recovery ownership
+# Complete shared lifecycles
 
-Version 5 separates service content delivery from browser rendering, exposes the actual portable page model, and makes contribution completion and persistent writing follow their own identities. GitHub remains authoritative for stored Markdown and permissions; repository Durable Object addresses, sessions and durable receipt identities remain stable. [Design](DESIGN.md) describes the complete ownership model; [API](API.md) specifies the public contracts.
+Version 6 carries useful facts through ownership boundaries and removes unrelated prerequisites. Reading, account authority, intent confirmation, content publication and optional enhancement have independent availability. GitHub remains canonical; operational repository, session and receipt identities remain stable.
 
-| Responsibility | Owner |
+| Lifecycle | Owner |
 | --- | --- |
-| Canonical discussion source and permission decisions | GitHub |
-| Website policy, HTTP protocol and immutable repository resolution | Worker |
-| Trusted portable preparation and bounded result reuse | Host producer inside the existing repository Durable Object |
-| Content delivery selection | Explicit `contentSource`: source, GitHub or prepared |
-| Safe prepared HTML and required resource installation | Selected browser content renderer |
-| Reading, operation intent and scoped adoption | Portable `PageModel`, shared by browser and other transports |
-| Authentication, persistent record storage and native interactions | Browser adapters |
-| One independently recoverable draft or issued contribution | Persistent writing record, distinct from its destination |
-| Layout, controls and recovery choices | Standard or host presentation |
+| Installation/category registration | Operator setup or explicit open-hosting registration |
+| Credential renewal and repository operations | Repository coordinator |
+| Website authorization and protocol | API Worker |
+| Canonical traversal and accepted public/account facts | Portable PageModel |
+| Independent draft or issued effect | Persistent intent with immutable author/destination/key |
+| Counts across listings and conversations | Shared count observation capability |
+| Selected interpretation, acquisition, reuse and installed output | ContentOwner and its isolated producer |
+| Native writing surface and preview | Shared editor |
+| Markup, placement, folding and focus policy | Standard or custom presentation |
 
-A host can prepare both published comments and anonymous previews with its own commenter-safe Markdown pipeline. Producer revision identifies interpretation changes; styles and module resources accompany the prepared result. Readers can install that output without downloading the host compiler. A source renderer remains available when browser preparation is the desired choice, and the default GitHub renderer supplies code and math.
+Prepared content executes outside the repository coordinator. Its result does not delay canonical count or immutable effect confirmation. Browser consumers mount through the selected content owner instead of reconstructing profile, context, transport, hint caching or recovery. Required styles protect readable publication; optional script failure leaves that output available.
 
-Preparation is detached from installed content. Generation cancellation stops obsolete work, while installed-view lifetime keeps the current output functional until replacement is committed. Mounted framework updates prepare a commit callback. Presentation layout and selected content styling have separate owners.
+Count observations preserve original age and expiry across their complete path. Account changes retire authority without throwing away public reading. Independent issued effects can finish while other contributions are pending; failures distinguish work never issued from outcomes still unknown.
 
-Contributions return operation-owned changes. Independent effects dispatch independently; repeated desired states coalesce only within the same author, subject and reaction. Narrow comment/reaction patches preserve other accepted facts. A confirmed GitHub effect remains confirmed if optional display preparation or ranking observation fails.
-
-Persistent writing uses independent record IDs. Several contexts can retain drafts for the same destination, and an ordinary or idle context cannot erase another context's intent. Readers explicitly choose which recovered record to restore. Unresolved submissions retain their original author, body, target and key until recovery succeeds or the reader deliberately abandons recovery.
-
-## Qualification and accounting
-
-[Verification](../TESTING.md) defines required behavior and release checks. [Confidence](CONFIDENCE.md) distinguishes what local checks can establish from deployed acceptance. Current gate, release and deployment results belong in the relevant PR and run artifacts; this maintained design document does not substitute for those results.
-
-Count the complete replacement, including defaults, examples, downstream producer/adapters and verification support. Report physical lines, consistently formatted authored lines and bytes, and disclose generated dependencies separately. Moving a responsibility between repositories does not establish savings. Measure the actual reader resource graph and server cold/warm preparation costs.
-
-Detailed ledgers, screenshots and JSON receipts belong in ignored run artifacts. Preserve the established successful default visuals using an independent pre-change baseline; behavioral recovery and failure states need their own observable journeys.
+[Testing](../TESTING.md) defines the meaningful qualification. Current runs and deployments belong in PR/run artifacts; this record claims no completed gate. Source accounting must include replacements, public defaults, examples, downstream integration and verification support. Moving lines between repositories is not a saving. Use an independent pre-change default visual reference and actual cold/fresh request measurements before claiming preservation or improvement.

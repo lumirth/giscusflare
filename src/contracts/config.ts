@@ -1,6 +1,6 @@
 import * as v from 'valibot';
 import { Profile, RankingOptions, DEFAULT_RANKING_LIMITS } from '../ranking/types.js';
-import { CategoryName, EmptyNodeID, Order, Origin, RepositoryName, Token } from './primitives.js';
+import { CategoryName, EmptyNodeID, Order, Origin, RepositoryName, Token, NodeID, PositiveInteger } from './primitives.js';
 import { parse, parseJSON } from './parse.js';
 const RankingProfile = v.strictObject({ ...Profile.entries, tieBreak: v.optional(Profile.entries.tieBreak, 'oldest') });
 const RankingPolicy = v.strictObject({
@@ -14,10 +14,11 @@ const RankingBudget = v.strictObject({
   maxOrderBytes: v.optional(RankingOptions.entries.maxOrderBytes, DEFAULT_RANKING_LIMITS.maxOrderBytes),
 });
 export const RepositoryPolicy = v.strictObject({
+    repositoryId:NodeID,installationId:PositiveInteger,
   ranking:v.optional(RankingPolicy),
   origins: v.union([v.literal('*'),v.pipe(v.array(Origin),v.maxLength(30))]),
   category: CategoryName,
-  categoryId: v.optional(EmptyNodeID, ''),
+  categoryId:NodeID,
   maxReplyPrefetch: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(100)), 20),
   displayCacheMs: v.optional(v.pipe(v.number(),v.integer(),v.minValue(0),v.maxValue(3600000)),60000),
   countCacheMs: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(3600000)), 300000),
@@ -32,7 +33,7 @@ export const PublicConfig = v.strictObject({
   appId: v.pipe(v.string(), v.regex(/^[1-9]\d{0,18}$/)),
   clientId: v.pipe(v.string(), v.minLength(3), v.maxLength(100), v.regex(/^[A-Za-z0-9_.-]+$/)),
   repositories: RepositoryPolicies,
-  openHosting:v.optional(v.pipe(RepositoryPolicy,v.check(p=>!p.ranking))),
+  openHosting:v.optional(v.omit(RepositoryPolicy,['repositoryId','installationId','categoryId','ranking'])),
   rankingBudget:v.optional(RankingBudget,{}),
 });
 export const SecretConfig = v.strictObject({

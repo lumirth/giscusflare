@@ -27,7 +27,7 @@ export function createComposer({ runtime, report }: StandardContext, contributio
       editor.signal.addEventListener('abort', () => render(nothing, form), { once: true });
     }
     const lang = runtime.appearance.lang, t = strings(lang), writing = editor.mode === 'write',
-      signedIn = runtime.session.signedIn, reply = contribution.target.kind === 'reply', edit = contribution.target.kind === 'edit';
+      signedIn = runtime.session.signedIn, reconnect = runtime.session.needsAuthorization && !contribution.protected, reply = contribution.target.kind === 'reply', edit = contribution.target.kind === 'edit';
     const label = reply ? t.reply : t.comments,
       placeholder = signedIn ? (reply ? message(lang, 'writeAReply') : t.placeholder) : message(lang, 'signInToComment');
     if (textarea.getAttribute('aria-label') !== label) textarea.setAttribute('aria-label', label);
@@ -69,8 +69,8 @@ export function createComposer({ runtime, report }: StandardContext, contributio
       <div class="gsc-comment-box-buttons">
         ${reply || edit ? html`<button type="button" class="btn ml-1" @click=${() => contribution.hide()}>${t.cancel}</button>` : nothing}
         <button type="submit" class="btn btn-primary inline-flex items-center ml-1 gap-2"
-          ?disabled=${editor.pending || (signedIn && !(contribution.actions.submit || contribution.actions.retry))}>
-          ${signedIn ? nothing : icons.github}${signedIn ? (edit ? t.save : reply ? t.reply : t.post) : t.signIn}
+          ?disabled=${editor.pending || (signedIn && !reconnect && !(contribution.actions.submit || contribution.actions.retry))}>
+          ${signedIn ? nothing : icons.github}${reconnect ? 'Reconnect GitHub' : signedIn ? (edit ? t.save : reply ? t.reply : t.post) : t.signIn}
         </button>
       </div>
     </div>`, form);

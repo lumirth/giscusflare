@@ -4,7 +4,7 @@ giscusflare can run on Cloudflare’s Free plan. Capacity depends on requests, C
 
 ## Free allowances
 
-Checked October 7, 2026:
+Checked October 8, 2026:
 
 | Resource | Included allowance | Scope |
 | --- | --- | --- |
@@ -22,13 +22,13 @@ Static Assets ordinarily serve scripts and styles without dynamic Worker request
 
 An iframe includes the first anonymous comment page. Subsequent pages, expanded replies, counts, authentication and contributions add requests. Native rendering loads through the API. A request served from the application’s public cache still reaches the Worker and counts toward its allowance.
 
-Anonymous readers can share cached content. Signed-in reads use the reader’s permissions and selected reactions, so they bypass public caching. A reader sees their own confirmed contribution immediately; other readers see it through subsequent reads, subject to the public cache expiry. Open tabs refresh on configured focus/reconnect events, rather than continuously polling.
+Public reading is shared independently of viewer identity. Account permissions and selected reactions use their own authenticated acquisition; public documents survive account changes. A reader sees their own confirmed contribution immediately; other readers see it through subsequent reads, subject to the public cache expiry. Open tabs refresh on configured focus/reconnect events, rather than continuously polling.
 
 Set `displayCacheMs` and `countCacheMs` per repository. Increase them when delayed public updates are acceptable. Reduce `fetching.replyPrefetch` to fetch less reply content initially. Readers can expand the remaining replies. [Configuration](docs/CONFIGURATION.md#cache-settings) and [browser options](docs/API.md#browser-construction-and-mounting) describe these settings.
 
-Prepared delivery bypasses the HTTP edge cache and returns `no-store`; each request still reaches the Worker and repository object. Compilation reuse is separate: the existing object persists eligible prepared artifacts for 24 hours, bounded to 8 MiB/256 items, with a 1 MiB UTF-8 JSON retention limit per item. Its 8 MiB hot cache coalesces concurrent work. Cold preparation spends compiler CPU; persisted/hot reuse avoids that compilation but still incurs request, lookup and serialization work. Retention failures do not reject valid output.
+Canonical reading does not wait for content interpretation. Missing formatted bodies use a separate batched request and an internal content Worker reached by a service binding. This isolates compiler execution from repository coordination, but the producer still needs its own CPU/memory qualification. Its disposable completed-artifact store is bounded to 8 MiB/256 items with a 2 MB retained-result limit; it does not spend Repository SQLite rows retaining formatted output. New isolates prepare again. Required resource loading and optional browser enhancement have separate costs.
 
-Batch counts for up to 20 page identifiers and retain them until their returned `expiresAt`. Show zero only when the service returns zero; a failed request does not establish that a page has no comments.
+Use the shared count capability to batch up to 20 exact page keys. Each observation carries its original time and expiresAt; count-only, page and effect observations share the same owner. Show zero only when the service returns zero; a failed request does not establish that a page has no comments.
 
 ## Elapsed time and CPU
 
@@ -48,8 +48,8 @@ Confirmed reaction corrections update only the chosen reaction and affected targ
 
 ## Check your deployment
 
-Measure cold and warm reads, signed-in reads, contributions, counts and ranked views. Include one busy discussion and traffic spread across an archive. Record the source version, settings, GitHub response conditions, Worker CPU and requests, object duration, and actual SQLite rows read/written.
+Measure cold and warm public reads, account access, contributions, count-only requests, content batches and ranked views. Include one busy discussion and traffic spread across an archive. Record the source version, settings, GitHub response conditions, Worker CPU and requests, object duration, and actual SQLite rows read/written.
 
-One measured Kukas integration moved comment code/math preparation from the reader to its deployed producer. Against its previous browser compiler integration, gzip JavaScript/WASM decreased 60.8% for prose, 92.6% for code and 84.8% for math; an empty comments view increased 11.1%. These are downstream resource-graph measurements, not universal package savings or Worker CPU/capacity results. Measure your selected producer and resources independently.
+Measure the actual selected profile: canonical data, anonymous content, optional modules, stylesheet reuse and a genuinely cold producer have different resource graphs. A smaller browser bundle does not establish lower Worker CPU or free-tier capacity. Service-binding isolation also does not remove the producer's execution limits.
 
 Older release benchmarks used a different persistence design and do not establish current capacity. [Verification results](docs/CONFIDENCE.md) separates current local evidence from historical and deployed observations. Before increasing ranking or payload limits, measure the largest discussion and workload you intend to support.

@@ -1,7 +1,11 @@
+import * as v from 'valibot';
+import * as G from '../contracts/github.js';
+import {Count,Reaction} from '../contracts/primitives.js';
+import {parse} from '../contracts/parse.js';
 import { AppError } from '../domain/errors.js';
 import { INPUTS, validCandidate, type Candidate, type DiscoveryPage, type Input, type Signature } from './types.js';
 
-export interface RankingScope { repositoryId: string; discussionId: string; categoryId?: string; repo: string; category: string }
+export interface RankingScope { repositoryId: string; discussionId: string; categoryId: string; repo: string }
 export interface Query { query: string; variables: Record<string, unknown> }
 type ObjectValue = Record<string, unknown>;
 const object = (value: unknown): ObjectValue => {
@@ -18,7 +22,7 @@ function selection(inputs: readonly Input[]): string {
   ].join(' ');
 }
 export function headQuery(scope: RankingScope): Query {
-  return { query: `query RankHead($discussion:ID!){node(id:$discussion){... on Discussion{${scopeSelection} comments(last:1){totalCount nodes{id}}}}}`, variables: { discussion: scope.discussionId } };
+  return { query: `query RankHead($discussion:ID!){node(id:$discussion){... on Discussion{id number title url locked closed answer{id} repository{id nameWithOwner isPrivate isArchived} category{id name} reactionGroups{content reactors(first:1){totalCount}} comments(last:1){totalCount nodes{id}}}}}`, variables: { discussion: scope.discussionId } };
 }
 export function discoveryQuery(scope: RankingScope, cursor: string | null, inputs: readonly Input[]): Query {
   return { query: `query RankDiscovery($discussion:ID!,$cursor:String){node(id:$discussion){... on Discussion{${scopeSelection} comments(last:100,before:$cursor){nodes{id createdAt isMinimized ${selection(inputs)}} pageInfo{hasPreviousPage startCursor}}}}}`, variables: { discussion: scope.discussionId, cursor } };
@@ -39,7 +43,7 @@ function data(payload: unknown): ObjectValue {
 }
 function scoped(value: unknown, scope: RankingScope): ObjectValue {
   const discussion = object(value), repository = object(discussion.repository), category = object(discussion.category);
-  if (discussion.id !== scope.discussionId || repository.id !== scope.repositoryId || repository.isPrivate !== false || String(repository.nameWithOwner).toLowerCase() !== scope.repo.toLowerCase() || (scope.categoryId && category.id !== scope.categoryId) || category.name !== scope.category) throw new AppError(403, 'PERMISSION', 'Ranking response is outside its public page.');
+  if (discussion.id !== scope.discussionId || repository.id !== scope.repositoryId || repository.isPrivate !== false || String(repository.nameWithOwner).toLowerCase() !== scope.repo.toLowerCase() || category.id!==scope.categoryId) throw new AppError(403, 'PERMISSION', 'Ranking response is outside its public page.');
   return discussion;
 }
 function candidate(value: unknown, inputs: readonly Input[]): Candidate {
@@ -59,12 +63,13 @@ function candidate(value: unknown, inputs: readonly Input[]): Candidate {
   if (typeof node.isMinimized !== 'boolean' || !validCandidate(result, inputs)) throw Error('Incomplete ranking inputs.');
   return result;
 }
-export function parseHead(payload: unknown, scope: RankingScope): Signature {
-  const connection = object(scoped(data(payload).node, scope).comments);
+export function parseHead(payload:unknown,scope:RankingScope,observedAt:number,profiles:string[]):Signature{
+  const raw=scoped(data(payload).node,scope),connection=object(raw.comments);
+  const summary=parse(v.object({...G.DiscussionSummary.entries,repository:G.RepositoryHead,reactionGroups:v.array(v.object({content:Reaction,reactors:v.object({totalCount:Count})}))}),raw,'upstream');
   if (!Number.isSafeInteger(connection.totalCount) || Number(connection.totalCount) < 0 || !Array.isArray(connection.nodes) || connection.nodes.length > 1) throw Error('Incomplete ranking head.');
   const newestRootID = connection.nodes.length ? object(connection.nodes[0]).id : null;
   if ((connection.totalCount === 0) !== (newestRootID === null) || (newestRootID !== null && typeof newestRootID !== 'string')) throw Error('Incomplete ranking head.');
-  return { rootCount: Number(connection.totalCount), newestRootID: newestRootID as string | null };
+  return {rootCount:Number(connection.totalCount),newestRootID:newestRootID as string|null,target:{observedAt,metadata:{archived:summary.repository.isArchived,unavailable:false,profiles,thread:{id:summary.id,number:summary.number,title:summary.title,url:summary.url,locked:summary.locked,closed:summary.closed,answerId:summary.answer?.id??null,reactions:Object.fromEntries(summary.reactionGroups.map(g=>[g.content,{count:g.reactors.totalCount}]))}}}};
 }
 export function parseDiscovery(payload: unknown, scope: RankingScope, inputs: readonly Input[]): DiscoveryPage {
   const connection = object(scoped(data(payload).node, scope).comments), page = object(connection.pageInfo);
