@@ -135,11 +135,11 @@ A custom `WritingStore` implements `load(scope): SavedWriting[]`, `acquire(scope
 
 ## Actions, reactions and session
 
-`actions(subjectId?)` derives `reply`, `edit`, `remove`, `moderate`, `react`, `recover` and `abandon`. Omit ID or use `discussion` for discussion actions. Availability is `available`, `sign-in`, `pending`, `recovery` or `unavailable`, with optional reason. `retryAction(id)` retries retained reaction/deletion/moderation intent; `abandonAction(id)` deliberately releases unresolved action recovery. Writing uses its own owner.
+`actions(subjectId?)` derives `reply`, `edit`, `remove`, `moderate`, `react`, `recover` and `abandon`. Omit ID or use `discussion` for discussion actions. Availability is `available`, `sign-in`, `pending`, `recovery` or `unavailable`, with optional reason. `retryAction(id)` and `abandonAction(id)` operate on retained deletion/moderation intent. Writing and each reaction have their own recovery owners.
 
 `setReaction(id, reaction, selected)`, `removeComment(id)` and `moderateComment(id, minimized, reason?)` issue contributions. Reaction names are `THUMBS_UP`, `THUMBS_DOWN`, `LAUGH`, `HOORAY`, `CONFUSED`, `HEART`, `ROCKET` and `EYES`; GitHub Discussions upvotes are separate.
 
-`reaction(id, name)` returns `permission`, `confirmed: { count, selected }`, `desired`, projected `selected`/`count`, `pending` and optional `recovery`. `reactions(id)` returns projected groups. Independent streams dispatch independently; successive desired states coalesce within immutable author/subject/reaction identity. Optional observation/preparation does not reopen a confirmed effect. Narrow patches merge only their owned comment fields or reaction groups.
+`reaction(id, name)` returns `permission`, `confirmed: { count, selected }`, `desired`, projected `selected`/`count`, `pending`, optional `recovery`, derived `recover` availability and `abandon`. Use `retryReaction(id, name)` or `abandonReaction(id, name)` for that stream. `reactions(id)` returns projected groups. Independent streams dispatch independently; successive desired states coalesce within immutable author/subject/reaction identity. Optional observation/preparation does not reopen a confirmed effect. Narrow patches merge only their owned comment fields or reaction groups.
 
 Browser authentication belongs to `session`: read `signedIn`, `pending`, `error`; call `signIn()` or `signOut()`. Sign-in defaults to full-page return; `signIn('popup')` uses popup with redirect fallback. Capability adoption needs no polling. Return acceptance expires after ten minutes; a lost return needs a new sign-in. Full-page return requires session storage.
 

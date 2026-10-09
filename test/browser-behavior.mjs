@@ -204,13 +204,13 @@ export async function browserBehavior({ browser, service, blog, report, capabili
       window.consumer.recoverySubject = id;
       window.consumer.recoverySelected = !Boolean(owner.reactions(id).HEART?.selected);
       await owner.setReaction(id, 'HEART', window.consumer.recoverySelected).catch(() => {});
-      check(owner.reaction(id, 'HEART').recovery?.status === 'uncertain' && owner.actions(id).recover.status === 'available', 'A custom presentation can identify an unresolved reaction without inspecting private intents');
+      check(owner.reaction(id, 'HEART').recovery?.status === 'uncertain' && owner.reaction(id, 'HEART').recover.status === 'available', 'A custom presentation can identify an unresolved reaction without inspecting private intents');
     });
     await page.context().unroute(service + '/api/v5/contribute');
     await page.context().route(service + '/api/v5/contribute', route => {
       reactionRequests.push(route.request().postDataJSON()); return route.continue();
     });
-    await page.getByRole('article').filter({ has: page.getByRole('button', { name: 'Recover action', exact: true }) }).getByRole('button', { name: 'Recover action', exact: true }).click();
+    await page.getByRole('article').filter({ has: page.getByRole('button', { name: 'Recover ❤️', exact: true }) }).getByRole('button', { name: 'Recover ❤️', exact: true }).click();
     await page.waitForFunction(() => !window.consumer.owner.reaction(window.consumer.recoverySubject, 'HEART').recovery);
     await page.context().unroute(service + '/api/v5/contribute');
     assert.equal(reactionRequests[1].key, reactionRequests[0].key, 'Reaction recovery retains the issued receipt identity');

@@ -317,6 +317,7 @@ try {
             const recoveredPage = await page.context().newPage(); recoveredPage.on('pageerror', error => errors.push(error.message));
             try {
               await recoveredPage.goto(blog + '/native');
+              await expect.poll(() => recoveredPage.evaluate(() => window.demoComments?.conversation.ready ?? false)).toBe(true);
               const restoredProviderId = await recoveredPage.evaluate(async ({ ownerRecordId, independentRecordId, ownerText, independentText }) => {
                 const runtime = window.demoComments.conversation; await runtime.recovery.ready;
                 const writing = await runtime.recovery.restore(ownerRecordId);
