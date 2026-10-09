@@ -18,9 +18,18 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
     const root = document.createElement('section');root.className = 'gsc-main';
     const hadClass = target.classList.contains('giscusflare'),
       previousTheme = target.getAttribute('data-theme'), previousDir = target.getAttribute('dir');
-    let error = '', disposed = false, drawing = false,
+    const readable = new Set<string>();
+    let error = '', disposed = false, drawing = false, scheduled = false, initiallyPresented = false,
       main: { id: string; element: HTMLElement; lifetime: AbortController } | undefined, stop: (() => void) | undefined;
-    const context: StandardContext = { runtime, scope, report(cause) {
+    const scheduleDraw = () => {
+      if (scheduled || disposed) return;
+      scheduled = true; queueMicrotask(() => { scheduled = false; if (!disposed) draw(); });
+    };
+    const context: StandardContext = { runtime, scope, contentReady(id, ready) {
+      if (disposed || readable.has(id) === ready) return;
+      if (ready) readable.add(id); else readable.delete(id);
+      scheduleDraw();
+    }, report(cause) {
       error = cause instanceof Error ? cause.message : String(cause);draw();
     } };
     scope.own(() => {
@@ -80,8 +89,10 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
               </div>`
         }`;
       }
+      const displayable = (c: Comment) => Boolean(c.deletedAt || c.isMinimized ||
+        runtime.activeWriting({ kind: 'edit', id: c.id })?.open || readable.has(c.id));
       function reply(c: Comment) {
-        return html`<article class="gsc-reply" id=${"comment-" + c.id}>
+        return html`<article class="gsc-reply" id=${"comment-" + c.id} ?hidden=${!displayable(c)}>
           <div class="gsc-tl-line"></div>
           <div class="flex">
             <div class="gsc-reply-author-avatar">
@@ -111,7 +122,7 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
           count = window?.total ?? replies.length,
           hidden = Math.max(0, count - replies.length),
           replying = Boolean(runtime.activeWriting({ kind: 'reply', id: c.id })?.open);
-        return html`<article class="gsc-comment" id=${"comment-" + c.id}>
+        return html`<article class="gsc-comment" id=${"comment-" + c.id} ?hidden=${!displayable(c)}>
           <div
             class=${"color-bg-primary w-full min-w-0 rounded-md border " + (c.viewerDidAuthor ? "gsc-comment-author-is-viewer" : "")}
           >
@@ -171,12 +182,15 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
           destination = discussion?.url || 'https://github.com/' + runtime.config.repo + '/discussions',
           problem = error || runtime.error || runtime.session.error || runtime.recovery.error,
           saved = runtime.recovery.records(),
-          initial = !runtime.ready && !problem,
           writable = runtime.canCompose,
           restartAvailable = runtime.continuity.status === 'restart-required' ||
             [roots, ...Object.values(doc.replies)].some(window => window.cursor === null && window.total !== null && window.total > window.ids.length),
           total = Object.values(discussion?.reactions || {}).reduce((sum, group) => sum + group.count, 0),
-          replyCount = comments.reduce((sum, node) => sum + (doc.replies[node.id]?.total ?? doc.replies[node.id]?.ids.length ?? 0), 0);
+          replyCount = comments.reduce((sum, node) => sum + (doc.replies[node.id]?.total ?? doc.replies[node.id]?.ids.length ?? 0), 0),
+          visible = comments.flatMap(node => [node, ...(doc.replies[node.id]?.ids || []).map(id => doc.nodes[id]).filter((reply): reply is Comment => Boolean(reply))]);
+        const preparing = !visible.every(displayable);
+        if (runtime.ready && !preparing) initiallyPresented = true;
+        const initial = !initiallyPresented && !problem;
         if (root.lang !== lang) root.lang = lang;
         if (root.getAttribute('aria-label') !== t.comments) root.setAttribute('aria-label', t.comments);
         if (target.dataset.theme !== runtime.appearance.theme) target.dataset.theme = runtime.appearance.theme;
@@ -205,7 +219,7 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
             </ul>
             ${discussion ? actions(context, target, discussion) : nothing}
           </div>
-          ${runtime.ready && runtime.acquisition()?.purpose !== 'revalidate' && runtime.acquisition() ? loading(t.loading) : nothing}
+          ${!initial && (preparing || (runtime.ready && runtime.acquisition()?.purpose !== 'revalidate' && runtime.acquisition())) ? loading(t.loading) : nothing}
           ${restartAvailable ? html`<p class="color-text-secondary text-sm">${runtime.continuity.reason || 'New comments are available.'}<button type="button" class="ml-2 color-text-link" @click=${attempt(() => runtime.restart())}>${t.retry}</button></p>` : nothing}
           <div class="gsc-timeline">${repeat(comments, node => node.id, comment)}</div>
           ${roots.cursor ? html`<div class="gsc-pagination"><button type="button" class="gsc-pagination-button"

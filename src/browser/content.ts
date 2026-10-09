@@ -35,17 +35,22 @@ const same = (a: ContentInput, b: ContentInput) => a.markdown === b.markdown && 
 /** Preparation is detached; installed output changes only after the current result is ready. */
 export function mountContent(target: HTMLElement, renderer: ContentRenderer, options: {
   signal?: AbortSignal;
+  /** Readable output is installed. It remains ready while a replacement prepares. */
+  onReady?: (ready: boolean) => void;
   preview?: (input: ContentInput, signal: AbortSignal) => Promise<ContentPreview>;
 } = {}): ContentMount {
   let input: ContentInput | undefined, generation: AbortController | undefined, candidate: AbortController | undefined,
-    view: { output: ContentOutput; lifetime: AbortController } | undefined, pending = Promise.resolve(), disposed = false;
+    view: { output: ContentOutput; lifetime: AbortController } | undefined, pending = Promise.resolve(), disposed = false, ready = false;
+  const publishReady = (value: boolean) => {
+    if (ready !== value) { ready = value; options.onReady?.(value); }
+  };
   const release = () => {
     const previous = view; view = undefined;
     if (previous) { previous.lifetime.abort(); if (mounted(previous.output)) previous.output.dispose?.(); }
   };
   const clear = () => {
     generation?.abort(); generation = undefined; candidate?.abort(); candidate = undefined; input = undefined;
-    try { release(); } finally { target.replaceChildren(); target.removeAttribute('aria-busy'); }
+    try { release(); } finally { target.replaceChildren(); target.removeAttribute('aria-busy'); publishReady(false); }
   };
   const dispose = () => {
     if (disposed) return;
@@ -85,7 +90,7 @@ export function mountContent(target: HTMLElement, renderer: ContentRenderer, opt
         failing = true;
         current.abort(); input = undefined; target.removeAttribute('aria-busy');
         if (!retained) lifetime.abort();
-        if (!view) target.textContent = next.markdown;
+        if (!view) { target.textContent = next.markdown; publishReady(true); }
         throw cause;
       };
       const install = (output: ContentOutput) => {
@@ -94,6 +99,7 @@ export function mountContent(target: HTMLElement, renderer: ContentRenderer, opt
         if (!active()) { lifetime.abort(); if (mounted(output)) output.dispose?.(); return; }
         view = { output, lifetime }; if (candidate === lifetime) candidate = undefined;
         target.replaceChildren(mounted(output) ? output.node : output);
+        publishReady(true);
       };
       target.setAttribute('aria-busy', 'true');
       try {
