@@ -23,8 +23,13 @@ export async function buildAssets(outputs) {
     native: [...script('native.js'), 'native.css', 'content.css'],
     headless: script('headless.js'),
     counts: script('counts.js'),
+    mona: [...script('mona.js'), 'mona.css'],
     content: [...script('content.js'), ...script('github-content.js'), ...script('stock-content.js'), 'content.css'],
   };
+  // Stable entry URLs revalidate; their content-addressed imports stay immutable.
+  const entries = ['client.js', ...Object.keys(outputs).filter(path => /^dist\/browser\/[^/]+\.js$/.test(path)).map(path => path.slice('dist/browser/'.length))].sort();
+  const headers = await readFile('package/_headers', 'utf8');
+  await writeFile('public/_headers', headers + entries.map(name => '\n/' + name + '\n  Access-Control-Allow-Origin: *\n  Cache-Control: no-cache\n').join(''));
   await rm('dist/assets', { recursive: true, force: true });
   const files = {};
   for (const name of new Set(Object.values(groups).flat())) {

@@ -3,10 +3,10 @@ import {RankingEngine} from '../ranking/engine.js';
 import {headQuery,discoveryQuery,observationQuery,parseHead,parseDiscovery,parseObservation,type RankingScope} from '../ranking/github.js';
 import type {Source,Storage as RankingStorage} from '../ranking/types.js';
 import type {EffectResult,ReadValue} from '../contracts/results.js';
-import type {WindowPage,ContributionResult,CountObservation,AccessResult} from '../contracts/document.js';
+import type {WindowPage,ContributionResult,CountObservation,AccessResult,Discussion} from '../contracts/document.js';
 import {configuration,secrets,type ConfigBindings,type RepositoryPolicy} from '../contracts/config.js';
 import * as R from '../contracts/requests.js';
-import * as C from '../contracts/rpc.js';
+import type * as C from '../contracts/rpc.js';
 import * as S from '../contracts/storage.js';
 import * as G from '../contracts/github.js';
 import {countKey,countObservation as observeCount,type CountTarget} from '../contracts/count.js';
@@ -17,28 +17,29 @@ import {GitHub} from './github.js';
 import {AppError,requireCondition,result,failure as importFailure,type Result,type Failure} from './errors.js';
 import {Store} from './store.js';
 export interface Registration {repositoryId:string;installationId:number;categoryId:string}
-interface RepositoryContext {client:GitHub;policy:RepositoryPolicy;auth:Auth}
+interface RepositorySetup {client:GitHub;policy:RepositoryPolicy;auth:Auth}
+interface RepositoryContext extends RepositorySetup {session:string;browserCookie:string}
 interface Lookup {repository:G.RepositoryHead;selected:G.DiscussionIdentity|null;count:number;observedAt:number}
-interface ResolvedSelection {selection:{id?:string;number:number}|null;lookup?:Lookup}
+interface ResolvedSelection {selection:{id?:string;number:number;created?:{thread:Discussion;observedAt:number}}|null;lookup?:Lookup}
 export class RepositoryEngine {
   #reads=new ReadCache(()=>this.store.now());
-  #context?:RepositoryContext;
+  #context?:RepositorySetup;
   #ranking?:RankingEngine;
   #repositoryId?:string;
   constructor(readonly env:ConfigBindings,readonly store:Store,readonly rankingStorage?:RankingStorage){}
   /** HTTP owns input and website authorization. This internal call owns immutable actor identity. */
-  execute<K extends C.Operation>(name:K,input:C.Input<K>,registration:Registration):Promise<Result<Output<K>>>{
+  execute<K extends C.Operation>(name:K,input:C.Input<K>,registration:Registration,authority:C.Authority={}):Promise<Result<Output<K>>>{
     return result(async()=>{
       requireCondition(!this.#repositoryId||this.#repositoryId===registration.repositoryId,403,'PERMISSION','The repository object identity does not match.');
       this.#repositoryId=registration.repositoryId;
-      const call=input as C.Input<C.Operation>,request='request'in call?call.request:call,repo='config'in request?request.config.repo:request.repo;
+      const request=input as C.Input<C.Operation>,repo='config'in request?request.config.repo:request.repo;
       const old=this.store.get('identity:v3',S.ActorIdentity);
       if(!old||old.repo!==repo)this.store.put('identity:v3',S.ActorIdentity,{repo,repositoryId:registration.repositoryId});
-      const context=this.#base(repo,registration);
+      const context={...this.#base(repo,registration),session:authority.session??'',browserCookie:authority.browserCookie??''};
       return await (this[name] as(input:C.Input<K>,context:RepositoryContext)=>Promise<Output<K>>).call(this,input,context);
     }) as Promise<Result<Output<K>>>;
   }
-  #base(repo:string,registration:Registration):RepositoryContext{
+  #base(repo:string,registration:Registration):RepositorySetup{
     const old=this.#context;
     if(old&&old.client.repo===repo&&old.client.installationId===registration.installationId&&old.client.categoryId===registration.categoryId)return old;
     if(old)this.#reads.invalidate(()=>true);
@@ -54,7 +55,7 @@ export class RepositoryEngine {
   #rootTarget(w:R.Selection):CountTarget{return {selector:w.selector,window:{kind:'roots'}};}
   /** Counts, reading and commands share canonical discovery. Only public facts enter
    * pending reuse; account authority has its own acquisition. */
-  #lookup(base:RepositoryContext,repo:string,targets:CountTarget[],token:()=>Promise<string>=()=>base.client.installation(),reserve?:()=>void):Promise<Lookup>[] {
+  #lookup(base:RepositorySetup,repo:string,targets:CountTarget[],token:()=>Promise<string>=()=>base.client.installation(),reserve?:()=>void):Promise<Lookup>[] {
     const missing=new Map<string,CountTarget>();let batch:Promise<Map<string,Lookup|Failure>>|undefined;
     const load=async()=>{
       const pages=[...missing].map(([key,target])=>({target,key,mapped:this.store.get(this.#mapping(target.selector,base.policy),S.Mapping)??undefined}));
@@ -78,14 +79,14 @@ export class RepositoryEngine {
       return read.then(entry=>entry.value);
     });
   }
-  async #resolveSelection(base:RepositoryContext,w:R.Selection):Promise<ResolvedSelection>{
+  async #resolveSelection(base:RepositorySetup,w:R.Selection):Promise<ResolvedSelection>{
     if(w.selector.kind==='discussion')return {selection:{number:w.selector.number,...(w.selector.id?{id:w.selector.id}:{})}};
     const p=base.policy,mapped=this.store.get(this.#mapping(w.selector,p),S.Mapping);
     if(mapped)return {selection:mapped};
     const lookup=await this.#lookup(base,w.repo,[this.#rootTarget(w)])[0]!;
     return {selection:lookup!.selected?{id:lookup!.selected.id,number:lookup!.selected.number}:null,lookup};
   }
-  async #ensureDiscussion(base:RepositoryContext,w:R.Selection,selected:ResolvedSelection,session:AuthorizedSession,creation:R.ContributionRequest['creation']):Promise<{id?:string;number:number}>{
+  async #ensureDiscussion(base:RepositoryContext,w:R.Selection,selected:ResolvedSelection,session:AuthorizedSession,creation:R.ContributionRequest['creation']):Promise<NonNullable<ResolvedSelection['selection']>>{
     if(selected.selection)return selected.selection;
     requireCondition(w.selector.kind==='page',400,'BAD_INPUT','Only an exact page key can create a discussion.');
     const key=this.#mapping(w.selector,base.policy),creating=this.#creationKey(w.selector.key,base.policy);
@@ -98,7 +99,7 @@ export class RepositoryEngine {
       this.store.put(creating,S.Creation,{started:this.store.now()});
       try{
         const created=await base.client.create({...w,...creation},token);
-        const identity={id:created.id,number:created.number};this.store.put(key,S.Mapping,identity);this.store.delete(creating);return identity;
+        const identity={id:created.thread.id,number:created.thread.number};this.store.put(key,S.Mapping,identity);this.store.delete(creating);return {...identity,created};
       }catch(error){
         if(error instanceof AppError&&[400,401,403,404,429].includes(error.status))this.store.delete(creating);
         else if(error instanceof AppError)throw new AppError(error.status,error.code,error.message,error.retryAfter,'unknown');
@@ -116,10 +117,10 @@ export class RepositoryEngine {
       }
       const read='replyPrefetch'in r.read?{...r.read,replyPrefetch:Math.min(r.read.replyPrefetch,p.maxReplyPrefetch)}:r.read;
       this.#remember(w,resolved.selection.number);
-      const page=await base.client.page(resolved.selection,{read,selector:w.selector,ttl:p.countCacheMs,profiles:Object.keys(p.ranking?.profiles??{}),html:r.content==='github'||r.content==='stock'},await base.client.installation());
+      const page=await base.client.page(resolved.selection,{read,selector:w.selector,ttl:p.countCacheMs,profiles:Object.keys(p.ranking?.profiles??{}),html:r.providerHTML},await base.client.installation());
       return page;
     };
-    const key=JSON.stringify(['page',p.categoryId,w.selector,r.read,r.content==='github'||r.content==='stock']);
+    const key=JSON.stringify(['page',p.categoryId,w.selector,r.read,r.providerHTML]);
     if(r.fresh)this.#reads.forget(key);
     return this.#reads.read(key,this.#group(w),p.displayCacheMs,load);
   }
@@ -135,16 +136,24 @@ export class RepositoryEngine {
     });
     return {value:{observations,...(Object.keys(errors).length?{errors}:{})},expires:Object.keys(errors).length?0:Math.min(...Object.values(observations).map(o=>o.expiresAt))};
   }
-  async session(input:C.Input<'session'>,base:RepositoryContext){const session=await base.auth.identity(input.session,input.request.origin);return {principal:session?.principal??null,needsAuthorization:Boolean(session&&(!session.credentials||session.credentials.accessExpires<=this.store.now()+60000&&(!session.credentials.refreshToken||session.credentials.refreshExpires<=this.store.now())))};}
+  async session(input:C.Input<'session'>,base:RepositoryContext){const session=await base.auth.identity(base.session,input.origin);return {principal:session?.principal??null,profile:session?base.auth.profile(session.principal):null,needsAuthorization:Boolean(session&&(!session.credentials||session.credentials.accessExpires<=this.store.now()+60000&&(!session.credentials.refreshToken||session.credentials.refreshExpires<=this.store.now())))};}
+  async identity(input:C.Input<'identity'>,base:RepositoryContext){
+    const session=await base.auth.session(base.session,input.origin,true);
+    try{
+      const viewer=await base.client.identity(session!.credentials.accessToken);
+      requireCondition(viewer.id===session!.principal,401,'SESSION','The account identity changed.');
+      return {principal:viewer.id,profile:base.auth.remember(viewer)};
+    }catch(error){if(error instanceof AppError&&error.code==='GITHUB_AUTH')await base.auth.retire(base.session,input.origin,session!.credentials.accessToken);throw error;}
+  }
   async access(input:C.Input<'access'>,base:RepositoryContext):Promise<AccessResult>{
-    const {config:w,ids}=input.request,session=await base.auth.session(input.session,w.origin,true);
+    const {config:w,ids}=input,session=await base.auth.session(base.session,w.origin,true);
     try{
     const resolved=await this.#resolveSelection(base,w);
-    if(!resolved.selection){const principal=await base.client.viewer(session!.credentials.accessToken);requireCondition(principal.id===session!.principal,401,'SESSION','The account identity changed.');return {observedAt:resolved.lookup!.observedAt,principal,permissions:{},reactions:{},threadReactions:{},thread:null,archived:resolved.lookup!.repository.isArchived,unavailable:false};}
+    if(!resolved.selection){const principal=await base.client.principal(session!.credentials.accessToken);requireCondition(principal===session!.principal,401,'SESSION','The account identity changed.');return {observedAt:resolved.lookup!.observedAt,principal,permissions:{},reactions:{},threadReactions:{},availability:{thread:null,archived:resolved.lookup!.repository.isArchived,unavailable:false}};}
     const observed=await base.client.access(resolved.selection,ids,session!.credentials.accessToken);
-    requireCondition(observed.principal.id===session!.principal,401,'SESSION','The account identity changed.');
+    requireCondition(observed.principal===session!.principal,401,'SESSION','The account identity changed.');
     return observed;
-    }catch(error){if(error instanceof AppError&&error.code==='GITHUB_AUTH')await base.auth.retire(input.session,w.origin,session!.credentials.accessToken);throw error;}
+    }catch(error){if(error instanceof AppError&&error.code==='GITHUB_AUTH')await base.auth.retire(base.session,w.origin,session!.credentials.accessToken);throw error;}
   }
     #ranker(repo: string): RankingEngine | undefined {
         if (this.#ranking)
@@ -157,7 +166,7 @@ export class RepositoryEngine {
         requireCondition(Math.floor(b.maxRowsWrittenPerDay / count) >= 256 && Math.floor(b.maxRowsReadPerDay / count) >= 256 && Math.floor(b.maxRequestsPerHour / count) >= 1, 503, 'CONFIGURATION', 'The ranking allowance is too small for the configured repositories.');
         return this.#ranking = new RankingEngine(this.rankingStorage, { ...selected, maxRequestsPerHour: Math.floor(b.maxRequestsPerHour / count), maxRowsWrittenPerDay: Math.floor(b.maxRowsWrittenPerDay / count), maxRowsReadPerDay: Math.floor(b.maxRowsReadPerDay / count), maxOrderBytes: b.maxOrderBytes }, this.store.now);
     }
-    #rankingSource(base:RepositoryContext,repo:string,discussionId:string): Source {
+    #rankingSource(base:RepositorySetup,repo:string,discussionId:string): Source {
         const scope: RankingScope = {repo,repositoryId:this.#repositoryId!,discussionId,categoryId:base.policy.categoryId};
         const read = async (spec: {
             query: string;
@@ -166,13 +175,13 @@ export class RepositoryEngine {
         return { head:async()=>{const observedAt=this.store.now();return parseHead(await read(headQuery(scope)),scope,observedAt,Object.keys(base.policy.ranking?.profiles??{}));}, discover: async (cursor, inputs) => parseDiscovery(await read(discoveryQuery(scope, cursor, inputs)), scope, inputs), observe: async (ids, inputs) => parseObservation(await read(observationQuery(ids, inputs)), ids, scope, inputs) };
     }
     async ranking(input:C.Input<'ranking'>,base:RepositoryContext) {
-        const w = input.request.config, ranker = this.#ranker(w.repo);
-        requireCondition(ranker && Object.hasOwn(ranker.options.profiles, input.request.profile), 400, 'BAD_INPUT', 'This ranking profile is not enabled.');
+        const w = input.config, ranker = this.#ranker(w.repo);
+        requireCondition(ranker && Object.hasOwn(ranker.options.profiles, input.profile), 400, 'BAD_INPUT', 'This ranking profile is not enabled.');
         try {
             const key=this.#mapping(w.selector,base.policy);
             let identity=w.selector.kind==='discussion'&&w.selector.id?{id:w.selector.id,number:w.selector.number}:this.store.get(key,S.Mapping);
             if(!identity){const lookup=await this.#lookup(base,w.repo,[this.#rootTarget(w)],()=>base.client.installation(()=>ranker.allowRequests()),()=>ranker.allowRequests())[0]!;if(!lookup!.selected){const observedAt=lookup!.observedAt;return {status:'ready' as const,ids:[],interval:{started:observedAt,completed:observedAt},nextRefreshAt:observedAt+ranker.options.refreshSeconds*1000,revision:0,target:{observedAt,metadata:{thread:null,archived:lookup!.repository.isArchived,unavailable:false,profiles:Object.keys(base.policy.ranking?.profiles??{})},count:observeCount(this.#rootTarget(w),0,null,observedAt,base.policy.countCacheMs)}};}identity={id:lookup!.selected.id,number:lookup!.selected.number};}
-            const result=await ranker.request(identity.id,input.request.profile,this.#rankingSource(base,w.repo,identity.id)),target=ranker.target(identity.id);
+            const result=await ranker.request(identity.id,input.profile,this.#rankingSource(base,w.repo,identity.id)),target=ranker.target(identity.id);
             return {...result,...(target?{target:{metadata:target.metadata,observedAt:target.observedAt,count:observeCount(this.#rootTarget(w),target.rootCount,{id:identity.id,number:identity.number},target.observedAt,base.policy.countCacheMs)}}:{})};
         }
         catch (error) {
@@ -196,8 +205,8 @@ export class RepositoryEngine {
       }))};
     }
     async contribute(input:C.Input<'contribute'>,base:RepositoryContext): Promise<ContributionResult> {
-        const r = input.request, w = r.config, action = r.action;
-        const identity=await base.auth.identity(input.session,w.origin,true);
+        const r = input, w = r.config, action = r.action;
+        const identity=await base.auth.identity(base.session,w.origin,true);
         const selected=w.selector.kind==='page'?{repo:w.repo,term:w.selector.key,strict:true}:{repo:w.repo,number:w.selector.number};
         const intent = { selection: selected, action };
         const receiptKey = 'receipt:v3:' + await hash(r.key), fingerprint = await hash(JSON.stringify(intent)), owner=identity!.principal;
@@ -212,7 +221,7 @@ export class RepositoryEngine {
             }
             const created = Number(r.key.split('.')[1]);
             requireCondition(Number.isSafeInteger(created) && created <= this.store.now() + 300000 && this.store.now() - created < 86400000, 409, 'OPERATION_EXPIRED', 'This submission is too old to retry. Check the discussion before submitting again.');
-            const session=await base.auth.session(input.session,w.origin,true);issuedToken=session!.credentials.accessToken;
+            const session=await base.auth.session(base.session,w.origin,true);issuedToken=session!.credentials.accessToken;
             requireCondition(session!.principal===owner,401,'SESSION','The account identity changed.');
             const create = action.type === 'comment' && !action.replyToId || action.type === 'reaction' && action.subject.kind === 'discussion' && action.selected;
             const resolved=await this.#resolveSelection(base,w);
@@ -228,12 +237,12 @@ export class RepositoryEngine {
             let effect: EffectResult;
             try {
                 const observedAt=this.store.now();
-                const confirmed=await base.client.contribute(action, a.discussion.id, targetId, parentId, session!.credentials.accessToken, (r.content==='github'||r.content==='stock'));
+                const confirmed=await base.client.contribute(action, a.discussion.id, targetId, parentId, session!.credentials.accessToken, (r.providerHTML));
                 const {rootCount,replyCount,account,...confirmation}=confirmed;
                 effect={...confirmation,...(account?{account:{...account,principal:owner,observedAt}}:{}),number:a.discussion.number,...(parentId?{parentId}:{})};
                 if(!effect.patch&&(action.type==='comment'||action.type==='delete'))effect.patch={};
                 if(effect.patch){effect.patch.observedAt=observedAt;const invalidatedCounts:CountTarget[]=[];if((action.type==='comment'||action.type==='delete')&&!parentId&&rootCount===undefined)invalidatedCounts.push(this.#rootTarget(w));if((action.type==='comment'||action.type==='delete')&&parentId&&replyCount===undefined)invalidatedCounts.push({selector:w.selector,window:{kind:'replies',parentId}});if(invalidatedCounts.length)effect.patch.invalidatedCounts=invalidatedCounts;if(rootCount!==undefined)effect.patch.roots={...effect.patch.roots,count:observeCount(this.#rootTarget(w),rootCount,{id:a.discussion.id,number:a.discussion.number},observedAt,base.policy.countCacheMs)};if(replyCount!==undefined&&parentId)effect.patch.replies={...effect.patch.replies,[parentId]:{...effect.patch.replies?.[parentId],count:observeCount({selector:w.selector,window:{kind:'replies',parentId}},replyCount,{id:a.discussion.id,number:a.discussion.number},observedAt,base.policy.countCacheMs)}};}
-                if (create && effect.patch) effect.patch = { ...effect.patch, metadata: { thread: a.discussion, archived:a.archived, unavailable: false, profiles: Object.keys(base.policy.ranking?.profiles ?? {}) } };
+                if (selected.created) effect.patch={...effect.patch,metadata:{thread:selected.created.thread},metadataObservedAt:selected.created.observedAt};
                 this.store.put(receiptKey, S.Receipt, {owner,fingerprint,result:effect}, expires);
             }
             catch (error) {
@@ -252,10 +261,10 @@ export class RepositoryEngine {
                 catch { /* Acquisition cadence and its budget remain independent of interactive completion. */ }
             }
             return {phase:'confirmed' as const,replayed:false,...effect};
-        }).catch(async error=>{if(issuedToken&&error instanceof AppError&&error.code==='GITHUB_AUTH')await base.auth.retire(input.session,w.origin,issuedToken);throw error;});
+        }).catch(async error=>{if(issuedToken&&error instanceof AppError&&error.code==='GITHUB_AUTH')await base.auth.retire(base.session,w.origin,issuedToken);throw error;});
     }
-    authPrepare(input:C.Input<'authPrepare'>,base:RepositoryContext){return base.auth.prepare(input);}
-    authCallback(input:C.Input<'authCallback'>,base:RepositoryContext){return base.auth.callback(input);}
-    logout(input:C.Input<'logout'>,base:RepositoryContext){return base.auth.logout(input.session,input.request.origin);}
+    authPrepare(input:C.Input<'authPrepare'>,base:RepositoryContext){return base.auth.prepare(input,base.browserCookie);}
+    authCallback(input:C.Input<'authCallback'>,base:RepositoryContext){return base.auth.callback(input,base.browserCookie);}
+    logout(input:C.Input<'logout'>,base:RepositoryContext){return base.auth.logout(base.session,input.origin);}
 }
 export type Output<K extends C.Operation> = Awaited<ReturnType<RepositoryEngine[K]>>;

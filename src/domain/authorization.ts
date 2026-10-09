@@ -26,9 +26,6 @@ export function authorizePresentation(publicConfig: PublicConfig, widget: Widget
   }
   return p;
 }
-export function categoryScope(category:{id:string;name:string}|undefined,p:RepositoryPolicy):void {
-  requireCondition(category&&category.id===p.categoryId,403,'CATEGORY','The discussion does not belong to the registered category.');
-}
 export function discussionScope(discussion: Pick<DiscussionSummary, "repository" | "category">, repo: string, repositoryId: string, categoryId: string): void {
   requireCondition(!discussion.repository.isPrivate && discussion.repository.nameWithOwner.toLowerCase() === repo && discussion.repository.id === repositoryId,
     403, 'PUBLIC_ONLY', 'This discussion is not in the configured public repository.');

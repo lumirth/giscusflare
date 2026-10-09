@@ -12,7 +12,7 @@ const object = (value: unknown): ObjectValue => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error('Incomplete ranking response.');
   return value as ObjectValue;
 };
-const scopeSelection = 'id repository{id nameWithOwner isPrivate} category{id name}';
+const scopeSelection = 'id repository{id nameWithOwner isPrivate} category{id}';
 function selection(inputs: readonly Input[]): string {
   return [
     inputs.some(input => INPUTS.slice(0, 8).includes(input)) ? 'reactionGroups{content reactors(first:1){totalCount}}' : '',
@@ -22,7 +22,7 @@ function selection(inputs: readonly Input[]): string {
   ].join(' ');
 }
 export function headQuery(scope: RankingScope): Query {
-  return { query: `query RankHead($discussion:ID!){node(id:$discussion){... on Discussion{id number title url locked closed answer{id} repository{id nameWithOwner isPrivate isArchived} category{id name} reactionGroups{content reactors(first:1){totalCount}} comments(last:1){totalCount nodes{id}}}}}`, variables: { discussion: scope.discussionId } };
+  return { query: `query RankHead($discussion:ID!){node(id:$discussion){... on Discussion{id number title url locked closed answer{id} repository{id nameWithOwner isPrivate isArchived} category{id} reactionGroups{content reactors(first:1){totalCount}} comments(last:1){totalCount nodes{id}}}}}`, variables: { discussion: scope.discussionId } };
 }
 export function discoveryQuery(scope: RankingScope, cursor: string | null, inputs: readonly Input[]): Query {
   return { query: `query RankDiscovery($discussion:ID!,$cursor:String){node(id:$discussion){... on Discussion{${scopeSelection} comments(last:100,before:$cursor){nodes{id createdAt isMinimized ${selection(inputs)}} pageInfo{hasPreviousPage startCursor}}}}}`, variables: { discussion: scope.discussionId, cursor } };

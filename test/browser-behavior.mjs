@@ -3,16 +3,41 @@ import assert from 'node:assert/strict';
 /** Custom consumers and content run against the same native service as the embedding journey. */
 export async function browserBehavior({ browser, service, blog, report, capability }) {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
-  await page.context().route(service + '/api/v6/**', route => route.continue({headers:{...route.request().headers(),'CF-Connecting-IP':browser.browserType().name()==='chromium'?'192.0.2.180':'192.0.2.181'}}));
-  const errors = [], providerPreviews = [], contentReads = [];
+  await page.context().route(service + '/api/v7/**', route => route.continue({headers:{...route.request().headers(),'CF-Connecting-IP':browser.browserType().name()==='chromium'?'192.0.2.180':'192.0.2.181'}}));
+  const errors = [], providerPreviews = [], contentReads = [], countReads = [];
   page.on('request', request => {
     const url = new URL(request.url());
-    if (url.pathname === '/api/v6/content' && request.method() === 'POST' && request.postDataJSON().inputs?.some(input => input.purpose === 'preview')) providerPreviews.push(url.href);
-    if (url.pathname === '/api/v6/page') contentReads.push(JSON.parse(url.searchParams.get('input')));
+    if (url.pathname === '/api/v7/content' && request.method() === 'POST' && request.postDataJSON().inputs?.some(input => input.purpose === 'preview')) providerPreviews.push(url.href);
+    if (url.pathname === '/api/v7/page') contentReads.push(JSON.parse(url.searchParams.get('input')));
+    if (url.pathname.endsWith('/counts')) countReads.push(url.href);
   });
   page.on('pageerror', error => errors.push(error.message));
   try {
     await page.goto(blog + '/__behavior');
+    let headerArrived, releaseHeader;
+    const headerSeen = new Promise(resolve => {headerArrived=resolve;}), headerHeld = new Promise(resolve => {releaseHeader=resolve;});
+    await page.context().route(service + '/api/v7/page?*', async route => { const response=await route.fetch();headerArrived();await headerHeld;await route.fulfill({response}); });
+    await page.evaluate(async ({service,blog,capability}) => {
+      const {mountComments} = await import(service + '/native.js');
+      const style=document.createElement('link');style.rel='stylesheet';style.href=service+'/native.css?v=7';document.head.append(style);
+      await new Promise((resolve,reject)=>{style.onload=resolve;style.onerror=reject;});
+      const target=document.createElement('div');target.id='cold-standard';document.body.append(target);
+      window.coldStandard=mountComments(target,{service,page:{repo:'example/comments',origin:blog,pageURL:blog+'/cold-header',returnURL:blog+'/cold-header',selector:{kind:'page',key:'Cold header target'}}});
+      window.coldStandard.conversation.initialize({session:capability});
+    }, {service,blog,capability});
+    await headerSeen;
+    const coldHeader = page.locator('#cold-standard .gsc-header');
+    const headerTop = (await coldHeader.boundingBox()).y;
+    assert.equal(await coldHeader.evaluate(e=>Boolean(e.compareDocumentPosition(e.parentElement.querySelector('.gsc-loading'))&Node.DOCUMENT_POSITION_FOLLOWING)),true,'The pending reading indication follows the persistent header');
+    const coldTextarea=page.locator('#cold-standard textarea');await coldTextarea.click();await page.keyboard.type('Draft while public reading waits');
+    releaseHeader();
+    await page.locator('#cold-standard .gsc-loading').waitFor({state:'detached'});
+    assert.equal(await page.evaluate(()=>window.coldStandard.conversation.ready && window.coldStandard.conversation.document.roots.count.count===0),true,'Held public acquisition completes with the independently known empty target');
+    assert.equal((await coldHeader.boundingBox()).y,headerTop,'Removing the reading loader does not displace the persistent header');
+    assert.equal(await coldTextarea.inputValue(),'Draft while public reading waits','Initial reading publication retains native writing');
+    await page.evaluate(()=>{window.coldStandard.dispose();document.getElementById('cold-standard').remove();});
+    await page.context().unroute(service + '/api/v7/page?*');
+    contentReads.length=0;
     await page.evaluate(async ({ service, blog, capability }) => {
       const api = await import(service + '/headless.js');
       const { mountContent, browserContent, preparedHTML } = await import(service + '/content.js');
@@ -145,12 +170,12 @@ export async function browserBehavior({ browser, service, blog, report, capabili
         article.append(source, counter); rendering.inputs.push(input);
         return { node: article, async update(next, nextContext) {
           if (next.markdown.startsWith('Deferred mounted value ')) await new Promise(resolve => waitingUpdates.set(next.markdown, resolve));
-          await Promise.resolve(); nextContext.signal.throwIfAborted(); rendering.updates++;
+          await Promise.resolve(); rendering.updates++;
           if (next.markdown === 'Failed prepared mounted value') throw Error('Renderer offline');
           rendering.inputs.push(next); return () => { source.textContent = next.markdown; };
         }, dispose() { rendering.disposals++; } };
       };
-      const mounted = api.mountPresentation(target, { service, page: { repo: 'example/comments', origin: blog, pageURL: blog + '/article', returnURL: blog + '/article', selector: { kind: 'page', key: 'article' } }, content: browserContent(localMarkdown), fetching: { onFocus: true, staleAfterMs: 0 }, writingRecovery: false, host: { emit() {}, navigate() { throw Error('Unexpected custom-consumer navigation'); } } }, custom);
+      const mounted = api.mountPresentation(target, { service, page: { repo: 'example/comments', origin: blog, pageURL: blog + '/article', returnURL: blog + '/article', selector: { kind: 'page', key: 'article' } }, content: browserContent(localMarkdown), fetching: { onFocus: true, staleAfterMs: 0 }, writingRecovery: false, host: { navigate() { throw Error('Unexpected custom-consumer navigation'); } } }, custom);
       const owner = mounted.conversation;
       owner.initialize({ session: capability });
       await until(() => owner.ready);
@@ -244,6 +269,14 @@ export async function browserBehavior({ browser, service, blog, report, capabili
       releaseLate({ node: document.createElement('span'), dispose() { lateDisposals++; } }); await until(() => lateDisposals === 1);
       check(lateDisposals === 1 && !host.hasChildNodes(), 'A retired asynchronous renderer cannot attach its late result');
       check(lateReadiness.length === 0, 'Canceled preparation never publishes readiness from promise settlement');
+      let retirementCount = 0, retirementError;
+      const throwing = mountContent(host, input => ({ node: document.createTextNode(input.markdown), dispose() {
+        retirementCount++; if (input.markdown === 'Throwing installed cleanup') throw Error('Cleanup failed');
+      } }));
+      await throwing.update({ markdown: 'Throwing installed cleanup', purpose: 'comment', repo: owner.config.repo, pageURL: owner.config.pageURL });
+      await throwing.update({ markdown: 'Readable replacement source', purpose: 'comment', repo: owner.config.repo, pageURL: owner.config.pageURL }).catch(error => { retirementError = error; });
+      check(retirementError?.message === 'Cleanup failed' && retirementCount === 2 && host.textContent.includes('Readable replacement source'), 'Throwing installed cleanup also retires the uninstalled replacement while preserving readable recovery');
+      throwing.dispose(); check(retirementCount === 2 && !host.hasChildNodes(), 'Failed replacement cleanup is not repeated when the mount retires');
       const failedReadiness = [];
       const offline = mountContent(host, async () => { throw Error('Renderer offline'); }, { onReady: ready => failedReadiness.push(ready) });
       await offline.update({ markdown: 'Readable failed source', purpose: 'comment', repo: owner.config.repo, pageURL: owner.config.pageURL }).catch(() => {});
@@ -251,19 +284,36 @@ export async function browserBehavior({ browser, service, blog, report, capabili
       offline.clear(); check(failedReadiness[1] === false && !host.hasChildNodes(), 'Clearing fallback writing retires its readiness'); offline.dispose(); host.remove();
       window.consumer = { mounted, owner, target, until, check, capability };
     }, { service, blog, capability });
+    await page.context().route(service + '/api/v7/identity', route => route.abort('failed'));
+    await page.evaluate(async () => {
+      const { owner, until, check } = window.consumer;
+      await until(() => !owner.viewerPending);
+      const reading = JSON.stringify(owner.document.roots.ids), profile = owner.session.viewer;
+      await owner.session.refreshIdentity();
+      check(owner.session.error && owner.session.viewer.login === profile.login && owner.session.principal === profile.id, 'Failed display-profile refresh retains verified account identity');
+      check(JSON.stringify(owner.document.roots.ids) === reading, 'Display-profile failure does not replace public reading');
+    });
+    await page.context().unroute(service + '/api/v7/identity');
+    await page.evaluate(async () => {
+      const { owner, check } = window.consumer;
+      await owner.session.verify();
+      check(!owner.session.error && owner.session.viewer?.login === 'reader', 'Session Retry refreshes the failed display identity even when principal proof is already verified');
+    });
+    const beforeCountReuse = countReads.length;
     await page.evaluate(async ({service,blog}) => {
       const {createCounts} = await import(service + '/counts.js');
       const values = [], badge = document.createElement('span'); document.body.append(badge);
-      const counts = createCounts({service,repo:'example/comments',origin:blog,storage:null});
+      const counts = createCounts({service,repo:'example/comments',origin:blog});
       const release = counts.subscribe('article', value => { values.push(value); badge.textContent = String(value.count); });
       await counts.read(['article']);
       const before = values.length; counts.observe(values.at(-1));
       if (values.length !== before) throw Error('Reusing the exact count observation emitted a new fact');
       window.consumer.counts = {counts,values,badge,release};
     }, {service,blog});
+    assert.equal(countReads.length,beforeCountReuse,'A badge reuses the acquired page count without another provider request');
     let countArrived, releaseCount;
     const countSeen = new Promise(resolve => {countArrived=resolve;}), countHeld = new Promise(resolve => {releaseCount=resolve;});
-    await page.context().route(service + '/api/v6/counts?*', async route => {
+    await page.context().route(service + '/api/v7/counts?*', async route => {
       const response = await route.fetch(); countArrived(); await countHeld; await route.fulfill({response});
     });
     await page.evaluate(() => {
@@ -279,14 +329,16 @@ export async function browserBehavior({ browser, service, blog, report, capabili
       const observation = outcome.result.patch.roots.count; counts.observe(observation);
       check(observation.count === before.count + 1 && badge.textContent === String(observation.count),'Confirmed provider facts update the shared count consumer immediately');
       window.consumer.counts.confirmed = observation;
+      window.consumer.counts.membership = owner.document.roots.ids;
     });
     releaseCount(); await page.evaluate(() => window.consumer.counts.pending);
-    await page.context().unroute(service + '/api/v6/counts?*');
+    await page.context().unroute(service + '/api/v7/counts?*');
     await page.evaluate(() => {
-      const {values,badge,confirmed} = window.consumer.counts;
+      const {values,badge,confirmed,membership} = window.consumer.counts;
       if (values.at(-1).count !== confirmed.count || badge.textContent !== String(confirmed.count)) throw Error('A held older count replaced the confirmed contribution observation');
+      if (window.consumer.owner.document.roots.ids !== membership) throw Error('Independent count refresh changed the captured reading membership');
     });
-    await page.context().route(service + '/api/v6/counts?*', async route => {
+    await page.context().route(service + '/api/v7/counts?*', async route => {
       const response = await route.fetch(), result = await response.json();
       const unavailableKey = JSON.stringify(['page','unavailable',null,'roots',null]);
       delete result.observations[unavailableKey];
@@ -300,7 +352,26 @@ export async function browserBehavior({ browser, service, blog, report, capabili
       await Promise.all([renewed,unavailable]);
       if (!failed || values.at(-1).count !== known.count || badge.textContent !== String(known.count)) throw Error('One unavailable count discarded an independently successful observation');
     });
-    await page.context().unroute(service + '/api/v6/counts?*');
+    await page.context().unroute(service + '/api/v7/counts?*');
+    let cohortArrived, releaseCohort;
+    const cohortSeen = new Promise(resolve => {cohortArrived=resolve;}), cohortHeld = new Promise(resolve => {releaseCohort=resolve;});
+    await page.context().route(service + '/api/v7/counts?*', async route => {
+      const response = await route.fetch();
+      assert.equal(JSON.parse(new URL(route.request().url()).searchParams.get('input')).targets.length,2,'Independent count requests share one provider batch');
+      cohortArrived();await cohortHeld;await route.fulfill({response});
+    });
+    await page.evaluate(() => {
+      const {counts} = window.consumer.counts, canceled = {selector:{kind:'page',key:'Canceled count acquisition'},window:{kind:'roots'}}, survivor = {selector:{kind:'page',key:'Surviving count acquisition'},window:{kind:'roots'}};
+      const abort = new AbortController();
+      window.consumer.counts.cohort = {canceled,survivor,abort,canceledWork:counts.read([canceled],abort.signal).catch(() => {}),survivorWork:counts.read([survivor])};
+    });
+    await cohortSeen;
+    await page.evaluate(async () => { const cohort=window.consumer.counts.cohort;cohort.abort.abort();await cohort.canceledWork; });
+    releaseCohort();await page.evaluate(async () => {
+      const {counts,cohort} = window.consumer.counts;await cohort.survivorWork;
+      if (counts.facts.get(cohort.canceled)!==null || counts.facts.get(cohort.survivor)?.count!==0) throw Error('A canceled count row published facts or discarded its still-owned sibling');
+    });
+    await page.context().unroute(service + '/api/v7/counts?*');
     await page.evaluate(() => { const {counts,badge,release} = window.consumer.counts; release();counts.dispose();badge.remove(); });
     const activeWriting = await page.evaluate(() => window.consumer.owner.writing().id);
     const textarea = page.locator('.forum-composer[data-writing-id="' + activeWriting + '"] textarea');
@@ -315,7 +386,7 @@ export async function browserBehavior({ browser, service, blog, report, capabili
     await textarea.press(modifier + '+Shift+z');
     assert.equal(await textarea.inputValue(), 'Forum native editing survives refresh');
     const reactionRequests = [];
-    await page.context().route(service + '/api/v6/contribute', route => {
+    await page.context().route(service + '/api/v7/contribute', route => {
       reactionRequests.push(route.request().postDataJSON()); return route.abort('failed');
     });
     await page.evaluate(async () => {
@@ -325,13 +396,13 @@ export async function browserBehavior({ browser, service, blog, report, capabili
       await owner.setReaction(id, 'HEART', window.consumer.recoverySelected).catch(() => {});
       check(owner.reaction(id, 'HEART').recovery?.status === 'uncertain' && owner.reaction(id, 'HEART').recover.status === 'available', 'A custom presentation can identify an unresolved reaction without inspecting private intents');
     });
-    await page.context().unroute(service + '/api/v6/contribute');
-    await page.context().route(service + '/api/v6/contribute', route => {
+    await page.context().unroute(service + '/api/v7/contribute');
+    await page.context().route(service + '/api/v7/contribute', route => {
       reactionRequests.push(route.request().postDataJSON()); return route.continue();
     });
     await page.getByRole('article').filter({ has: page.getByRole('button', { name: 'Recover ❤️', exact: true }) }).getByRole('button', { name: 'Recover ❤️', exact: true }).click();
     await page.waitForFunction(() => !window.consumer.owner.reaction(window.consumer.recoverySubject, 'HEART').recovery);
-    await page.context().unroute(service + '/api/v6/contribute');
+    await page.context().unroute(service + '/api/v7/contribute');
     assert.equal(reactionRequests[1].key, reactionRequests[0].key, 'Reaction recovery retains the issued receipt identity');
     assert.deepEqual(reactionRequests[1].action, reactionRequests[0].action, 'Reaction recovery retains the issued effect');
     await page.evaluate(async () => {
@@ -365,7 +436,7 @@ export async function browserBehavior({ browser, service, blog, report, capabili
       mounted.dispose();
       check(!target.hasChildNodes(), 'Final disposal releases the current view');
     });
-    assert.ok(contentReads.length > 0 && contentReads.every(input => input.content === 'source'), 'A local Markdown consumer acquires source without provider HTML');
+    assert.ok(contentReads.length > 0 && contentReads.every(input => input.providerHTML === false && !Object.hasOwn(input, 'content')), 'A local Markdown consumer acquires source without provider HTML');
     assert.equal(providerPreviews.length, 0, 'A complete website Markdown pipeline never requests provider HTML for previews');
     assert.deepEqual(errors, [], 'Custom consumer and rich-content page errors');
     report.checks.push({ engine: browser.browserType().name(), workflow: 'real repository custom consumer, content safety and resource retirement', status: 'passed' });
@@ -403,7 +474,7 @@ export async function browserBehavior({ browser, service, blog, report, capabili
     await page.waitForFunction(() => !document.getElementById('setup-result').hidden);
     assert.equal(requests.length, 2, 'Only deployment status and registered repository information use the network');
     assert.ok(!requests.some(url => url.includes(secret)));
-    assert.ok((await page.locator('#setup-code').textContent()).includes(`src="${service}/client.js"`));
+    assert.ok((await page.locator('#setup-code').textContent()).includes(`src="${service}/client.js?v=7"`));
     assert.ok((await page.locator('#setup-code').textContent()).includes('data-page-key="article"'));
     assert.deepEqual(errors, [], 'Setup page errors');
     report.checks.push({ engine: browser.browserType().name(), workflow: 'local registered configuration and typed embed generation', status: 'passed' });

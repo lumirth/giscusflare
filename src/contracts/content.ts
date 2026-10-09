@@ -21,10 +21,10 @@ export const ContentInputSchema = v.object({
 });
 export type ContentInputData = v.InferOutput<typeof ContentInputSchema>;
 export const ContentBatch = v.object({ inputs: v.pipe(v.array(ContentInputSchema), v.minLength(1), v.maxLength(20)) });
-export type ContentPreparer = (input: ContentInputData, signal?: AbortSignal) => PreparedContent | Promise<PreparedContent>;
+export type ContentPreparer = (input: ContentInputData, signal?: AbortSignal) => Omit<PreparedContent, 'revision'> | Promise<Omit<PreparedContent, 'revision'>>;
 export interface ContentPreview { html?: string; prepared?: PreparedContent }
 export type ContentResult = ContentPreview | { error: string };
 export interface ContentBatchResult { results: ContentResult[] }
 /** A deliberate browser interpretation profile may request provider HTML. */
-export const ContentSource = v.picklist(['source', 'github', 'prepared', 'stock']);
+export const ContentSource = v.picklist(['github', 'prepared', 'stock']);
 export type ContentSource = v.InferOutput<typeof ContentSource>;

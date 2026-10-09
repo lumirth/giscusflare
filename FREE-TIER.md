@@ -52,4 +52,4 @@ Measure cold and warm public reads, account access, contributions, count-only re
 
 Measure the actual selected profile: canonical data, anonymous content, optional modules, stylesheet reuse and a genuinely cold producer have different resource graphs. A smaller browser bundle does not establish lower Worker CPU or free-tier capacity. Service-binding isolation also does not remove the producer's execution limits.
 
-Older release benchmarks used a different persistence design and do not establish current capacity. [Verification results](docs/CONFIDENCE.md) separates current local evidence from historical and deployed observations. Before increasing ranking or payload limits, measure the largest discussion and workload you intend to support.
+Older release benchmarks used a different persistence design and do not establish current capacity. [Verification scope](TESTING.md#historical-evidence-and-limits) separates current local evidence from historical and deployed observations. Before increasing ranking or payload limits, measure the largest discussion and workload you intend to support.

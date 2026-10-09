@@ -2,7 +2,6 @@ import * as v from 'valibot';
 import { Capability, Cursor, DiscussionNumber, EmptyNodeID, IdempotencyKey, Language, Markdown, NodeID, Order, Origin, PageURL, Reaction, RepositoryName, SafeLine, Theme } from './primitives.js';
 import { parse } from './parse.js';
 import { AppError } from '../domain/errors.js';
-import {ContentSource,ContentBatch} from './content.js';
 
 const Term = v.pipe(v.string(), v.maxLength(256), v.check(s => !/[\u0000-\u001f\u007f]/u.test(s)));
 const Description = v.pipe(v.string(), v.maxLength(2000), v.check(s => !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(s)));
@@ -13,18 +12,19 @@ export const Selector = v.variant('kind', [
 ]);
 export type Selector=v.InferOutput<typeof Selector>;
 export const CountTarget=v.strictObject({selector:Selector,window:v.variant('kind',[v.strictObject({kind:v.literal('roots')}),v.strictObject({kind:v.literal('replies'),parentId:NodeID})])});
+const sameReturnOrigin=(value:{origin:string;returnURL:string})=>new URL(value.returnURL).origin===value.origin;
 export const Selection = v.pipe(v.strictObject({
   repo:RepositoryName,selector:Selector,origin:Origin,pageURL:PageURL,returnURL:PageURL,
   registration:v.optional(v.pipe(v.string(),v.maxLength(8192))),
-}),v.check(c=>new URL(c.returnURL).origin===c.origin));
+}),v.check(value=>sameReturnOrigin(value)));
 export type Selection=v.InferOutput<typeof Selection>;
 const Creation=v.strictObject({description:v.optional(Description,'')});
-export const Widget=v.strictObject({
+export const Widget=v.pipe(v.strictObject({
   ...Selection.pipe[0].entries,...Creation.entries,
   theme:v.optional(Theme,'preferred_color_scheme'),lang:v.optional(Language,'en'),
   reactionsEnabled:v.optional(v.boolean(),true),emitMetadata:v.optional(v.boolean(),false),
   inputPosition:v.optional(v.picklist(['top','bottom']),'bottom'),
-});
+}),v.check(value=>sameReturnOrigin(value)));
 export type Widget = v.InferOutput<typeof Widget>;
 export {selection} from './selection.js';
 // Query strings need conversion; JSON uses typed numbers and booleans.
@@ -56,7 +56,7 @@ export const ReadIntent=v.variant('kind',[
   v.strictObject({kind:v.literal('selected'),ids:IDs,replyPrefetch:ReplyPrefetch}),
 ]);
 export type ReadIntent=v.InferOutput<typeof ReadIntent>;
-export const PageRequest=v.strictObject({config:Selection,read:ReadIntent,fresh:v.optional(v.boolean(),false),content:v.optional(ContentSource,'source')});
+export const PageRequest=v.strictObject({config:Selection,read:ReadIntent,fresh:v.optional(v.boolean(),false),providerHTML:v.optional(v.boolean(),false)});
 export const ModerationReason = v.picklist(['ABUSE', 'DUPLICATE', 'OFF_TOPIC', 'OUTDATED', 'RESOLVED', 'SPAM']);
 export type ModerationReason = v.InferOutput<typeof ModerationReason>;
 /** Commands describe user intent; all effects use the same contribution protocol. */
@@ -71,12 +71,11 @@ export const Action = v.variant('type', [
   v.strictObject({ type: v.literal('moderate'), id: NodeID, minimized: v.boolean(), reason: v.optional(ModerationReason, 'OFF_TOPIC') }),
 ]);
 export const ContributionRequest = v.pipe(v.strictObject({
-  config: Selection, key: IdempotencyKey, action: Action, content: v.optional(ContentSource, 'source'), creation: v.optional(Creation, {}),
+  config: Selection, key: IdempotencyKey, action: Action, providerHTML:v.optional(v.boolean(),false), creation: v.optional(Creation, {}),
 }));
 export type PageRequest = v.InferOutput<typeof PageRequest>;
 export type Action = v.InferOutput<typeof Action>;
 export type ContributionRequest = v.InferOutput<typeof ContributionRequest>;
-export const InterpretRequest=v.object({config:Selection,...ContentBatch.entries});
 export const InfoRequest = v.strictObject({ repo: RepositoryName, origin: Origin, registration:v.optional(v.pipe(v.string(),v.maxLength(8192))) });
 export const AccessRequest=v.strictObject({config:Selection,ids:v.optional(v.pipe(v.array(NodeID),v.maxLength(100)),[])});
 const AuthContext = { ...InfoRequest.entries, returnURL:PageURL, mode: v.picklist(['popup', 'redirect']), openerOrigin: v.optional(Origin) };
@@ -84,9 +83,8 @@ export const AuthWindow = v.strictObject({ ...AuthContext, attempt: Capability }
 export const AuthPrepare = v.strictObject({ ...AuthContext, proof: Capability });
 export const LogoutRequest = InfoRequest;
 export const AuthStartQuery = v.strictObject({ repo:RepositoryName,registration:v.optional(v.pipe(v.string(),v.maxLength(8192))),attempt:Capability});
-export const AuthCallbackQuery = v.strictObject({ iss:v.optional(v.literal('https://github.com/login/oauth')), state:v.pipe(SafeLine,v.maxLength(8192)),registration:v.optional(v.pipe(v.string(),v.maxLength(8192))), code: v.optional(v.pipe(v.string(), v.maxLength(1024))), error: v.optional(v.pipe(v.string(), v.maxLength(256))), error_description: v.optional(SafeLine), error_uri: v.optional(PageURL) });
+export const AuthCallbackQuery = v.strictObject({ iss:v.optional(v.literal('https://github.com/login/oauth')), state:v.pipe(SafeLine,v.maxLength(8192)), code: v.optional(v.pipe(v.string(), v.maxLength(1024))), error: v.optional(v.pipe(v.string(), v.maxLength(256))), error_description: v.optional(SafeLine), error_uri: v.optional(PageURL) });
 export type AuthStartQuery=v.InferOutput<typeof AuthStartQuery>;
-export type InterpretRequest=v.InferOutput<typeof InterpretRequest>;
 export type InfoRequest = v.InferOutput<typeof InfoRequest>;
 export type AuthPrepare = v.InferOutput<typeof AuthPrepare>;
 export type AuthWindow = v.InferOutput<typeof AuthWindow>;

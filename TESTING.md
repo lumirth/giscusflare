@@ -1,6 +1,6 @@
 # Verification
 
-Use Node 22.16 or newer and `npm ci`. Run the complete release gate before proposing a release; use focused checks while implementing a change. Historical results do not qualify the current preparation, operation and recovery contracts.
+Use Node 22.16 or newer and `npm ci`. Run the complete release gate before proposing a release; use focused checks while implementing a change. Use current PR/run artifacts for executed gates; a scope description or historical result does not qualify the current contracts.
 
 | Command | Evidence |
 | --- | --- |
@@ -32,7 +32,7 @@ For manual editor checks, compare real typing, undo and redo with a plain textar
 
 Current qualification compares successful default states with an independently frozen pre-change build outside Git. Exercise Chromium and WebKit, native and iframe modes, narrow and wide layouts, published rich content and normal composer states. Use equal deterministic inputs and complete pixels; record the actual comparison outcome in its run artifact.
 
-The demo/default presentation must retain its established appearance. The [version 3 qualification](https://github.com/lumirth/giscusflare/pull/2) included a one-time comparison against `b39375bbba0b8249c3bc661c63150b5917b31d80`, built and run outside the repository. Both actual versions render equal fixture content in Chromium and WebKit, native and iframe modes, at 390px and 900px widths. Reading and editing states are captured before mutating journeys, so edge-cache freshness cannot make their input data unequal. Contribution/edit/delete-dialog states follow real local sign-in and writes.
+The demo/default presentation must retain its established appearance. Capture reading/editing states before mutating journeys so freshness cannot change fixture data; capture contribution/edit/delete states after real local fixture sign-in and writes.
 
 The comparison uses complete RGBA pixels and equal image dimensions, without masking or tolerance. Both versions receive the same deterministic avatar, display date, focus/hover state and settled fonts. These controlled inputs establish the recorded visual states; they do not turn historical DOM structure or ownership into a contract. The reference runner is a qualification artifact, not a second maintained runtime or a source-shape regression suite.
 
@@ -50,4 +50,14 @@ Include Safari, Firefox and physical iOS where available. Local Chromium/WebKit 
 
 ## Release evidence
 
-Test commands write generated reports to ignored `test-results/evidence/`. CI uploads them as the `verification-reports` artifact, including partial reports on failure. Detailed results, screenshots and one-time source ledgers belong in run or PR artifacts, not tracked source. [Verification results](docs/CONFIDENCE.md) describes what the checks establish. Measure deployed CPU, duration and SQL usage using the [usage guide](FREE-TIER.md#check-your-deployment). Verify the extracted package in an independent website, then check the deployed assets and actual contribution flow after any authorized deployment. Preserve deployment bindings, platform migration history and secrets across updates.
+Test commands write generated reports to ignored `test-results/evidence/`. CI uploads them as the `verification-reports` artifact, including partial reports on failure. Detailed results, screenshots and one-time source ledgers belong in run or PR artifacts, not tracked source. Measure deployed CPU, duration and SQL usage using the [usage guide](FREE-TIER.md#check-your-deployment). Verify the extracted package in an independent website, then check the deployed assets and actual contribution flow after any authorized deployment. Preserve deployment bindings, platform migration history and secrets across updates.
+
+## Historical evidence and limits
+
+Local checks simulate GitHub and do not establish production latency/CPU distributions, object duration, billing, real App permissions, fresh-account deployment, Safari, Firefox or physical iOS. Package checks establish an extracted consumer, not a deployed service. Deployed acceptance requires matching versions and independent GitHub readback.
+
+The [version 3 visual qualification](https://github.com/lumirth/giscusflare/pull/2) recorded 168 paired renders: 167 pixel-identical and one differing at five SVG antialiasing pixels. Its source build was `b39375bbba0b8249c3bc661c63150b5917b31d80`; the pinned giscus presentation inputs are `3d6430237108ca4ee3eb6a1a20595201c09c72d5`. [Provenance](docs/PROVENANCE.md) distinguishes those inputs. This history does not replace the current independent comparison described above.
+
+A September 27, 2026 workload recorded 12,100 requests, 6.85 ms p99 Worker CPU, 20.57 GB-s object duration and 3,071 SQLite writes. It predates current cache/ranking representations and is not a current capacity guarantee. Measure declared cold/warm workloads and actual platform metrics. Ranking acquisition intervals and cadence do not establish atomic remote snapshots or a universal source-age bound.
+
+Source accounting includes complete replacements, defaults, examples, downstream consumers and verification support, with generated/vendor data reported separately. Moving work between repositories or categories is not a saving. Claims about cold paths need actual necessary-request measurements, including credential renewal, separately from warm traffic.

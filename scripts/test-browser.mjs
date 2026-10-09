@@ -41,18 +41,18 @@ try {
         });
         const clientIP = '192.0.2.' + (10 + client++);
         const platformClient = route => route.continue({ headers: { ...route.request().headers(), 'CF-Connecting-IP': clientIP } });
-        await context.route(service + '/api/v6/**', platformClient);
+        await context.route(service + '/api/v7/**', platformClient);
         await page.context().route(service + '/auth/**', platformClient);
-        await page.context().route(service + '/api/v6/auth/**', platformClient);
+        await page.context().route(service + '/api/v7/auth/**', platformClient);
         await page.context().route('https://avatars.githubusercontent.com/u/1', route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" rx="20" fill="#d9e2ee"/><circle cx="20" cy="15" r="7" fill="#596b82"/><path d="M7 37v-4a13 13 0 0 1 26 0v4" fill="#596b82"/></svg>' }));
         const errors = [], responseStatuses = [], contentResults = []; page.on('pageerror', error => errors.push(error.message));
-        page.on('response', response => { const path = new URL(response.url()).pathname; if (path.startsWith('/api/') || path.startsWith('/auth/')) responseStatuses.push({ path, status: response.status() }); if (path === '/api/v6/content') void response.json().then(result => contentResults.push(result.results?.map(value => ({error:value.error,prepared:Boolean(value.prepared),html:value.html!==undefined})))).catch(() => {}); });
+        page.on('response', response => { const path = new URL(response.url()).pathname; if (path.startsWith('/api/') || path.startsWith('/auth/')) responseStatuses.push({ path, status: response.status() }); if (path === '/api/v7/content') void response.json().then(result => contentResults.push(result.results?.map(value => ({error:value.error,prepared:Boolean(value.prepared),html:value.html!==undefined})))).catch(() => {}); });
         const requests = [], proofs = new Set(), capabilities = new Set(), callbackBodies = [];
         let fragmentExposed = false, contentCredentialExposed = false;
         const observe=request=>{
           requests.push({ url: request.url(), referer: request.headers().referer || '', body: request.postData() || '' });
           const authorization = request.headers().authorization;
-          if (new URL(request.url()).pathname === '/api/v6/content') contentCredentialExposed ||= Boolean(authorization);
+          if (new URL(request.url()).pathname === '/api/v7/content') contentCredentialExposed ||= Boolean(authorization);
           if (authorization?.startsWith('Bearer ')) capabilities.add(authorization.slice(7));
           if(new URL(request.url()).pathname.endsWith('/auth/prepare')){
             const body=request.postDataJSON();
@@ -76,15 +76,26 @@ try {
           await expect(surface.getByText('Try posting a comment or replying here.', { exact: true })).toBeVisible();
           await expect(surface.getByText('Hono', { exact: true })).toBeVisible();
           await expect(surface.locator('pre').first()).toContainText('export default');
-          if (mode === 'iframe') assert.equal(requests.filter(request => new URL(request.url).pathname === '/api/v6/page').length, 0, 'iframe renders its anonymous server bootstrap without fetching the same page again');
+          if (mode === 'iframe') assert.equal(requests.filter(request => new URL(request.url).pathname === '/api/v7/page').length, 0, 'iframe renders its anonymous server bootstrap without fetching the same page again');
           if (screenshots) {
             await expect.poll(() => surface.locator('img').first().evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true);
             await page.screenshot({ path: resolve(screenshots, engineName + '-' + mode + '-reading.png') });
           }
           const hostFont = await page.getByRole('heading', { level: 1 }).evaluate(element => getComputedStyle(element).fontFamily);
           assert.match(hostFont, /^system-ui\b/, 'comments retain the host fixture typography when first mounted');
+          let releaseAccount;
+          if (mode === 'native') {
+            const account = new Promise(resolve => { releaseAccount = resolve; });
+            await context.route(service + '/api/v7/access', async route => { await account;await platformClient(route); });
+          }
           await composer.getByRole('button', { name: 'Sign in with GitHub', exact: true }).click();
           const textarea = composer.locator('textarea'); await expect(textarea).toBeEditable();
+          if (mode === 'native') {
+            await expect.poll(() => page.evaluate(() => window.demoComments.conversation.session.viewer?.login)).toBe('reader');
+            assert.equal(await page.evaluate(() => Boolean(window.demoComments.conversation.viewer)), false, 'Verified local display identity is usable before held discussion permissions');
+            await composer.getByRole('button', { name: 'Sign out', exact: true }).waitFor();
+            releaseAccount();await context.unroute(service + '/api/v7/access');
+          }
           await expect(page).toHaveURL(blog + path);
           assert.equal(proofs.size,1,'one private proof prepares this sign-in');
           assert.equal(fragmentExposed,false,'the authorization page must remove its private fragment before preparing');
@@ -253,7 +264,7 @@ try {
           await expect(surface.getByText(reply, { exact: true })).toBeVisible();
           if (mode === 'native') {
             const recoveryText = 'Keep this writing when my credential expires';
-            await page.context().route(service + '/api/v6/contribute', route => route.abort('failed'));
+            await page.context().route(service + '/api/v7/contribute', route => route.abort('failed'));
             await textarea.fill(recoveryText);
             await composer.getByRole('button', { name: 'Comment', exact: true }).click();
             await expect.poll(() => page.evaluate(() => {
@@ -262,9 +273,9 @@ try {
             })).toBe(true);
             const saved = await page.evaluate(() => Object.entries(localStorage).find(([, value]) => value.includes('Keep this writing when my credential expires')));
             assert.ok(saved, 'uncertain writing is actually persisted');
-            const originalIssuance = requests.filter(request => new URL(request.url).pathname === '/api/v6/contribute').map(request => JSON.parse(request.body)).find(input => input.action.body === recoveryText);
-            await page.context().unroute(service + '/api/v6/contribute');
-            await page.context().route(service + '/api/v6/access', route => route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: { code: 'SESSION', phase: 'not-issued', message: 'Credential expired' } }) }));
+            const originalIssuance = requests.filter(request => new URL(request.url).pathname === '/api/v7/contribute').map(request => JSON.parse(request.body)).find(input => input.action.body === recoveryText);
+            await page.context().unroute(service + '/api/v7/contribute');
+            await page.context().route(service + '/api/v7/access', route => route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: { code: 'SESSION', phase: 'not-issued', message: 'Credential expired' } }) }));
             await page.evaluate(() => window.demoComments.conversation.refreshViewer());
             await expect.poll(() => page.evaluate(() => window.demoComments.conversation.session.signedIn)).toBe(false);
             await expect(textarea).toHaveValue(recoveryText);
@@ -272,7 +283,7 @@ try {
             await page.reload();
             await expect(textarea).toHaveValue(recoveryText);
             await expect(textarea).toBeVisible();
-            await page.context().unroute(service + '/api/v6/access');
+            await page.context().unroute(service + '/api/v7/access');
             await page.evaluate(capability => window.demoComments.conversation.session.setSession(capability), capability);
             await expect.poll(() => page.evaluate(() => window.demoComments.conversation.writing().actions.retry)).toBe(true);
             await page.evaluate(async () => {
@@ -280,14 +291,14 @@ try {
               if (writing.error?.status !== 'uncertain' || writing.actions.edit || writing.actions.clear) throw Error('Restored unresolved writing is not protected');
               const result = await writing.submit(); if (result.status !== 'saved') throw Error('Unresolved contribution did not recover');
             });
-            const recoveredIssuance = requests.filter(request => new URL(request.url).pathname === '/api/v6/contribute').map(request => JSON.parse(request.body)).at(-1);
+            const recoveredIssuance = requests.filter(request => new URL(request.url).pathname === '/api/v7/contribute').map(request => JSON.parse(request.body)).at(-1);
             assert.equal(recoveredIssuance.key, originalIssuance.key, 'Passive credential expiry preserves the issued contribution identity');
             assert.deepEqual(recoveredIssuance.action, originalIssuance.action, 'Recovery preserves the authored destination and body');
             await expect(surface.getByText(recoveryText, { exact: true })).toBeVisible();
             const pendingText = engineName + ' reload during a committed request';
             let committed = false, committedId, releaseResponse;
             const responseHeld = new Promise(resolve => { releaseResponse = resolve; });
-            await page.context().route(service + '/api/v6/contribute', async route => {
+            await page.context().route(service + '/api/v7/contribute', async route => {
               const response = await route.fetch(); committedId = (await response.json()).id; committed = true; await responseHeld;
               await route.fulfill({ response }).catch(() => {});
             });
@@ -296,7 +307,7 @@ try {
             await expect.poll(() => committed).toBe(true);
             await expect.poll(() => page.evaluate(() => window.demoComments.conversation.writing().pending)).toBe(true);
             await page.evaluate(() => sessionStorage.setItem('__qualification_clock', '301000'));
-            await page.reload(); releaseResponse(); await page.context().unroute(service + '/api/v6/contribute');
+            await page.reload(); releaseResponse(); await page.context().unroute(service + '/api/v7/contribute');
             await expect(textarea).toHaveValue(pendingText);
             await expect(textarea).toBeVisible();
             await page.evaluate(capability => window.demoComments.conversation.session.setSession(capability), capability);
@@ -315,21 +326,21 @@ try {
               const result = await writing.submit(); if (result.status !== 'saved') throw Error('Committed contribution did not recover');
               return result.result.id;
             });
-            const providerReadback = await fetch(service + '/api/v6/page?' + new URLSearchParams({ input: JSON.stringify({ config: { repo: 'example/comments', origin: blog, pageURL: blog + '/native', returnURL: blog + '/native', selector: { kind: 'page', key: 'article' } }, read: { kind: 'selected', ids: [recoveredId] }, fresh: true }) }), { headers: { Origin: blog, Authorization: 'Bearer ' + capability } });
+            const providerReadback = await fetch(service + '/api/v7/page?' + new URLSearchParams({ input: JSON.stringify({ config: { repo: 'example/comments', origin: blog, pageURL: blog + '/native', returnURL: blog + '/native', selector: { kind: 'page', key: 'article' } }, read: { kind: 'selected', ids: [recoveredId] }, fresh: true }) }), { headers: { Origin: blog, Authorization: 'Bearer ' + capability } });
             const observed = await providerReadback.json();
             assert.equal(recoveredId, committedId, 'Reloading pending work retries the original provider contribution');
             assert.equal(observed.nodes[recoveredId]?.body, pendingText, 'The recovered contribution is independently readable from the provider');
             await page.evaluate(() => sessionStorage.removeItem('__qualification_clock'));
             const ownerText = engineName + ' unresolved writing belongs to owner A', independentText = engineName + ' separate writing belongs to owner B';
             let ownerProviderId;
-            await page.context().route(service + '/api/v6/contribute', async route => {
+            await page.context().route(service + '/api/v7/contribute', async route => {
               const response = await route.fetch(); ownerProviderId = (await response.json()).id; await route.abort('failed');
             });
             await textarea.fill(ownerText); await composer.getByRole('button', { name: 'Comment', exact: true }).click();
             await expect.poll(() => page.evaluate(() => window.demoComments.conversation.writing().error?.status)).toBe('uncertain');
-            await page.context().unroute(service + '/api/v6/contribute');
+            await page.context().unroute(service + '/api/v7/contribute');
             const ownerRecordId = await page.evaluate(() => window.demoComments.conversation.writing().id);
-            const ownerIssuance = requests.filter(request => new URL(request.url).pathname === '/api/v6/contribute').map(request => JSON.parse(request.body)).at(-1);
+            const ownerIssuance = requests.filter(request => new URL(request.url).pathname === '/api/v7/contribute').map(request => JSON.parse(request.body)).at(-1);
             const second = await page.context().newPage(); second.on('pageerror', error => errors.push(error.message));
             let independentRecordId;
             try {
@@ -356,7 +367,7 @@ try {
                 return result.result.id;
               }, { ownerRecordId, independentRecordId, ownerText, independentText });
               assert.equal(restoredProviderId, ownerProviderId, 'A later owner recovers the original provider contribution');
-              const restoredIssuance = requests.filter(request => new URL(request.url).pathname === '/api/v6/contribute').map(request => JSON.parse(request.body)).at(-1);
+              const restoredIssuance = requests.filter(request => new URL(request.url).pathname === '/api/v7/contribute').map(request => JSON.parse(request.body)).at(-1);
               assert.equal(restoredIssuance.key, ownerIssuance.key, 'Independent owners preserve the original unresolved receipt key');
               assert.deepEqual(restoredIssuance.action, ownerIssuance.action);
             } finally { await recoveredPage.close(); }
@@ -366,7 +377,7 @@ try {
           report.checks.push({ engine: engineName, version: browser.version(), mode, status: 'passed', authReturn: true, privateProofBoundary: true, nativeUndo: true, previewContinuity: true, appearanceContinuity: true, positionContinuity: true, rtl: true, customThemeCSS: true, themeFonts: true, hostFontIsolation: true, contentSizing: true, manualResizeContinuity: true, keyboardFocus: true, contributionReadback: true, replyReadback: true, serverBootstrap: mode === 'iframe', mobileOverflow: false });
           console.log('PASS', engineName, mode, 'authorization and editor continuity');
         } catch (error) {
-          console.error(JSON.stringify({ engineName, mode, errors, contentResults, responses: responseStatuses, state: await page.evaluate(() => { const runtime = window.demoComments?.conversation; return runtime ? { ready: runtime.ready, error: runtime.error, viewer: runtime.viewer?.principal?.id, session: { signedIn: runtime.session.signedIn, principal: runtime.session.principal, pending: runtime.session.pending, error: runtime.session.error }, text: document.getElementById('comments')?.innerText } : {} }).catch(() => ({})) }, null, 2));
+          console.error(JSON.stringify({ engineName, mode, errors, contentResults, responses: responseStatuses, state: await page.evaluate(() => { const runtime = window.demoComments?.conversation; return runtime ? { ready: runtime.ready, error: runtime.error, viewer: runtime.viewer?.principal, session: { signedIn: runtime.session.signedIn, principal: runtime.session.principal, pending: runtime.session.pending, error: runtime.session.error }, text: document.getElementById('comments')?.innerText } : {} }).catch(() => ({})) }, null, 2));
           throw error;
         } finally { context.off('request', observe); context.off('response', responses); await context.close(); }
       }

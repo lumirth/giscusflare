@@ -1,7 +1,9 @@
 import type { ContributionResult } from '../contracts/document.js';
+import { IssuedEffect, type EffectFailure } from './issued.js';
+export { contributionFailure } from './issued.js';
 
 export type WritingTarget = { kind: 'comment' } | { kind: 'reply' | 'edit'; id: string };
-export interface WritingFailure { status: 'failed' | 'uncertain'; message: string }
+export type WritingFailure = EffectFailure;
 export type WritingOutcome = { status: 'saved'; result: ContributionResult }
   | { status: 'failed'; error: WritingFailure } | { status: 'blocked'; reason: string };
 interface IssuedWriting { target: WritingTarget; body: string; key: string; principal: string }
@@ -18,11 +20,6 @@ export interface WritingOwner {
   contribute(issued: IssuedWriting): Promise<ContributionResult>;
 }
 export const writingTargetKey = (target: WritingTarget): string => target.kind === 'comment' ? 'main' : target.kind + ':' + target.id;
-export function contributionFailure(cause: unknown): WritingFailure {
-  const value = Object(cause);
-  return { status: value.phase === 'not-issued' ? 'failed' : 'uncertain',
-    message: cause instanceof Error ? cause.message : 'Unable to complete the action.' };
-}
 const unresolved = (): WritingFailure => ({ status: 'uncertain', message: 'This submission may already be on GitHub. Retry it to recover its outcome.' });
 
 /** A contribution retains its destination and issued identity independently of its editor. */
@@ -33,31 +30,30 @@ export class Writing {
   #touched = false;
   #open: boolean;
   #undo?: string;
-  #issued?: IssuedWriting;
-  #error?: WritingFailure;
-  #pending?: Promise<WritingOutcome>;
+  #effect: IssuedEffect<{target: WritingTarget; body: string}>;
   constructor(target: WritingTarget, private owner: WritingOwner, text = '', id: string = crypto.randomUUID()) {
     this.target = Object.freeze(target.kind === 'comment' ? {kind:'comment'} : {kind:target.kind,id:target.id});this.id = id;
     this.#text = text;this.#open = target.kind === 'comment';
+    this.#effect = new IssuedEffect(() => owner.principal(), () => owner.changed(!this.pending));
   }
   get text(): string { return this.#text; }
   get touched(): boolean { return this.#touched; }
   get open(): boolean { return this.#open; }
-  get pending(): boolean { return Boolean(this.#pending); }
-  get error(): WritingFailure | undefined { return this.#error; }
-  get protected(): boolean { return this.pending || Boolean(this.#issued); }
+  get pending(): boolean { return Boolean(this.#effect.pending); }
+  get error(): WritingFailure | undefined { return this.#effect.error; }
+  get protected(): boolean { return this.pending || Boolean(this.#effect.issued); }
   get actions() {
     const editable = !this.protected, eligible = this.owner.eligible(this.target), signedIn = Boolean(this.owner.principal()), authorized = signedIn && this.owner.authorized();
     return { edit: editable, hide: this.target.kind !== 'comment', clear: editable && Boolean(this.#text),
-      undoClear: editable && this.#undo !== undefined, abandon: !this.pending && Boolean(this.#issued),
-      signIn: this.#open && !this.pending && (!signedIn || !this.#issued && !authorized) && Boolean(this.#text.trim()) && (editable && eligible || Boolean(this.#issued)),
+      undoClear: editable && this.#undo !== undefined, abandon: !this.pending && Boolean(this.#effect.issued),
+      signIn: this.#open && !this.pending && (!signedIn || !this.#effect.issued && !authorized) && Boolean(this.#text.trim()) && (editable && eligible || Boolean(this.#effect.issued)),
       submit: this.#open && editable && eligible && authorized && Boolean(this.#text.trim()),
-      retry: this.#open && !this.pending && Boolean(this.#issued) && this.#issued?.principal === this.owner.principal() };
+      retry: this.#open && !this.pending && Boolean(this.#effect.issued) && this.#effect.issued?.principal === this.owner.principal() };
   }
   update(text: string): void {
     if (text === this.#text) return;
     if (!this.actions.edit) throw new Error('Recover the issued submission before changing its writing.');
-    this.#touched = true;this.#text = text;this.#undo = undefined;this.#error = undefined;this.owner.changed();
+    this.#touched = true;this.#text = text;this.#undo = undefined;this.#effect.error = undefined;this.owner.changed();
   }
   show(): Writing {
     if (!this.#open && this.target.kind === 'edit' && !this.#text && !this.protected && this.#undo === undefined) this.#text = this.owner.initialText(this.target);
@@ -66,7 +62,7 @@ export class Writing {
   hide(): void { if (this.target.kind !== 'comment') { this.#open = false;this.owner.changed(true); } }
   clear(): boolean {
     if (!this.actions.clear) return false;
-    this.#undo = this.#text;this.#text = '';this.#error = undefined;this.owner.changed();return true;
+    this.#undo = this.#text;this.#text = '';this.#effect.error = undefined;this.owner.changed();return true;
   }
   undoClear(): boolean {
     if (!this.actions.undoClear) return false;
@@ -75,44 +71,31 @@ export class Writing {
   /** The host must obtain a deliberate decision before abandoning an unknown outcome. */
   abandon(): boolean {
     if (!this.actions.abandon) return false;
-    this.#issued = undefined;this.#error = undefined;this.owner.changed();return true;
+    this.#effect.issued = undefined;this.#effect.error = undefined;this.owner.changed();return true;
   }
-  identityChanged(): void { if (this.#issued) { this.#error = unresolved();this.owner.changed(); } }
+  identityChanged(): void { if (this.#effect.issued) { this.#effect.error = unresolved();this.owner.changed(); } }
   save(): SavedWriting {
-    return { id: this.id, target: this.target, text: this.#text, open: this.#open, undo: this.#undo, issued: this.#issued,
-      error: this.#issued ? this.#error ?? unresolved() : this.#error };
+    return { id: this.id, target: this.target, text: this.#text, open: this.#open, undo: this.#undo, issued: this.#effect.issued,
+      error: this.#effect.issued ? this.#effect.error ?? unresolved() : this.#effect.error };
   }
   recover(saved: SavedWriting): void {
     if (this.protected || saved.id !== this.id || writingTargetKey(saved.target) !== writingTargetKey(this.target)) return;
     this.#text = saved.text;this.#open = this.target.kind === 'comment' || saved.open;
-    this.#undo = saved.undo;this.#issued = saved.issued && Object.freeze({ ...saved.issued, target: Object.freeze({ ...saved.issued.target }) });
-    this.#error = saved.issued ? { status: 'uncertain', message: saved.error?.message ?? unresolved().message } : saved.error;
+    this.#undo = saved.undo;this.#effect.issued = saved.issued && Object.freeze({ ...saved.issued, target: Object.freeze({ ...saved.issued.target }) });
+    this.#effect.error = saved.issued ? { status: 'uncertain', message: saved.error?.message ?? unresolved().message } : saved.error;
   }
   submit(): Promise<WritingOutcome> {
-    if (this.#pending) return this.#pending;
-    if (!(this.#issued ? this.actions.retry : this.actions.submit)) {
-      const reason = this.#issued && this.#issued.principal !== this.owner.principal()
+    if (this.#effect.pending) return this.#effect.pending;
+    if (!(this.#effect.issued ? this.actions.retry : this.actions.submit)) {
+      const reason = this.#effect.issued && this.#effect.issued.principal !== this.owner.principal()
         ? 'Sign in as the original author to recover this submission.'
         : !this.#open ? 'Open this writing before submitting.'
         : !this.#text.trim() ? 'Write a comment before submitting.' : 'This contribution is currently unavailable.';
       return Promise.resolve({ status: 'blocked', reason });
     }
-    const recovering = Boolean(this.#issued);
-    this.#issued ??= Object.freeze({ target: this.target, body: this.#text,
-      key: '3.' + Date.now() + '.' + crypto.randomUUID(), principal: this.owner.principal()! });
-    const issued = this.#issued;
-    this.#error = undefined;
-    this.#pending = Promise.resolve().then(() => this.owner.contribute(issued)).then(result => {
-      this.#text = '';this.#undo = undefined;this.#issued = undefined;this.#error = undefined;
-      this.#open = this.target.kind === 'comment';return { status: 'saved', result } as WritingOutcome;
-    }, cause => {
-      const error = contributionFailure(cause);
-      if (recovering) error.status = 'uncertain';
-      this.#error = error;
-      if (error.status === 'failed') this.#issued = undefined;
-      return { status: 'failed', error } as WritingOutcome;
-    }).finally(() => { this.#pending = undefined;this.owner.changed(true); });
-    this.owner.changed();return this.#pending;
+    return this.#effect.run({target: this.target, body: this.#text}, issued => this.owner.contribute(issued).then(result => {
+      this.#text = '';this.#undo = undefined;this.#open = this.target.kind === 'comment';return result;
+    }));
   }
 }
 

@@ -3,6 +3,7 @@ type Consumer<T> = { resolve(value:T):void; reject(error:unknown):void; release(
 export interface BatchRequest<I,T> {
   input: I;
   dispatched: boolean;
+  readonly active: boolean;
   wait(signal: AbortSignal): Promise<T>;
   finish(result: Result<T>): void;
 }
@@ -34,7 +35,7 @@ export function batchRequests<I,T>(options: {
   };
   return (key:string,input:I):BatchRequest<I,T> => {
     const existing=jobs.get(key); if(existing)return existing;
-    const job:Job = {input,dispatched:false,consumers:new Set(),
+    const job:Job = {input,dispatched:false,consumers:new Set(),get active(){return !job.result&&job.consumers.size>0;},
       finish(result) {
         if(job.result)return;
         job.result=result;if(jobs.get(key)===job)jobs.delete(key);

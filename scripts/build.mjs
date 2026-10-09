@@ -20,7 +20,7 @@ const registration = await build({ ...common, entryPoints: ['src/registration.ts
 await writeFile('dist/registration-metafile.json', JSON.stringify(registration.metafile, null, 2) + '\n');
 await build({ ...common, entryPoints: ['src/browser/client.ts'], outfile: 'public/client.js', format: 'iife', platform: 'browser' });
 // Package imports and hosted modules use this one graph, with identical chunk identities.
-const entries = ['widget', 'native', 'headless', 'counts', 'interactions', 'content', 'github-content', 'stock-content', 'auth-window', 'auth-complete', 'setup'];
+const entries = ['widget', 'native', 'headless', 'mona', 'counts', 'interactions', 'content', 'github-content', 'stock-content', 'auth-window', 'auth-complete', 'setup'];
 const browser = await build({ ...common, entryPoints: {
   ...Object.fromEntries(entries.map(name => [name, 'src/browser/' + name + '.ts'])), model: 'src/conversation/index.ts',
 }, outdir: 'dist/browser', chunkNames: 'chunks/[name]-[hash]', splitting: true, platform: 'browser' });

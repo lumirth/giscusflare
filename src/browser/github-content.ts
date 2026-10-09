@@ -1,8 +1,10 @@
 import { interpretGitHubContent, type CodeContent, type MathContent } from '../content/github.js';
-import { copyControl, preparedHTML, type ContentContext, type ContentOutput, type ContentRenderer } from './content.js';
+import { copyControl, preparedHTML, type ContentContext, type ContentRenderer, type MountedContent } from './content.js';
 export type { CodeContent, MathContent } from '../content/github.js';
 
-export type FeatureRenderer<Input> = (input: Input, context: ContentContext) => ContentOutput | Promise<ContentOutput>;
+export type FeatureOutput = Node | Pick<MountedContent, 'node' | 'dispose'>;
+/** Features retire with their containing body; in-place updates belong to whole-body MountedContent. */
+export type FeatureRenderer<Input> = (input: Input, context: ContentContext) => FeatureOutput | Promise<FeatureOutput>;
 export interface GitHubContentOptions {
   /** Owns the complete feature, including its frame and controls. False leaves sanitized source. */
   code?: FeatureRenderer<CodeContent> | false;
@@ -15,15 +17,15 @@ const defaults = { copy: 'Copy', copied: 'Copied!', copyFailed: 'Select and copy
 
 /** A custom feature owns its output and resources for the installed body's lifetime. */
 async function installFeature<Input>(element: HTMLElement, feature: Input, renderer: FeatureRenderer<Input>, context: ContentContext): Promise<void> {
-  let output: ContentOutput;
-  try { output = await renderer(feature, context); }
+  let result: FeatureOutput;
+  try { result = await renderer(feature, context); }
   catch { context.signal.throwIfAborted(); return; }
-  const owned = 'node' in output ? output : undefined;
+  const output = 'node' in result ? result : {node: result};
   if (context.signal.aborted || context.lifetime.aborted) {
-    owned?.dispose?.(); context.signal.throwIfAborted(); context.lifetime.throwIfAborted();
+    output.dispose?.(); context.signal.throwIfAborted(); context.lifetime.throwIfAborted();
   }
-  if (owned?.dispose) context.lifetime.addEventListener('abort', () => owned.dispose!(), { once: true });
-  element.replaceWith(owned ? owned.node : output as Node);
+  if (output.dispose) context.lifetime.addEventListener('abort', () => output.dispose!(), { once: true });
+  element.replaceWith(output.node);
 }
 
 /** Browser and stock server content share one interpretation; only installation differs. */

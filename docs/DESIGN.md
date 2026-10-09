@@ -17,7 +17,7 @@ flowchart LR
 
 ## Independent facts and availability
 
-Public documents store canonical comments once; root/reply windows hold captured membership, cursors and provider-observed count receipts. Public reading survives account changes. Account permissions and selected reactions are a separate principal-bound projection; identity retirement cancels incoming account work without clearing public traversal.
+Public documents store canonical comments once; root/reply windows hold captured membership, cursors and provider-observed count receipts. The known presentation shell appears immediately. Locally verified account identity and its last verified display profile do not wait for remote participation permissions or body preparation. A missing display profile is acquired directly under identity authority, alongside reading. Public reading survives account changes. Account permissions and selected reactions are a separate principal-bound projection; identity retirement cancels incoming account work without clearing public traversal.
 
 Observation acceptance uses field ownership and original acquisition age. Delayed broad reads cannot replace newer narrow facts, and cached reuse or receipt replay does not renew age. Counts carry explicit selection/root-or-reply window identity, discussion identity, value, observation time and deadline through count-only requests, reading and confirmed effects. Native/custom listing consumers share one browser capability for batching, stale display and optional same-tab retention.
 
@@ -31,7 +31,7 @@ Writing destination and persistent intent identity are distinct. Several records
 
 Independent contributions dispatch independently. Only work sharing a conflicting subject/field serializes; each reaction has its own confirmed and desired state. Preflight failure is not-issued. An ambiguous dispatched outcome is unknown. A confirmed receipt never redispatches because optional readback, ranking or interpretation failed. Operation patches contain only established fields and membership/count observations.
 
-Repository addresses, session encryption and `3.` durable receipt keys remain stable independently of protocol 6. Local sign-out ends local authority immediately; server cleanup has its own outcome. Native initialization and iframe decoding reach the same typed session/writing initialization, retaining stable version 5 storage envelopes without a runtime importer.
+Repository addresses, session encryption and `3.` durable receipt keys remain stable independently of protocol 7. Local sign-out ends local authority immediately; server cleanup has its own outcome. Native initialization and iframe decoding reach the same typed session/writing initialization, retaining stable version 5 storage envelopes without a runtime importer.
 
 ## Registration and prerequisites
 
@@ -39,8 +39,14 @@ Operators register repository/installation/category IDs during setup; one reposi
 
 Open hosting issues an installation-backed registration reference bound to its current policy. Ordinary requests cannot allocate arbitrary repository objects from unregistered input. Explicit configured policies override open defaults.
 
+## Cold operation
+
+A count needs registered discussion selection, valid provider access and the count query. A reaction needs its target, authority and provider effect. Preparation needs canonical source/context and one selected interpretation. Registration belongs to setup; optional enhancements remain outside readable publication. Batch necessary provider work and start independent work concurrently. A cache miss performs this necessary work rather than reconstructing configuration.
+
+Measure no reusable result separately from fully cold credential renewal, including when content becomes readable and actions usable. Warm traffic cannot establish either case.
+
 ## Ranking and resources
 
 Ranking acquires only required score inputs, meters actual SQLite work and reports the completed acquisition interval. Chronological and ranked readers capture traversal and hydrate bounded windows; corrections do not silently move the reader through a new order. Cadence is not a universal maximum source age. SQL thresholds and upstream-call admission belong to ranking's own budget; they do not cap all account usage.
 
-[API](API.md), [customization](EXTENDING.md), [capacity](../FREE-TIER.md) and [verification](CONFIDENCE.md) explain the public contracts and evidence boundaries.
+[API](API.md), [customization](EXTENDING.md), [capacity](../FREE-TIER.md) and [verification](../TESTING.md) explain the public contracts and evidence boundaries.

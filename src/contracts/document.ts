@@ -32,8 +32,14 @@ export type Viewer = Person & { id: string };
 export interface Permissions {
   didAuthor: boolean; canUpdate: boolean; canDelete: boolean; canMinimize: boolean; canUnminimize: boolean;
 }
+export interface AccessAvailability {
+  archived: boolean; unavailable: boolean;
+  thread: Pick<Discussion, 'id' | 'number' | 'locked' | 'closed'> | null;
+}
 export interface ViewerState {
-  principal: Viewer | null;
+  principal: string;
+  /** Bound to the provider identity, or the public target acquired before a denied observation. */
+  availability?: AccessAvailability & {target: string | null};
   permissions: Record<string, Permissions>;
   reactions: Record<string, SelectedReactions>;
   threadReactions: SelectedReactions;
@@ -47,13 +53,11 @@ export interface AccountPatch {
 /** Account authority is acquired independently of public reading and content. */
 export interface AccessResult {
   observedAt: number;
-  principal: Viewer;
+  principal: string;
   permissions: Record<string, Permissions>;
   reactions: Record<string, SelectedReactions>;
   threadReactions: SelectedReactions;
-  thread: Discussion | null;
-  archived: boolean;
-  unavailable: boolean;
+  availability: AccessAvailability;
 }
 export interface Metadata {
   thread: Discussion | null; archived: boolean; unavailable: boolean; profiles: string[];
@@ -66,7 +70,7 @@ export interface PageDocument {
 }
 /** One public reading observation. Its age survives reuse unchanged. */
 export interface ContentHint { markdown: string; html: string }
-export interface AcceptedObservation { contentHints?: Record<string, ContentHint>; invalidatedCounts?: { target: CountTarget; observedAt: number }[] }
+export interface AcceptedObservation { contentHints?: Record<string, ContentHint> }
 export interface WindowPage {
   contentHints?: Record<string, ContentHint>;
   nodes: Record<string, Comment>;
@@ -84,7 +88,9 @@ export interface Patch {
   reactions?: Record<string, Reactions>;
   roots?: WindowDelta;
   replies?: Record<string, WindowDelta>;
-  metadata?: Partial<Metadata>;
+  metadata?: Partial<Omit<Metadata, 'thread'>> & {thread?: Partial<Discussion> | null};
+  /** Actual discussion creation can precede the contribution that confirms its first comment. */
+  metadataObservedAt?: number;
   observedAt?: number;
 }
 export type EffectPhase = 'not-issued' | 'confirmed' | 'unknown';

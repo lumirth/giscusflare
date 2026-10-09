@@ -2,7 +2,7 @@ import { scopedStorage, storageNamespace, writingIdentity } from './storage.js';
 import type { WritingStore } from './writing-store.js';
 import { validLogin, type Login } from './session.js';
 import { challenge } from './dom.js';
-import { recoveredWriting, writingTargetKey, type SavedWriting } from '../conversation/writing.js';
+import { writingTargetKey, type SavedWriting } from '../conversation/writing.js';
 type Pending = Login & { fragment?: string; scroll?: number; composer?: string };
 const capability = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9_-]{43}$/.test(value);
 const pending = (value: unknown): value is Pending => {
@@ -61,7 +61,7 @@ export function hostStorage(service: string, repo: string, recovery: WritingStor
       if (signal.aborted || controller.signal.aborted || key !== scope()) return;
       if (!admitted) { error = 'This writing is open in another window.';return; }
       const saved = recovery.load(key).find(record => record.id === id);
-      if (saved) { owned.add(id);error = ''; }
+      if (saved) { owned.add(id);publish(key, id, saved);error = ''; }
       return saved;
     } catch (cause) { if (!signal.aborted && key === scope()) storageFailure(cause); }
   };
@@ -77,36 +77,26 @@ export function hostStorage(service: string, repo: string, recovery: WritingStor
     records, restoreWriting,
     async recover(): Promise<import('./runtime.js').WritingRestoration> {
       const key = scope(), signal = scopeLife.signal;
-      if (signal.aborted || key !== scope()) return { records: [], selected: [], available: [] };
+      if (signal.aborted || key !== scope()) return { records: [], selected: [] };
       const saved = records(), hint = read(hintKey()), selected = Array.isArray(hint) ? hint.filter((id): id is string => typeof id === 'string') : [];
       const groups = new Map<string, SavedWriting[]>();
       for (const record of saved) { const key = writingTargetKey(record.target);groups.set(key, [...groups.get(key) ?? [], record]); }
       const candidates = saved.filter(record => selected.includes(record.id) || groups.get(writingTargetKey(record.target))?.length === 1);
       const writingRecords = (await Promise.all(candidates.map(record => restoreWriting(record.id))))
         .filter((record): record is SavedWriting => Boolean(record));
-      if (signal.aborted || key !== scope()) return { records: [], selected: [], available: [] };
-      return { records: writingRecords, selected: selected.filter(id => owned.has(id)), available: records() };
+      if (signal.aborted || key !== scope()) return { records: [], selected: [] };
+      return { records: writingRecords, selected: selected.filter(id => owned.has(id)) };
     },
-    receive(value: Record<string, unknown>): void {
-      if (value.session === '' || capability(value.session)) write('session', value.session || null, true);
-      if (value.signOut) { write('session', null, true);write('pending', null); }
-      if (Array.isArray(value.writingSelected)) write(hintKey(), value.writingSelected.filter(id => typeof id === 'string'));
-      if (value.writingRecord && recovery && !controller.signal.aborted) {
-        const record = recoveredWriting([value.writingRecord])[0];
-        if (record) retain(record);
-      }
-      if (typeof value.writingRemoved === 'string') {
-        retentionErrors.delete(value.writingRemoved);
-        if (owned.has(value.writingRemoved)) publish(scope(), value.writingRemoved, null);
-        else { const pending = retaining.get(value.writingRemoved);if (pending) pending.record = null; }
-      }
-      const previous = read('pending');
-      if (pending(previous) && value.clearPending === previous.attempt) write('pending', null);
-      if (value.pending && typeof value.pending === 'object') {
-        const login = value.pending as Partial<Login>;
-        if (pending(login)) write('pending', { ...login, fragment: location.hash, scroll: window.scrollY, ...position() });
-      }
+    saveSession(value: string) { write('session', value || null, true); },
+    selectWriting(ids: readonly string[]) { write(hintKey(), ids); },
+    saveWriting(record: SavedWriting) { if (recovery && !controller.signal.aborted) retain(record); },
+    removeWriting(id: string) {
+      retentionErrors.delete(id);
+      if (owned.has(id)) publish(scope(), id, null);
+      else { const pending = retaining.get(id);if (pending) pending.record = null; }
     },
+    clearPending(attempt?: string) { const saved = read('pending');if (attempt === undefined || pending(saved) && saved.attempt === attempt) write('pending', null); },
+    pendingLogin(login: Login & {composer?: string}) { write('pending', {...login, fragment:location.hash, scroll:window.scrollY,...position()}); },
     dispose() { controller.abort(); },
     returning(): { handoff: Login; position: Pending } | undefined {
       if (!location.hash.startsWith('#gw-auth=')) return;

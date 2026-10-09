@@ -18,6 +18,7 @@
     "src/content/worker.ts",
     "src/browser/stock-content.ts",
     "src/content/stock.ts",
-    "src/registration.ts"
+    "src/registration.ts",
+    "src/browser/mona.ts"
   ]
 }

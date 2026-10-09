@@ -10,8 +10,10 @@ For a custom website interface, install the browser package using [native integr
 | `giscusflare/styles.css` | Styling the default interface in your page |
 | `giscusflare/headless` | Browser authentication, persistence and explicit content for a custom interface |
 | `giscusflare/model` | Portable page owner with a supplied transport, without browser APIs |
-| `giscusflare/interactions` | Connecting composers and menus to your controls |
+| `giscusflare/interactions` | Shared editors, native focus and interaction ownership |
 | `giscusflare/content` | Complete profiles, shared content owner and installed-output contracts |
+| `giscusflare/mona` | Trusted hand-authored inline SVG markup for browser or SSR |
+| `giscusflare/mona.css` | Shared stepped playback, theme variables and reduced motion |
 | `giscusflare/counts` | Lightweight shared count acquisition, observation and reuse |
 | `giscusflare/content/stock` | Complete standard service/browser content profile |
 | `giscusflare/content/worker` | Isolated safe-producer factory |
@@ -41,6 +43,8 @@ Point Wrangler's `assets.directory` at `worker-assets`. Each group includes its 
 | `iframe` | Default iframe interface, embed loader and themes |
 | `native` | Default interface as browser modules and scoped styles |
 | `headless` | Conversation API as browser modules |
+| `counts` | Shared count observation browser capability |
+| `mona` | Inline markup module and independent animation stylesheet |
 | `content` | Optional GitHub content renderer, its lazy dependencies and independent styles |
 
 For a service used only by your native custom interface, select `auth` and `setup`. Add `iframe` to offer the default embed too. Bundle your custom interface with your website.
@@ -52,3 +56,5 @@ Start with an empty generated asset directory on each build. `copyAssets` preser
 `npm run build` produces API/producer/browser bundles, registration entry point, type declarations and static assets under `dist/assets`. `npm run build:test` also builds local examples and simulated sign-in.
 
 Run `npm run test:package` to extract the archive outside the checkout and check its public imports and selected assets. The check verifies public entry points and that development assets stay out of the package. Headless consumers explicitly select content and import no default UI or content interpretation.
+
+Hosted and copied asset headers revalidate fixed module and stylesheet URLs. Hashed chunks are immutable. The build derives exact entry-module rules from the emitted graph before hashing the deployment manifest; `package/_headers` owns the remaining header policy.

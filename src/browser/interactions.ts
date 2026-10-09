@@ -47,14 +47,17 @@ export interface Editor {
 export function createEditor(runtime: Conversation, writing: Writing, options: {
   render(editor: Editor): void;
   signal?: AbortSignal;
+  elements?: { form: HTMLFormElement; textarea: HTMLTextAreaElement; previewElement: HTMLElement };
   writeWhileSignedOut?: boolean;
   submitted?(outcome: WritingOutcome): void;
 }): Editor {
   const name = writing.id;
   runtime.signal.throwIfAborted();
   options.signal?.throwIfAborted();
-  const form = document.createElement('form'), textarea = document.createElement('textarea'),
-    previewElement = document.createElement('div'), events = new window.AbortController();
+  const { form, textarea, previewElement } = options.elements ?? { form: document.createElement('form'), textarea: document.createElement('textarea'), previewElement: document.createElement('div') };
+  const events = new window.AbortController();
+  // Adopt a native draft entered before hydration, without replacing its field.
+  if (options.elements && textarea.value && !writing.text && !writing.touched && !writing.protected && !writing.actions.undoClear) writing.update(textarea.value);
   form.dataset.composer = writingTargetKey(writing.target);
   form.dataset.writingId = writing.id;
   textarea.rows = 4;textarea.maxLength = 60000;textarea.dir = 'auto';
@@ -64,7 +67,8 @@ export function createEditor(runtime: Conversation, writing: Writing, options: {
   const disposed = () => events.signal.aborted;
   const dispose = runtime.own(() => {
     options.signal?.removeEventListener('abort', dispose);
-    events.abort();content.dispose();stop?.();unregister?.();form.remove();form.replaceChildren();
+    events.abort();content.dispose();stop?.();unregister?.();
+    if (!options.elements) { form.remove();form.replaceChildren(); }
   });
   options.signal?.addEventListener('abort', dispose, { once: true });
   const focus = () => textarea.focus({ preventScroll: true });

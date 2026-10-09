@@ -8,12 +8,6 @@ Record the known-good content/API/website versions before activating a publicati
 
 Source deployments apply Wrangler variables; copy dashboard-only public settings into source before deploying. Check health, assets, anonymous reading, content interpretation and available contribution paths. Report real authenticated GitHub acceptance separately from anonymous or simulated checks.
 
-## Host-prepared content
-
-Tie producer revision to its actual trust policy, compiler and immutable resource build. The API's CONTENT binding reaches a separate internal producer; local prepared previews do not need provider discovery or authentication. Completed artifact reuse is hot, bounded and disposable, so a new isolate legitimately prepares again. No durable repository artifact cache is involved.
-
-Required stylesheet URLs must remain reachable and allowed by the website CSP. Optional modules must be allowed for their controls to work, but a failed module does not erase readable HTML. Inspect the actual content request separately from reading/count requests. Test cold source, styles and enhancements independently, and confirm native preview shares the selected lifecycle.
-
 ## Troubleshoot
 
 | Symptom | Inspect |
@@ -23,7 +17,7 @@ Required stylesheet URLs must remain reachable and allowed by the website CSP. O
 | Open hosting rejected | Returned registration reference and current hosting policy |
 | Sign-in fails after domain change | PUBLIC_ORIGIN, App callback ending /auth/callback, and website service URL |
 | Native requests blocked | CORS plus website CSP connect-src |
-| VERSION_MISMATCH | Matching protocol 6 service/browser, then reload |
+| VERSION_MISMATCH | Matching protocol 7 service/browser, then reload |
 | Count unavailable | Count observation request; do not interpret failure as zero |
 | Formatted content unavailable | CONTENT binding, producer revision, safe output and required styles |
 | Open page offers Reload | Producer resource fingerprint differs from the page’s selected manifest; reload the matching website |
@@ -35,7 +29,7 @@ Required stylesheet URLs must remain reachable and allowed by the website CSP. O
 | HTTP 429 or load failures | Returned retry interval, provider allowance, CPU, requests, object duration and SQL usage |
 | Named sort paused | Returned reason and retry time |
 
-Setup registration verifies public installation/category access. `/api/v6/config` reports usable repository settings and `/healthz` reports service version; neither establishes an authenticated contribution.
+Setup registration verifies public installation/category access. `/api/v7/config` reports usable repository settings and `/healthz` reports service version; neither establishes an authenticated contribution.
 
 ## Named sorts
 

@@ -2,6 +2,7 @@
 export {
   createConversation,
   type ConversationOptions,
+  type ConversationHost,
   type Conversation,
   type ConversationInitialization,
   type WritingRestoration,
