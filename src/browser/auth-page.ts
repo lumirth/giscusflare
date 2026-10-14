@@ -8,17 +8,19 @@ export function authReturn(data:Pick<CallbackResult,'returnURL'|'attempt'|'repo'
   return url;
 }
 /** A user retries once after the provider's deadline; no automatic request loop. */
-export function retrySignIn(seconds:number,run:()=>void|Promise<void>):void{
+export function retrySignIn(seconds:number,run:()=>void|Promise<void>,expires:number):void{
   const status=document.getElementById('auth-status')!,button=document.createElement('button');
   const until=Date.now()+Math.min(3600,Math.max(1,seconds))*1000;
   document.querySelector('.auth-loading')?.remove();
+  if(until>=expires){status.textContent='GitHub sign-in is temporarily unavailable. Return to the comments and try again later.';return;}
   button.type='button';button.textContent='Retry sign-in';button.disabled=true;
   document.getElementById('auth-return')!.before(button);
   const update=()=>{
+    if(Date.now()>=expires){button.remove();status.textContent='This sign-in expired. Return to the comments and start again.';return 0;}
     const remaining=Math.max(0,Math.ceil((until-Date.now())/1000));
     status.textContent=remaining?'GitHub sign-in is temporarily unavailable. Try again in '+(remaining<60?`${remaining} seconds.`:`${Math.ceil(remaining/60)} minutes.`):'GitHub sign-in is temporarily unavailable. You can try again now.';
     button.disabled=remaining>0;return remaining;
   };
   update();const timer=setInterval(()=>{if(!update())clearInterval(timer);},250);
-  button.addEventListener('click',()=>{clearInterval(timer);button.remove();void run();},{once:true});
+  button.addEventListener('click',()=>{clearInterval(timer);if(Date.now()>=expires){update();return;}button.remove();void run();},{once:true});
 }

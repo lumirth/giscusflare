@@ -15,7 +15,7 @@ setTimeout(() => { back.hidden = false; }, 1800);
 status.textContent = data.status === 'ready' ? 'Returning to comments…' : data.status==='failed'?data.message:'Sign-in cancelled.';
 if (data.status !== 'ready') { document.querySelector('.auth-loading')?.remove(); back.hidden = false; }
 if(data.status==='waiting'||data.status==='failed'){
-  if(data.status==='waiting')retrySignIn(data.retryAfter,()=>location.reload());
+  if(data.status==='waiting')retrySignIn(data.retryAfter,()=>location.reload(),data.expires);
 } else if (data.mode === 'redirect') {
   location.replace(url.toString());
 } else {

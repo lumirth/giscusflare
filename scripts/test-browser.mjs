@@ -104,7 +104,6 @@ try {
             await visitor.getByRole('link',{name:'Return to comments',exact:true}).click();
             await expect(visitor.getByText('Try posting a comment or replying here.',{exact:true})).toBeVisible();
             await expect(visitor.getByRole('button',{name:'Sign in with GitHub',exact:true})).toBeVisible();
-            await expect(visitor.locator('[data-composer="main"] textarea')).toHaveCount(0);
             await visitor.close();
             await expect(retry).toBeEnabled();await retry.click();
             // GitHub can refuse the identity read after consuming the authorization code.

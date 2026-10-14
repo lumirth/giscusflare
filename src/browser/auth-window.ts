@@ -7,11 +7,13 @@ import {authReturn,retrySignIn} from './auth-page.js';
 const proof = new URLSearchParams(location.hash.slice(1)).get('gw-proof') || '';
 history.replaceState(history.state, '', location.pathname + location.search);
 const config = jsonElement<AuthWindow>();
+const expires=config.expires??Date.now()+600000;
 const status = document.getElementById('auth-status')!;
 const back = document.getElementById('auth-return') as HTMLAnchorElement;
 authReturn({...config,openerOrigin:config.openerOrigin||location.origin},'failed');
 setTimeout(() => { back.hidden = false; }, 1800);
 async function run(): Promise<void> {
+  if(expires<=Date.now())throw new Error('This sign-in expired. Return to the comments and start again.');
   if (!/^[A-Za-z0-9_-]{43}$/.test(proof) || await challenge(proof) !== config.attempt)
     throw new Error('Return to the page and start sign-in from the comments.');
   if (config.mode === 'popup' && !window.opener) throw new Error('Return to the page and start sign-in from the comments.');
@@ -19,7 +21,7 @@ async function run(): Promise<void> {
   const response = await fetch(API_PREFIX + '/auth/prepare', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...context, proof }), credentials: 'same-origin', cache: 'no-store' });
   const data = await response.json() as { attempt?: string; authorizeURL?: string; error?: { message?: string;retryAfter?:number } };
   if(!response.ok&&[429,503].includes(response.status)&&Number.isFinite(data.error?.retryAfter)&&data.error!.retryAfter!>0){
-    back.hidden=false;retrySignIn(data.error!.retryAfter!,start);return;
+    back.hidden=false;retrySignIn(data.error!.retryAfter!,start,expires);return;
   }
   if (!response.ok || data.attempt !== config.attempt || !data.authorizeURL) throw new Error(data.error?.message || 'Could not start sign-in.');
   const authorize = new URL(data.authorizeURL);

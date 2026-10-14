@@ -487,18 +487,23 @@ export class GitHub {
     }
     async exchange(parameters: Record<string, string>): Promise<G.OAuthToken> {
         try {
-            const exchange=(feedback:ProviderFeedback)=>githubText('https://github.com/login/oauth/access_token', {
+            const exchange=async(feedback:ProviderFeedback)=>{
+            const response=await githubText('https://github.com/login/oauth/access_token', {
                 method: 'POST', headers: { Accept: 'application/json', 'User-Agent':'giscusflare' },
                 body: new URLSearchParams({ client_id: this.config.clientId, client_secret: this.keys.clientSecret, ...parameters }),
             },16384,feedback,'oauth',this.requestId);
-            const response=this.provider?await admitted(this.provider,'oauth:'+this.config.clientId,'oauth',exchange):await exchange({});
             const raw = parseJSON(response, 'upstream');
             if (v.is(v.object({ error: v.string() }), raw)) {
                 console.warn(JSON.stringify({event:'oauth_refused',reason:raw.error}));
-                if(['temporarily_unavailable','server_error'].includes(raw.error))throw new AppError(503,'UPSTREAM','GitHub authorization is temporarily unavailable.',60);
+                if(['temporarily_unavailable','server_error'].includes(raw.error)){
+                  feedback.retryAfter=60;feedback.unavailable=true;
+                  throw new AppError(503,'UPSTREAM','GitHub authorization is temporarily unavailable.',60);
+                }
                 throw new AppError(401,'GITHUB_AUTH','GitHub did not authorize this session. Sign in again.');
             }
             return parse(G.OAuthToken, raw, 'upstream');
+            };
+            return this.provider?await admitted(this.provider,'oauth:'+this.config.clientId,'oauth',exchange):await exchange({});
         }
         catch (error) {
             if (error instanceof AppError)

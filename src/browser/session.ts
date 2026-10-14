@@ -162,7 +162,7 @@ export class BrowserSession implements Transport {
     try {
       const { capability: saved, attempt, created, version } = flow;
       this.host.pendingLogin?.({capability:saved,attempt,created,version});
-      const params = new URLSearchParams({ ...this.#context(), returnURL: this.config.returnURL, attempt: flow.attempt, mode: flow.popup ? 'popup' : 'redirect', openerOrigin: location.origin });
+      const params = new URLSearchParams({ ...this.#context(), returnURL: this.config.returnURL, attempt: flow.attempt, expires:String(flow.created+600000),mode: flow.popup ? 'popup' : 'redirect', openerOrigin: location.origin });
       const url = new URL(this.service + '/auth/window?' + params);
       url.hash = 'gw-proof=' + proof;
       if (flow.popup) { flow.popup.location.replace(url.toString()); flow.popup.focus(); }
