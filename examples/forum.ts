@@ -63,6 +63,9 @@ export const forumPresentation: Presentation = (target, page, scope) => {
   };
   const articles = new Map<string, { element: HTMLElement; body: HTMLElement; content: ReturnType<typeof page.content.mount> }>();
   scope.own(() => { for (const article of articles.values()) article.content.dispose(); });
+  const layout = () => {
+    if (!scope.signal.aborted && page.ready && [...articles].every(([id, article]) => article.content.ready || page.document.nodes[id]?.deletedAt)) page.readingLayout.publish();
+  };
   const draw = () => {
     const { document: doc } = page;
     const authLabel = page.session.signedIn ? 'Sign out' : 'Sign in', problem = page.error || page.session.error;
@@ -82,7 +85,7 @@ export const forumPresentation: Presentation = (target, page, scope) => {
       if (!retained) {
         const element = node('article'), body = node('div');
         element.className = 'forum-post'; element.dataset.comment = id; body.className = 'forum-body';
-        retained = { element, body, content: page.content.mount(body, comment, { signal: scope.signal, onReady: ready => { element.hidden = !ready; queueMicrotask(() => { if (!scope.signal.aborted && page.ready && [...articles].every(([id, article]) => article.content.ready || page.document.nodes[id]?.deletedAt)) page.readingLayout.publish(); }); } }) }; articles.set(id, retained);
+        retained = { element, body, content: page.content.mount(body, comment, { signal: scope.signal, onReady: ready => { element.hidden = !ready && !page.document.nodes[id]?.deletedAt; queueMicrotask(layout); } }) }; articles.set(id, retained);
       }
       const { element, body } = retained;
       body.hidden = false; element.hidden = !retained.content.ready;
@@ -118,6 +121,7 @@ export const forumPresentation: Presentation = (target, page, scope) => {
     list.replaceChildren(...doc.roots.ids.flatMap(card));
     if (doc.roots.cursor !== null) list.append(action('More comments', () => page.loadMore()));
     for (const [id, article] of articles) if (!live.has(id)) { article.content.dispose(); articles.delete(id); }
+    queueMicrotask(layout);
   };
   let rendered = page.document;
   scope.own(page.subscribe(() => {

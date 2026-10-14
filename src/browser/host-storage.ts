@@ -1,10 +1,11 @@
 import { scopedStorage, storageNamespace, writingIdentity } from './storage.js';
 import type { WritingStore } from './writing-store.js';
-import { validDisplayProfile, validLogin, type DisplayProfile, type Login } from './session.js';
+import { validDisplayProfile, validLogin, type Login } from './session.js';
 import type { Person } from '../contracts/document.js';
 import { challenge } from './dom.js';
 import { writingTargetKey, type SavedWriting } from '../conversation/writing.js';
 type Pending = Login & { fragment?: string; scroll?: number; composer?: string };
+type Initialization = import('./runtime.js').ConversationInitialization & {availableWriting?: readonly SavedWriting[]};
 const capability = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9_-]{43}$/.test(value);
 const pending = (value: unknown): value is Pending => {
   if (!validLogin(value)) return false;
@@ -19,7 +20,7 @@ export function hostStorage(service: string, repo: string, recovery: WritingStor
   const controller = new AbortController();
   if (lifetime?.aborted) controller.abort();
   else lifetime?.addEventListener('abort', () => controller.abort(), { once: true });
-  let draft = '', scopeLife = new AbortController(), error = '';
+  let draft = '', scopeLife = new AbortController(), error = '', initialization = 0;
   const owned = new Set<string>(), retentionErrors = new Map<string, string>();
   const retaining = new Map<string, {record: SavedWriting | null; work: Promise<void>}>();
   const scope = () => prefix + draft;
@@ -66,18 +67,31 @@ export function hostStorage(service: string, repo: string, recovery: WritingStor
       return saved;
     } catch (cause) { if (!signal.aborted && key === scope()) storageFailure(cause); }
   };
-  return {
-    sessionKey: prefix + 'session', session,
-    async displayProfile(token = session()): Promise<DisplayProfile | null> {
-      if (!token) return null;
-      const fingerprint = await challenge(token), value = read('profile', true) as {fingerprint?: unknown; profile?: unknown} | null;
-      return session() === token && value?.fingerprint === fingerprint && validDisplayProfile(value.profile) ? {fingerprint, profile:value.profile} : null;
+  const showDisplay = (receive: (data: Initialization) => void, current = () => true) => {
+    const token = session();
+    if (!token) return;
+    void challenge(token).then(fingerprint => {
+      const value = read('profile', true) as {fingerprint?: unknown; profile?: unknown} | null;
+      if (!controller.signal.aborted && current() && session() === token && value?.fingerprint === fingerprint && validDisplayProfile(value.profile)) receive({displayProfile: {fingerprint, profile: value.profile}});
+    }).catch(() => {});
+  };
+  const host = {
+    session,
+    initialize(receive: (data: Initialization) => void, data: Initialization = {}, availableWriting = false): Promise<void> {
+      const generation = ++initialization, current = () => !controller.signal.aborted && generation === initialization;
+      receive({session: session(), ...data});showDisplay(receive, current);
+      return host.recover().then(writing => { if (current()) receive({writing, ...(availableWriting ? {availableWriting: records()} : {})}); }).catch(cause => {
+        if (current()) receive({writing: {records: [], selected: [], error: cause instanceof Error ? cause.message : 'Unable to restore writing.'}});
+      });
+    },
+    observeStorage(event: StorageEvent, receive: (data: Initialization) => void, writingChanged: () => void): void {
+      if (event.key === prefix + 'session') { receive({session: session(event.newValue)});showDisplay(receive); }
+      else if (event.key?.startsWith(scope() + ':record:')) writingChanged();
     },
     async saveDisplayProfile(fingerprint: string, profile: Person): Promise<void> {
       const token = session();
       if (token && validDisplayProfile(profile) && await challenge(token) === fingerprint && session() === token && !controller.signal.aborted) write('profile', {fingerprint, profile}, true);
     },
-    get writingPrefix() { return scope() + ':record:'; },
     get error() { return [...retentionErrors.values()][0] || error; },
     usePage(page: Parameters<typeof writingIdentity>[0]) {
       const next = writingIdentity(page);
@@ -140,4 +154,5 @@ export function hostStorage(service: string, repo: string, recovery: WritingStor
       return true;
     },
   };
+  return host;
 }

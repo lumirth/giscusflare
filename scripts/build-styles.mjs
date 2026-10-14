@@ -1,5 +1,16 @@
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import postcss from 'postcss';
+import contentSelectors from '../vendor/giscus/reference/styles/content-selectors.json' with { type: 'json' };
+
+export function projectContent(foundation) {
+  const content = postcss.parse('/*! Pinned Giscus content foundation selected from compiled.css. MIT; see docs/PROVENANCE.md. */\n');
+  for (const [source, selector] of contentSelectors) {
+    const matches = foundation.nodes.filter(node => node.type === 'rule' && node.selectors.join(', ') === source);
+    if (matches.length !== 1) throw new Error(`Expected one content foundation source rule for ${source}; found ${matches.length}.`);
+    content.append(matches[0].clone({ selector }));
+  }
+  return content.toString();
+}
 
 /** Replace known retired image assets with authored palettes; pinned inputs stay unchanged. */
 function monaPalette(sheet, theme = '') {
@@ -20,19 +31,17 @@ function monaPalette(sheet, theme = '') {
 
 /** Explicit pinned foundations and authored additions form each supported stylesheet. */
 export async function buildStyles() {
-  const [foundation, contentFoundation, content, presentation, mona] = await Promise.all([
+  const [foundation, content, presentation, mona] = await Promise.all([
     'vendor/giscus/reference/styles/compiled.css',
-    'vendor/giscus/reference/styles/content.css',
     'src/browser/content.css',
     'src/browser/standard/styles.css',
     'src/browser/mona.css',
   ].map(path => readFile(path, 'utf8')));
-  const base = postcss.parse(foundation); monaPalette(base);
+  const base = postcss.parse(foundation), contentFoundation = projectContent(base); monaPalette(base);
   const widget = [base.toString(), content, presentation, mona].join('\n');
   await writeFile('public/mona.css', mona);
   await writeFile('public/widget.css', widget);
   await writeFile('public/content.css', contentFoundation + '\n' + content);
-  await writeFile('public/iframe.css', 'body { margin: 0; background: transparent; }\n');
   const native = postcss.parse(widget);
   native.walkRules(rule => {
     if (rule.parent?.type === 'atrule' && /keyframes$/.test(rule.parent.name)) return;

@@ -52,19 +52,18 @@ interface MountOptions {
 /** Preparation is detached; installed output changes only after the current result is ready. */
 export const mountContent: (target: HTMLElement, renderer: ContentRenderer, options?: MountOptions) => ContentMount = installContent;
 function installContent(target: HTMLElement, renderer: ContentRenderer, options: MountOptions = {}) {
-  let input: ContentInput | undefined, generation: AbortController | undefined, candidate: AbortController | undefined,
-    view: { output: MountedContent; lifetime: AbortController } | undefined, pending = Promise.resolve(), disposed = false, ready = false, failure: HTMLElement | undefined;
-  const publishReady = (value: boolean) => {
-    if (ready !== value) { ready = value; options.onReady?.(value); }
-  };
-  const retire = (previous: typeof view) => { if (previous) { previous.lifetime.abort(); previous.output.dispose?.(); } };
-  const release = () => {
-    const previous = view; view = undefined; retire(previous);
+  let installed: { output: MountedContent; lifetime?: AbortController } | undefined,
+    preparation: { input: ContentInput; abort: AbortController; lifetime: AbortController; work: Promise<void>; pending: boolean; error?: HTMLElement } | undefined,
+    disposed = false;
+  const retire = (previous: typeof installed) => { if (previous) { previous.lifetime?.abort(); previous.output.dispose?.(); } };
+  const cancel = () => {
+    preparation?.error?.remove(); preparation?.abort.abort();
+    if (preparation && preparation.lifetime !== installed?.lifetime) preparation.lifetime.abort();
   };
   const clear = () => {
-    failure?.remove(); failure = undefined;
-    generation?.abort(); generation = undefined; candidate?.abort(); candidate = undefined; input = undefined;
-    try { release(); } finally { target.replaceChildren(); target.removeAttribute('aria-busy'); publishReady(false); }
+    cancel(); preparation = undefined;
+    const previous = installed; installed = undefined;
+    try { retire(previous); } finally { target.replaceChildren(); target.removeAttribute('aria-busy'); if (previous) options.onReady?.(false); }
   };
   const dispose = () => {
     if (disposed) return;
@@ -73,46 +72,43 @@ function installContent(target: HTMLElement, renderer: ContentRenderer, options:
   if (options.signal?.aborted) dispose();
   else options.signal?.addEventListener('abort', dispose, { once: true });
   const owner = {
-    get input() { return input; },
-    get ready() { return ready; },
-    get pending() { return target.getAttribute('aria-busy')==='true'; },
+    get ready() { return Boolean(installed); },
+    get pending() { return Boolean(preparation?.pending); },
     clear, dispose,
-    update(value: ContentInput): Promise<void> {
+    update(value: ContentInput, retry = true): Promise<void> {
       if (disposed) return Promise.resolve();
+      if (preparation && same(preparation.input, value) && (!preparation.error || !retry)) return preparation.work;
       const next = { ...value, ...(value.comment ? { comment: { ...value.comment } } : {}) };
-      if (input && !failure && same(input, next)) return pending;
-      failure?.remove(); failure = undefined;
-      generation?.abort(); candidate?.abort();
-      const current = generation = new AbortController(); input = next;
-      let failing = false;
-      const retained = view?.output.update ? view : undefined;
-      const lifetime = retained?.lifetime || (candidate = new AbortController());
+      cancel();
+      const wasReady = Boolean(installed), retained = installed?.output.update ? installed : undefined;
+      const current: NonNullable<typeof preparation> = preparation = { input: next, abort: new AbortController(), lifetime: retained?.lifetime || new AbortController(),
+        work: Promise.resolve(), pending: true };
       let acquired: Promise<ContentPreview> | undefined;
-      const delivery = () => acquired ||= options.acquire ? options.acquire(next, current.signal)
+      const delivery = () => acquired ||= options.acquire ? options.acquire(next, current.abort.signal)
         : Promise.reject(new Error('This content requires a configured preparation source.'));
       const context: ContentContext = {
-        signal: current.signal, lifetime: lifetime.signal,
+        signal: current.abort.signal, lifetime: current.lifetime.signal,
         async providerHTML() {
-          current.signal.throwIfAborted(); const html = next.html ?? (await delivery()).html;
+          current.abort.signal.throwIfAborted(); const html = next.html ?? (await delivery()).html;
           if (html === undefined) throw new Error('Provider HTML was not delivered.'); return html;
         },
         async preparedContent() {
-          current.signal.throwIfAborted(); const prepared = next.prepared ?? (await delivery()).prepared;
+          current.abort.signal.throwIfAborted(); const prepared = next.prepared ?? (await delivery()).prepared;
           if (!prepared) throw new Error('Prepared content was not delivered.'); return prepared;
         },
       };
-      const active = () => !disposed && generation === current && !current.signal.aborted;
-      const finish = () => { if (active()) target.removeAttribute('aria-busy'); };
+      const active = () => preparation === current && !current.abort.signal.aborted;
+      const finish = () => { if (preparation === current) { current.pending = false; target.removeAttribute('aria-busy'); } };
       const fail = (cause: unknown) => {
         if (!active()) return;
-        failing = true;
-        current.abort(); target.removeAttribute('aria-busy');
-        if (!retained) lifetime.abort();
-        if (!view) {
+        const status = current.error = document.createElement('div'); status.className = 'giscus-content-recovery'; status.setAttribute('role', 'status');
+        finish(); current.abort.abort();
+        if (!retained) current.lifetime.abort();
+        if (!installed?.lifetime) {
           const source = document.createElement('div'); source.style.whiteSpace = 'pre-wrap'; source.style.overflowWrap = 'anywhere';
-          source.textContent = next.markdown; target.replaceChildren(source); publishReady(true);
+          source.textContent = next.markdown; installed = { output: { node: source } };
+          target.replaceChildren(source); if (!wasReady) options.onReady?.(true);
         }
-        const status = failure = document.createElement('div'); status.className = 'giscus-content-recovery'; status.setAttribute('role', 'status');
         const reload = cause instanceof ResourceMismatch;
         status.append(document.createTextNode(reload ? 'Content resources changed. Reload this page to continue. ' : 'Formatted content could not load. '));
         const retry = document.createElement('button'); retry.type = 'button'; retry.textContent = reload ? 'Reload' : 'Retry';
@@ -121,33 +117,33 @@ function installContent(target: HTMLElement, renderer: ContentRenderer, options:
         throw cause;
       };
       const install = (output: ContentOutput) => {
-        const next = {output: 'node' in output ? output : {node: output}, lifetime};
-        try { if (active()) release(); }
+        const next = {output: 'node' in output ? output : {node: output}, lifetime: current.lifetime}, previous = installed;
+        try { if (active()) { installed = undefined; retire(previous); } }
         catch (cause) { retire(next); throw cause; }
         if (!active()) { retire(next); return; }
-        view = next; if (candidate === lifetime) candidate = undefined;
+        installed = next;
         target.replaceChildren(next.output.node);
-        publishReady(true);
+        if (!previous) options.onReady?.(true);
       };
       target.setAttribute('aria-busy', 'true');
+      let work: Promise<void>;
       try {
         if (retained) {
-          pending = Promise.resolve(retained.output.update!(next, context)).then(commit => { if (active()) commit(); }).catch(fail).finally(finish);
+          work = Promise.resolve(retained.output.update!(next, context)).then(commit => { if (active()) commit(); }).catch(fail).finally(finish);
         } else {
           const output = renderer(next, context);
-          if ('then' in output) pending = Promise.resolve(output).then(install).catch(fail).finally(finish);
-          else { install(output); finish(); pending = Promise.resolve(); }
+          if ('then' in output) work = Promise.resolve(output).then(install).catch(fail).finally(finish);
+          else { install(output); finish(); work = Promise.resolve(); }
         }
-      } catch (cause) { pending = Promise.resolve().then(() => fail(cause)); }
-      const work = pending;
-      pending = new Promise<void>((resolve, reject) => {
-        const retired = () => { if (!failing) resolve(); };
-        if (current.signal.aborted) retired();
-        else current.signal.addEventListener('abort', retired, { once: true });
-        work.then(() => { current.signal.removeEventListener('abort', retired); resolve(); },
-          cause => { current.signal.removeEventListener('abort', retired); reject(cause); });
+      } catch (cause) { work = Promise.resolve().then(() => fail(cause)).finally(finish); }
+      current.work = new Promise<void>((resolve, reject) => {
+        const retired = () => { if (!current.error) resolve(); };
+        if (current.abort.signal.aborted) retired();
+        else current.abort.signal.addEventListener('abort', retired, { once: true });
+        work.then(() => { current.abort.signal.removeEventListener('abort', retired); resolve(); },
+          cause => { current.abort.signal.removeEventListener('abort', retired); reject(cause); });
       });
-      return pending;
+      return current.work;
     },
   };
   return owner;
@@ -245,7 +241,6 @@ export function createContentOwner(options: {
     bytes:input=>new TextEncoder().encode(JSON.stringify(input)).byteLength,
     async run(inputs, signal) {
       const response=await options.batch(inputs,signal);signal.throwIfAborted();
-      if(response.results.length!==inputs.length)throw new Error('Invalid content response.');
       return response.results.map(result=>'error' in result?{error:new Error(result.error)}:{value:result});
     },
   });
@@ -282,9 +277,7 @@ export function createContentOwner(options: {
       }
       for (const [mount, id] of mounts) {
         const node = id && nodes[id]; if (!node || node.deletedAt) continue;
-        const input = bound(node);
-        if (!mount.input || !same(mount.input, input))
-          void mount.update(input).catch(() => {});
+        void mount.update(bound(node), false).catch(() => {});
       }
     },
   };

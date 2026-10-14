@@ -8,6 +8,7 @@ Use Node 22.16 or newer:
 
 ```sh
 npm ci
+npm run types
 npm test
 npm run demo
 ```
@@ -15,6 +16,8 @@ npm run demo
 The demo uses simulated GitHub and needs no credentials. Run `npm run test:runtime` for Worker, RPC, and SQLite changes. [Testing](TESTING.md) covers browser and real GitHub checks.
 
 Edit source files in `src/`. Build scripts generate browser bundles, styles, themes, and type declarations. Do not edit generated output as the fix. Commit dependency changes with the updated lockfile.
+
+Cloudflare runtime declarations are generated locally from the locked Wrangler version and `wrangler.jsonc`, not committed. `npm run types` enables Worker editor support after installation; typechecking, builds and tests regenerate them automatically. Application bindings remain source-owned in `src/worker/types.ts`. The Wrangler build hook skips its build when `WRANGLER_COMMAND=types` to avoid recursively invoking type generation.
 
 ## Changes to the interface
 

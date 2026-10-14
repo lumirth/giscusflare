@@ -7,6 +7,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { evidence } from '../test/evidence.mjs';
 import { browserBehavior } from '../test/browser-behavior.mjs';
+import { browserFixture } from '../test/browser-fixture.mjs';
 
 const { chromium, webkit, expect } = await import(process.env.PLAYWRIGHT_MODULE || '@playwright/test');
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -33,20 +34,13 @@ try {
     try {
       let capability;
       for (const mode of ['native', 'iframe']) {
-        const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
-        const page = await context.newPage();
+        const fixture = await browserFixture(browser, service, '192.0.2.' + (10 + client++), mode);
+        const { context, page, surface, platformClient, errors } = fixture;
         if (mode === 'native') await page.addInitScript(() => {
           const now = Date.now.bind(Date);
           Date.now = () => now() + Number(sessionStorage.getItem('__qualification_clock') || 0);
         });
-        const clientIP = '192.0.2.' + (10 + client++);
-        const platformClient = route => route.continue({ headers: { ...route.request().headers(), 'CF-Connecting-IP': clientIP } });
-        await context.route(service + '/api/v7/**', platformClient);
-        await page.context().route(service + '/auth/**', platformClient);
-        await page.context().route(service + '/api/v7/auth/**', platformClient);
         await page.context().route('https://avatars.githubusercontent.com/u/1', route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" rx="20" fill="#d9e2ee"/><circle cx="20" cy="15" r="7" fill="#596b82"/><path d="M7 37v-4a13 13 0 0 1 26 0v4" fill="#596b82"/></svg>' }));
-        const errors = [], responseStatuses = [], contentResults = []; page.on('pageerror', error => errors.push(error.message));
-        page.on('response', response => { const path = new URL(response.url()).pathname; if (path.startsWith('/api/') || path.startsWith('/auth/')) responseStatuses.push({ path, status: response.status() }); if (path === '/api/v7/content') void response.json().then(result => contentResults.push(result.results?.map(value => ({error:value.error,prepared:Boolean(value.prepared),html:value.html!==undefined})))).catch(() => {}); });
         const requests = [], proofs = new Set(), capabilities = new Set(), callbackBodies = [];
         let fragmentExposed = false, contentCredentialExposed = false;
         const observe=request=>{
@@ -63,12 +57,11 @@ try {
         const responses = response => {
           if (new URL(response.url()).pathname === '/auth/callback') callbackBodies.push(response.text());
         };
-        page.context().on('request', observe);
-        page.context().on('response', responses);
+        fixture.observe(context, 'request', observe);
+        fixture.observe(context, 'response', responses);
         try {
           const path = mode === 'native' ? '/native' : '/article';
           await page.goto(blog + path);
-          const surface = mode === 'native' ? page : page.frameLocator('iframe.giscus-frame');
           const appearance = changes => mode === 'native'
             ? page.evaluate(changes => window.demoComments.conversation.updateAppearance(changes), changes)
             : page.evaluate(({origin,changes}) => document.querySelector('iframe').contentWindow.postMessage({giscus:{setConfig:changes}},origin), {origin:service,changes});
@@ -83,18 +76,14 @@ try {
           }
           const hostFont = await page.getByRole('heading', { level: 1 }).evaluate(element => getComputedStyle(element).fontFamily);
           assert.match(hostFont, /^system-ui\b/, 'comments retain the host fixture typography when first mounted');
-          let releaseAccount;
-          if (mode === 'native') {
-            const account = new Promise(resolve => { releaseAccount = resolve; });
-            await context.route(service + '/api/v7/access', async route => { await account;await platformClient(route); });
-          }
+          const account = mode === 'native' ? await fixture.hold('/api/v7/access', async (route, gate) => { await gate.wait(); await platformClient(route); }) : undefined;
           await composer.getByRole('button', { name: 'Sign in with GitHub', exact: true }).click();
           const textarea = composer.locator('textarea'); await expect(textarea).toBeEditable();
           if (mode === 'native') {
             await expect.poll(() => page.evaluate(() => window.demoComments.conversation.session.viewer?.login)).toBe('reader');
             assert.equal(await page.evaluate(() => Boolean(window.demoComments.conversation.viewer)), false, 'Verified local display identity is usable before held discussion permissions');
             await composer.getByRole('button', { name: 'Sign out', exact: true }).waitFor();
-            releaseAccount();await context.unroute(service + '/api/v7/access');
+            await account.dispose();
           }
           await expect(page).toHaveURL(blog + path);
           assert.equal(proofs.size,1,'one private proof prepares this sign-in');
@@ -296,10 +285,9 @@ try {
             assert.deepEqual(recoveredIssuance.action, originalIssuance.action, 'Recovery preserves the authored destination and body');
             await expect(surface.getByText(recoveryText, { exact: true })).toBeVisible();
             const pendingText = engineName + ' reload during a committed request';
-            let committed = false, committedId, releaseResponse;
-            const responseHeld = new Promise(resolve => { releaseResponse = resolve; });
-            await page.context().route(service + '/api/v7/contribute', async route => {
-              const response = await route.fetch(); committedId = (await response.json()).id; committed = true; await responseHeld;
+            let committed = false, committedId;
+            const contributionGate = await fixture.hold('/api/v7/contribute', async (route, gate) => {
+              const response = await route.fetch(); committedId = (await response.json()).id; committed = true; await gate.wait();
               await route.fulfill({ response }).catch(() => {});
             });
             await textarea.fill(pendingText);
@@ -307,7 +295,7 @@ try {
             await expect.poll(() => committed).toBe(true);
             await expect.poll(() => page.evaluate(() => window.demoComments.conversation.writing().pending)).toBe(true);
             await page.evaluate(() => sessionStorage.setItem('__qualification_clock', '301000'));
-            await page.reload(); releaseResponse(); await page.context().unroute(service + '/api/v7/contribute');
+            await page.reload(); await contributionGate.dispose();
             await expect(textarea).toHaveValue(pendingText);
             await expect(textarea).toBeVisible();
             await page.evaluate(capability => window.demoComments.conversation.session.setSession(capability), capability);
@@ -341,7 +329,7 @@ try {
             await page.context().unroute(service + '/api/v7/contribute');
             const ownerRecordId = await page.evaluate(() => window.demoComments.conversation.writing().id);
             const ownerIssuance = requests.filter(request => new URL(request.url).pathname === '/api/v7/contribute').map(request => JSON.parse(request.body)).at(-1);
-            const second = await page.context().newPage(); second.on('pageerror', error => errors.push(error.message));
+            const second = await page.context().newPage(); fixture.observe(second, 'pageerror', error => errors.push(error.message));
             let independentRecordId;
             try {
               await second.goto(blog + '/native');
@@ -353,7 +341,7 @@ try {
             } finally { await second.close(); }
             await expect(textarea).toHaveValue(ownerText);
             await page.close();
-            const recoveredPage = await page.context().newPage(); recoveredPage.on('pageerror', error => errors.push(error.message));
+            const recoveredPage = await page.context().newPage(); fixture.observe(recoveredPage, 'pageerror', error => errors.push(error.message));
             try {
               await recoveredPage.goto(blog + '/native');
               await expect.poll(() => recoveredPage.evaluate(() => window.demoComments?.conversation.ready ?? false)).toBe(true);
@@ -377,9 +365,9 @@ try {
           report.checks.push({ engine: engineName, version: browser.version(), mode, status: 'passed', authReturn: true, privateProofBoundary: true, nativeUndo: true, previewContinuity: true, appearanceContinuity: true, positionContinuity: true, rtl: true, customThemeCSS: true, themeFonts: true, hostFontIsolation: true, contentSizing: true, manualResizeContinuity: true, keyboardFocus: true, contributionReadback: true, replyReadback: true, serverBootstrap: mode === 'iframe', mobileOverflow: false });
           console.log('PASS', engineName, mode, 'authorization and editor continuity');
         } catch (error) {
-          console.error(JSON.stringify({ engineName, mode, errors, contentResults, responses: responseStatuses, state: await page.evaluate(() => { const runtime = window.demoComments?.conversation; return runtime ? { ready: runtime.ready, error: runtime.error, viewer: runtime.viewer?.principal, session: { signedIn: runtime.session.signedIn, principal: runtime.session.principal, pending: runtime.session.pending, error: runtime.session.error }, text: document.getElementById('comments')?.innerText } : {} }).catch(() => ({})) }, null, 2));
+          fixture.diagnose({ engineName, mode, state: await page.evaluate(() => { const runtime = window.demoComments?.conversation; return runtime ? { ready: runtime.ready, error: runtime.error, viewer: runtime.viewer?.principal, session: { signedIn: runtime.session.signedIn, principal: runtime.session.principal, pending: runtime.session.pending, error: runtime.session.error }, text: document.getElementById('comments')?.innerText } : {} }).catch(() => ({})) });
           throw error;
-        } finally { context.off('request', observe); context.off('response', responses); await context.close(); }
+        } finally { await fixture.close(); }
       }
       await browserBehavior({ browser, service, blog, report, capability });
     } finally { await browser.close(); }

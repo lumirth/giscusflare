@@ -21,7 +21,6 @@ export const RepositoryName = v.pipe(v.string(), v.maxLength(140),
 export const NodeID = v.pipe(v.string(), v.minLength(1), v.maxLength(256), v.regex(/^[A-Za-z0-9_+=:/.-]+$/));
 export const EmptyNodeID = v.union([v.literal(''), NodeID]);
 export const Capability = v.pipe(v.string(), v.regex(/^[A-Za-z0-9_-]{43}$/));
-export const EmptyCapability = v.union([v.literal(''), Capability]);
 export const IdempotencyKey = v.pipe(v.string(), v.regex(/^3\.\d{13}\.[A-Za-z0-9_-]{16,86}$/));
 export const Digest = v.pipe(v.string(), v.regex(/^[A-Za-z0-9_-]{43}$/));
 export const Timestamp = v.pipe(v.number(), v.safeInteger(), v.minValue(0));

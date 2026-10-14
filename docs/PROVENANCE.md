@@ -6,13 +6,14 @@ The giscus themes and presentation reference files are pinned at commit `3d64302
 
 ## Generated visual foundation
 
-`vendor/giscus/reference/styles/compiled.css` is a generated, project-selected dependency. It expands the pinned giscus `base.css`/`globals.css`, Tailwind 3.4.17 and `tailwindcss-vanilla-rtl` 0.4.0 using the standard presentation class vocabulary from giscusflare `b39375bbba0b8249c3bc661c63150b5917b31d80`. PostCSS is 8.5.28. It contains no project-specific override stylesheet. Those rules remain in `src/browser/standard/styles.css`; independently usable content structure rules live in `src/browser/content.css`. `vendor/giscus/reference/styles/content.css` pins the independent Markdown foundation selected from that same reference. Builds consume these explicit sources directly; they do not infer content ownership from selectors. Native and iframe palettes each derive directly from the pinned theme source. Known retired loading-image declarations are replaced during assembly with explicit SVG ink/face palettes; pinned files remain unchanged. The hand-authored Mona module and shared animation stylesheet are maintained project source. Ordinary builds assemble the standard stylesheet and scope native output without scanning source or installing Tailwind.
+`vendor/giscus/reference/styles/compiled.css` is a generated, project-selected dependency. It expands the pinned giscus `base.css`/`globals.css`, Tailwind 3.4.17 and `tailwindcss-vanilla-rtl` 0.4.0 using the standard presentation class vocabulary from giscusflare `b39375bbba0b8249c3bc661c63150b5917b31d80`. PostCSS is 8.5.28. The archival components and original CSS inputs remain in that immutable commit, not the current tree; regeneration retrieves them below. Project overrides remain in `src/browser/standard/styles.css`; independently usable content structure rules live in `src/browser/content.css`. The ordered source/target pairs in `vendor/giscus/reference/styles/content-selectors.json` explicitly select the independent Markdown foundation. `projectContent` in `scripts/build-styles.mjs` clones each uniquely matched rule before palette adaptation, preserving its declarations and target selectors; missing or ambiguous sources fail the build. It replaces a separately pinned copy, omitting ineffective empty-selector rules and empty groups without changing the effective cascade. Builds do not infer content ownership or scan source for utilities. Native and iframe palettes derive directly from pinned themes; known retired loading-image declarations become explicit SVG palettes during assembly. Pinned CSS and theme files remain unchanged. Mona and shared animation styles are maintained project source.
 
 | Input/output | SHA-256 |
 | --- | --- |
-| Pinned `base.css` | `2ff02cf9b1631d2a1260db1a163e9e68e32716af7834067c35087998cc99aaba` |
-| Pinned `globals.css` | `496a662537c72229be79336309679f4c1fc5bd77e059997797d64f15dabea374` |
-| Pinned content foundation `content.css` | `5fdc3fb923669e3cd15fccbc48425724fdf2cab741202811a43f9657462f50ca` |
+| Archived `base.css` | `2ff02cf9b1631d2a1260db1a163e9e68e32716af7834067c35087998cc99aaba` |
+| Archived `globals.css` | `496a662537c72229be79336309679f4c1fc5bd77e059997797d64f15dabea374` |
+| Content selector contract | `ec4e5bf428224580ede89506ed1ea4e8cf3d47dae1b1546e532a0f61171f8431` |
+| Projected content foundation | `6addcf7864e2df221dd539cc3f67cbc2edec5bf718135e3c3e77e059b7031404` |
 | Generated `compiled.css` | `2945fa3d045ab4756380bee3b76488ca9c37e7b04d6579c4f41fc2e625f76be4` |
 
 The generated dependency is reported separately from authored source. Project overrides, markup and native/theme adaptation code remain fully counted. Its retained upstream CSS and Tailwind notices identify their licenses. The frozen utility vocabulary is a stylesheet API: new project styling belongs in authored CSS rather than assuming a source scanner will manufacture a class.
@@ -47,4 +48,16 @@ await writeFile('compiled.css', notice + result.css);
 JS
 shasum -a 256 compiled.css
 cp compiled.css "$style_project_root/vendor/giscus/reference/styles/compiled.css"
+```
+
+To reproduce the content foundation from the current pinned stylesheet and explicit selector contract, run from the repository root:
+
+```sh
+node --input-type=module <<'JS' > "${TMPDIR:-/tmp}/giscusflare-content-foundation.css"
+import postcss from 'postcss';
+import { readFileSync } from 'node:fs';
+import { projectContent } from './scripts/build-styles.mjs';
+process.stdout.write(projectContent(postcss.parse(readFileSync('vendor/giscus/reference/styles/compiled.css', 'utf8'))));
+JS
+shasum -a 256 "${TMPDIR:-/tmp}/giscusflare-content-foundation.css"
 ```

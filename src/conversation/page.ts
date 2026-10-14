@@ -334,30 +334,15 @@ export class PageModel {
             try {
                 signal.throwIfAborted();
                 let baseline = this.document, acceptance = this.#accepted, countAfter = this.counts.revision;
+                const cursor = continuing ? (parentId ? this.document.replies[parentId]?.cursor ?? '' : this.document.roots.cursor!) : '';
+                let ids: string[] | undefined, loaded: string[] = [];
                 if (observing) {
                     // Observe a bounded portion of the existing document, never start a new traversal.
-                    const loaded = Object.keys(this.document.nodes);
-                    const ids = observedIds ? unique(observedIds).filter(id => this.document.nodes[id]).slice(0, 100)
+                    loaded = Object.keys(this.document.nodes);
+                    ids = observedIds ? unique(observedIds).filter(id => this.document.nodes[id]).slice(0, 100)
                         : [...loaded.slice(this.#observationOffset), ...loaded.slice(0, this.#observationOffset)].slice(0, 100);
                     authorityIds = ids;
-                    const page = await this.#request<WindowPage>('page', { read: {kind: 'observe', ids}, fresh: true }, signal);
-                    signal.throwIfAborted();
-                    if (this.document.metadata.thread?.id !== page.metadata?.thread?.id || page.metadata?.unavailable) {
-                        const previous = this.document.metadata.thread?.id;
-                        this.#accept({ patch: {metadata: page.metadata, observedAt: page.observedAt},acceptance });
-                        if (previous !== this.document.metadata.thread?.id || this.document.metadata.unavailable) this.continuity = { status: 'restart-required', reason: 'The discussion changed or is unavailable. Restart deliberately to acquire a new reading order.' };
-                    } else {
-                        const content = this.#accept({ page, baseline, observedIds: ids, acceptance, countAfter, countFresh:true });
-                        this.#emit(undefined, content);
-                        this.#observationOffset = loaded.length ? (this.#observationOffset + ids.length) % loaded.length : 0;
-                    }
-                    this.lastRefresh = Math.max(this.lastRefresh, page.observedAt);
-                    this.#emit();
-                    return true;
-                }
-                const cursor = continuing ? (parentId ? this.document.replies[parentId]?.cursor ?? '' : this.document.roots.cursor!) : '';
-                let ids: string[] | undefined;
-                if (!parentId && typeof this.order === 'object') {
+                } else if (!parentId && typeof this.order === 'object') {
                     if (!continuing) {
                         const deadline = Date.now() + 120000;
                         do {
@@ -379,21 +364,27 @@ export class PageModel {
                     ids = this.ranking.ids.slice(Number(cursor) || 0, (Number(cursor) || 0) + 20);
                 }
                 baseline = this.document;acceptance = this.#accepted;countAfter = this.counts.revision;
-                const fresh = ['restart','change-order'].includes(purpose);
-                const page = await this.#request<WindowPage>('page', { read: parentId ? {kind: 'replies', parentId, cursor} : ids ? {kind: 'selected', ids, replyPrefetch: this.replyPrefetch} : {kind: 'roots', order: this.order, cursor, replyPrefetch: this.replyPrefetch}, fresh }, signal);
+                const fresh = observing || ['restart','change-order'].includes(purpose);
+                const read = observing ? {kind: 'observe', ids} : parentId ? {kind: 'replies', parentId, cursor} : ids ? {kind: 'selected', ids, replyPrefetch: this.replyPrefetch} : {kind: 'roots', order: this.order, cursor, replyPrefetch: this.replyPrefetch};
+                const page = await this.#request<WindowPage>('page', {read, fresh}, signal);
                 signal.throwIfAborted();
-                if (ids && this.ranking?.status === 'ready') page.window.cursor = Number(cursor) + ids.length < this.ranking.ids.length ? String(Number(cursor) + ids.length) : null;
+                if (!observing && ids && this.ranking?.status === 'ready') page.window.cursor = Number(cursor) + ids.length < this.ranking.ids.length ? String(Number(cursor) + ids.length) : null;
                 let content: AcceptedObservation | undefined;
-                if (!parentId && !continuing) content = this.#replace(page, baseline, acceptance, countAfter, fresh);
-                else if (this.document.metadata.thread?.id !== page.metadata?.thread?.id) {
+                if (!parentId && !continuing && !observing) content = this.#replace(page, baseline, acceptance, countAfter, fresh);
+                else if (this.document.metadata.thread?.id !== page.metadata?.thread?.id || observing && page.metadata?.unavailable) {
                     const previous = this.document.metadata.thread?.id;
                     this.#accept({ patch: {metadata: page.metadata, observedAt: page.observedAt},acceptance });
-                    if (previous !== this.document.metadata.thread?.id) this.continuity = { status: 'restart-required', reason: 'The discussion changed. Restart to acquire its comments.' };
-                    return false;
+                    if (previous !== this.document.metadata.thread?.id || observing && this.document.metadata.unavailable) this.continuity = { status: 'restart-required', reason: observing ? 'The discussion changed or is unavailable. Restart deliberately to acquire a new reading order.' : 'The discussion changed. Restart to acquire its comments.' };
+                    if (!observing) return false;
                 } else {
-                    content = this.#accept({ page, baseline, parentId, acceptance, countAfter, countFresh:fresh });
+                    content = this.#accept({ page, baseline, parentId, observedIds: observing ? ids : undefined, acceptance, countAfter, countFresh:fresh });
+                    if (observing) {
+                        this.#emit(undefined, content);
+                        this.#observationOffset = loaded.length ? (this.#observationOffset + ids!.length) % loaded.length : 0;
+                    }
                 }
-                this.#emit(undefined, content);
+                if (observing) this.lastRefresh = Math.max(this.lastRefresh, page.observedAt);
+                this.#emit(undefined, observing ? undefined : content);
                 return true;
             } catch (error) {
                 if (!signal.aborted) {

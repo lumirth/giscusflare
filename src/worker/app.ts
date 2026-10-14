@@ -3,7 +3,7 @@ import * as v from 'valibot';
 import {encrypt,decrypt,hash} from '../domain/crypto.js';
 import {registerRepository} from '../domain/github.js';
 import type {Registration} from '../domain/repository.js';
-import {ContentBatch,ContentSource} from '../contracts/content.js';
+import {ContentBatch,ContentSource,type ContentBatchResult} from '../contracts/content.js';
 import {NodeID,PositiveInteger,RepositoryName,Origin,CategoryName} from '../contracts/primitives.js';
 import { publicRead } from './public-read.js';
 import { Hono } from 'hono';
@@ -142,19 +142,17 @@ app.post(API_PREFIX+'/content',async c=>{
   const raw=parse(v.object({config:R.Selection,content:v.optional(ContentSource,'prepared'),...ContentBatch.entries}),c.get('input'));
   authorizeWidget(c.get('config'),raw.config);
   for(const input of raw.inputs)requireCondition(input.repo===raw.config.repo&&input.pageURL===raw.config.pageURL,403,'ORIGIN','Content must belong to the selected page.');
-  const missing=raw.inputs.filter(input=>['github','stock'].includes(raw.content)&&!input.html);
-  const interpreted=missing.length?unwrap(await invoke(c.env,'interpret',{config:raw.config,inputs:missing})):{results:[]};
-  let cursor=0;const prepared=raw.inputs.map(input=>{
-    if(!missing.includes(input))return {input};
-    const result=interpreted.results[cursor++];
-    return result&&'error'in result?{input,error:result.error}:{input:{...input,html:result?.html}};
-  });
-  if(raw.content==='github')return json({results:prepared.map(value=>value.error?{error:value.error}:{html:value.input.html})});
+  const results:ContentBatchResult['results']=raw.inputs.map(({html})=>({html}));
+  let positions=raw.inputs.flatMap((input,index)=>['github','stock'].includes(raw.content)&&!input.html?[index]:[]);
+  const interpreted=positions.length?unwrap(await invoke(c.env,'interpret',{config:raw.config,inputs:positions.map(index=>raw.inputs[index]!)})):{results:[]};
+  positions.forEach((position,index)=>{results[position]=interpreted.results[index]||{};});
+  if(raw.content==='github')return json({results});
   requireCondition(c.env.CONTENT,503,'CONFIGURATION','This service needs a content profile binding.');
-  const successful=prepared.filter(value=>!value.error);
-  let rendered:{results:Record<string,unknown>[] }={results:[]};
-  if(successful.length){const response=await c.env.CONTENT.fetch(new Request('https://content.internal/',{method:'POST',signal:c.req.raw.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({inputs:successful.map(value=>value.input)})}));if(!response.ok)return response;rendered=await response.json() as typeof rendered;}
-  let index=0;const results=prepared.map(value=>{if(value.error)return {error:value.error};const result=rendered.results[index++]!;return result;});
+  positions=raw.inputs.flatMap((_,index)=>'error'in results[index]!?[]:[index]);
+  if(!positions.length)return json({results});
+  const response=await c.env.CONTENT.fetch(new Request('https://content.internal/',{method:'POST',signal:c.req.raw.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({inputs:positions.map(index=>({...raw.inputs[index],...results[index]}))})}));if(!response.ok)return response;
+  const rendered=await response.json() as ContentBatchResult;
+  positions.forEach((position,index)=>{results[position]=rendered.results[index]!;});
   return json({results});
 });
 app.post(C.operations.authPrepare.path, async c => {

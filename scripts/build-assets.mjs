@@ -1,15 +1,13 @@
-import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { cp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 
-/** The emitted graph determines both resource measurements and deployment closures. */
-export function browserGraph(outputs, entry, dynamic = true, seen = new Set()) {
+function browserGraph(outputs, entry, seen = new Set()) {
   if (seen.has(entry)) return seen;
   const output = outputs[entry];
   if (!output) throw new Error('Missing browser output: ' + entry);
   seen.add(entry);
   for (const dependency of output.imports) {
-    if (!dependency.external && (dynamic || dependency.kind !== 'dynamic-import')) browserGraph(outputs, dependency.path, dynamic, seen);
+    if (!dependency.external) browserGraph(outputs, dependency.path, seen);
   }
   return seen;
 }
@@ -19,7 +17,7 @@ export async function buildAssets(outputs) {
   const groups = {
     auth: [...script('auth-window.js'), ...script('auth-complete.js'), 'auth.css', '_headers'],
     setup: [...script('setup.js'), 'index.html', 'setup.css', 'brand/favicon.png', 'brand/giscusflare-logo.png'],
-    iframe: [...script('widget.js'), 'client.js', 'widget.css', 'content.css', 'iframe.css', 'embed.css', ...themes],
+    iframe: [...script('widget.js'), 'client.js', 'widget.css', 'content.css', 'embed.css', ...themes],
     native: [...script('native.js'), 'native.css', 'content.css'],
     headless: script('headless.js'),
     counts: script('counts.js'),
@@ -34,7 +32,6 @@ export async function buildAssets(outputs) {
   const files = {};
   for (const name of new Set(Object.values(groups).flat())) {
     if (name.startsWith('/') || name.includes('..')) throw new Error('Invalid asset path: ' + name);
-    await mkdir(dirname('dist/assets/' + name), { recursive: true });
     await cp('public/' + name, 'dist/assets/' + name);
     const data = await readFile('dist/assets/' + name);
     files[name] = { bytes: data.length, sha256: createHash('sha256').update(data).digest('hex') };

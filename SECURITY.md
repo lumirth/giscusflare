@@ -12,7 +12,7 @@ These checks restrict browser embedding and API use. They do not make GitHub dis
 
 ## Request handling
 
-Reads use GET with bounded input; writes use POST with a bounded JSON body. Schemas validate request structure, configuration, stored records, and GitHub responses.
+Requests have bounded URLs or JSON bodies; schemas validate request structure, configuration, stored records and GitHub responses. The [API reference](docs/API.md#http-protocol) owns methods and payloads, including POST count reads.
 
 Iframe API requests require the service's Origin and same-origin fetch metadata when supplied. Native requests use explicit bearer sessions. CORS does not grant access through ambient cookies. Authorization preparation runs on the comments service itself.
 
@@ -30,33 +30,33 @@ Popup and full-page sign-in use the same saved capability. Popup notifications r
 
 ## Sessions and encryption
 
-The browser owns an opaque service capability. Its durable session holds the immutable GitHub principal, credentials, website origin and expiry. It does not retain a mutable display profile or duplicate repository name. Signed page reads obtain the current viewer profile alongside scoped discussion metadata. GitHub access and refresh tokens stay encrypted on the server with AES-GCM; authenticated encryption binds them to the App, client, canonical GitHub repository ID and record key. Repository aliases therefore share the same physical authority without making another repository's capability usable. Web Crypto signs GitHub App JWTs with RSA.
+The durable session binds an opaque browser capability to an immutable GitHub principal, credentials, website origin and expiry. Public reads omit commenter credentials; account labels and participation permissions come from separate [session, identity and access acquisitions](docs/API.md#browser-session-and-initialization). Display hints never grant authority.
+
+GitHub access and refresh tokens stay encrypted on the server with AES-GCM, bound to the App, client, canonical GitHub repository ID and record key. Repository aliases share physical authority without making another repository's capability usable. Web Crypto signs GitHub App JWTs with RSA.
 
 The service session is a bearer credential. JavaScript injected into a trusted site could steal or use it. Native embedding shares the site's JavaScript and storage context.
 
 Sessions expire and can be revoked locally. Token refresh runs under a lock. A lost response after GitHub rotates a refresh token can require a new sign-in. Changing `SESSION_SECRET` makes existing encrypted sessions unreadable.
 
-Version 3 sessions require the immutable GitHub user ID; 2.x capabilities require a new sign-in. Receipts bind to that ID rather than a mutable login or a particular service session. A login rename retains ownership; another account acquiring that name does not. Passive account expiry clears the browser capability while preserving saved writing and retry identity. Explicit sign-out separately removes saved writing.
+Receipts bind to the immutable user ID, not a mutable login or service session. A login rename retains ownership; another account acquiring that name does not. Expiry and explicit sign-out clear local authority, not saved writing. Ordinary drafts retain their configured deadline; unresolved issued writing remains protected for recovery as the original author. See [writing retention](docs/API.md#writing).
 
 ## Comment rendering
 
-The shared renderer rebuilds allowed HTML in an inert document fragment. It filters elements, attributes, link protocols, and IDs. It rejects executable markup, forms, arbitrary embedded media, event attributes, and untrusted styles.
+The stock GitHub interpreter reconstructs allowlisted markup, filters attributes and URL protocols, and namespaces local anchors. It discards executable markup, forms, arbitrary embedded media, event attributes and commenter-supplied styles. Math is prepared during interpretation; browser copy controls are added to the safe output. Preview and published bodies use the selected [content profile](docs/API.md#content-and-counts).
 
-Code controls and lazy MathJax rendering run after sanitization. Preview and posted comments use the same rendering contract.
-
-Custom CSS comes from approved origins. Custom code, math, and full-content renderers are trusted application code and must return safe DOM. Review them as part of the site that installs them.
+Custom CSS comes from approved origins. Custom producers and browser renderers are trusted application code responsible for commenter-safe output; prepared HTML is installed without another sanitizer. Review them as part of the site that installs them.
 
 ## Interrupted writes
 
-Before sending a write, the service stores a receipt with a `3.<13-digit timestamp>.<nonce>` idempotency key, immutable account identity and content fingerprint. An incomplete response leaves an uncertain receipt. It does not trigger a new write automatically. Pending and completed receipts expire 24 hours after the later of the key's creation time and receipt write. A separate `OPERATION_EXPIRED` check rejects expired keys without receipts before remote dispatch, preserving replay safety after pruning. Earlier-protocol keys fail closed before authentication refresh or provider dispatch; they are not promoted into new receipts.
+Before dispatching a contribution, the service stores a receipt binding immutable account identity and content fingerprint to its idempotency key. Uncertain receipts do not automatically redispatch. Receipts expire 24 hours after the later of key creation and dispatch preparation; expired keys without receipts fail with `OPERATION_EXPIRED` before credential refresh or remote dispatch. The [API reference](docs/API.md#http-protocol) owns the accepted key format and retry contract.
 
-A completed receipt stores the confirmed effect. Fresh discussion and reply counts are observed separately on each comment/delete response, including replay, and validated against the same repository, discussion and affected root. Failure to obtain those observations cannot relabel a confirmed write as uncertain. Clients retain previously observed totals until another observation succeeds rather than deriving global counts from loaded comments.
+A completed receipt replays its confirmed effect and retained observations without acquiring fresh counts or renewing their age. Missing count observations invalidate the affected count for separate acquisition; optional readback cannot relabel a confirmed effect as uncertain. Never infer a total from loaded comments.
 
 Inspect GitHub before resubmitting an uncertain comment. Keep the existing retry identity. An unresolved discussion-creation record remains until recovery finds the discussion, so a retry does not create a second one.
 
 ## Deployment and reports
 
-Keep credentials out of source control, browser assets, and embed code. Browser-facing API and callback responses use `Cache-Control: no-store`. The service caches validated anonymous reads internally with their original expiry; authenticated responses bypass those shared caches. Avoid logging bodies, bearer tokens, or authorization callback URLs.
+Keep credentials out of source control, browser assets and embed code. Cacheable public responses retain their original expiry and stay account-independent even if a caller supplies a bearer header. Account/contribution responses and auth/widget documents are no-store; content results do not use the public-read cache. See [HTTP caching and policy checks](docs/API.md#http-protocol). Avoid logging bodies, bearer tokens or authorization callback URLs.
 
 Install the App only on intended repositories. Review Cloudflare logging and account controls separately from the application's settings.
 

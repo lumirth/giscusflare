@@ -1,5 +1,5 @@
-import { cp, mkdir, readFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { cp, readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = new URL('../dist/assets/', import.meta.url);
@@ -15,7 +15,6 @@ export async function copyAssets(destination, groups = ['auth', 'setup', 'iframe
   }
   const directory = destination instanceof URL ? fileURLToPath(destination) : resolve(destination);
   for (const name of selected) {
-    await mkdir(dirname(resolve(directory, name)), { recursive: true });
     await cp(new URL(name, root), resolve(directory, name));
   }
   return [...selected].sort();

@@ -64,6 +64,6 @@
     "enabled": false
   },
   "build": {
-    "command": "npm run build"
+    "command": "node scripts/wrangler-build.mjs"
   }
 }

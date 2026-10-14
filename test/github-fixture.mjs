@@ -50,6 +50,11 @@ export class FakeGitHub {
   comment(c,user,root=false,replyPrefetch=5){const {replies,votes,authorPrincipal,...value}=c,own=Boolean(c.author&&authorPrincipal===user);const result={...clone(value),author:c.author?this.profile(authorPrincipal):null,isAnswer:Boolean(c.isAnswer),upvoteCount:c.upvoteCount||0,viewerDidAuthor:own,viewerCanUpdate:own,viewerCanDelete:own||user==='maintainer',viewerCanMinimize:user==='maintainer',viewerCanUnminimize:user==='maintainer',reactionGroups:this.groups(c,user)};if(root){const page=connection(replies,{last:replyPrefetch});result.replies={...page,nodes:page.nodes.map(r=>this.comment(r,user))};}return result;}
   discussion(d,user,paging){const {comments,votes,...value}=d;const result={...clone(value),repository:{...d.repository,isPrivate:d.repository.isPrivate||this.meta.isPrivate},reactionGroups:this.groups(d,user)};if(paging){const page=connection(comments,paging);result.comments={...page,nodes:page.nodes.map(c=>this.comment(c,user,true,paging.replyPrefetch))};}return result;}
   identity(d){return {id:d.id,number:d.number,repository:{...clone(d.repository),isPrivate:d.repository.isPrivate||this.meta.isPrivate},category:clone(d.category)};}
+  rankInputs(c,user,query){return {
+    ...(query.includes('reactionGroups')?{reactionGroups:this.groups(c,user)}:{}),
+    ...(query.includes('replies{')||query.includes('replies(first:')?{replies:{totalCount:c.replies.length}}:{}),
+    ...(query.includes('upvoteCount')?{upvoteCount:c.upvoteCount||0}:{}),
+    ...(query.includes('isAnswer')?{isAnswer:Boolean(c.isAnswer)}:{})};}
   locate(id){for(const d of this.discussions){if(d.id===id)return {d,node:d};for(const c of d.comments){if(c.id===id)return {d,node:c};const r=c.replies.find(r=>r.id===id);if(r)return {d,node:r};}}return null;}
   async fetch(request) {
     const url=new URL(request.url),token=(request.headers.get('Authorization')||'').replace(/^Bearer /,'');
@@ -80,25 +85,15 @@ export class FakeGitHub {
       case 'RankHead': {const d=this.discussions.find(d=>d.id===x.discussion),page=d?connection(d.comments,{last:1}):null;data={node:d?{...this.discussion(d,user),repository:{...this.identity(d).repository,isArchived:this.meta.isArchived},comments:{totalCount:page.totalCount,nodes:page.nodes.map(c=>({id:c.id}))}}:null};break;}
       case 'RankDiscovery': {
         const d=this.discussions.find(d=>d.id===x.discussion);
-        const compact=c=>({id:c.id,createdAt:c.createdAt,isMinimized:c.isMinimized,
-          ...(query.includes('reactionGroups')?{reactionGroups:this.groups(c,user)}:{}),
-          ...(query.includes('replies{')||query.includes('replies(first:')?{replies:{totalCount:c.replies.length}}:{}),
-          ...(query.includes('upvoteCount')?{upvoteCount:c.upvoteCount||0}:{}),
-          ...(query.includes('isAnswer')?{isAnswer:Boolean(c.isAnswer)}:{})});
-        const page=d?connection(d.comments,{last:100,before:x.cursor}):null;data={node:d?{...this.identity(d),comments:{...page,nodes:page.nodes.map(compact)}}:null};break;
+        const page=d?connection(d.comments,{last:100,before:x.cursor}):null;data={node:d?{...this.identity(d),comments:{...page,nodes:page.nodes.map(c=>({id:c.id,createdAt:c.createdAt,isMinimized:c.isMinimized,...this.rankInputs(c,user,query)}))}}:null};break;
       }
       case 'RankObservation': {
         data={};
         for(const [key,ids] of Object.entries(x).filter(([key])=>/^ids[0-9]+$/.test(key)))data['batch'+key.slice(3)]=ids.map(id=>{
           const t=this.locate(id);if(!t||t.node===t.d)return null;
-          return {id:t.node.id,createdAt:t.node.createdAt,isMinimized:t.node.isMinimized,replyTo:t.node.replyTo,discussion:this.identity(t.d),
-            ...(query.includes('reactionGroups')?{reactionGroups:this.groups(t.node,user)}:{}),
-            ...(query.includes('replies{')||query.includes('replies(first:')?{replies:{totalCount:t.node.replies.length}}:{}),
-            ...(query.includes('upvoteCount')?{upvoteCount:t.node.upvoteCount||0}:{}),
-            ...(query.includes('isAnswer')?{isAnswer:Boolean(t.node.isAnswer)}:{})};
+          return {id:t.node.id,createdAt:t.node.createdAt,isMinimized:t.node.isMinimized,replyTo:t.node.replyTo,discussion:this.identity(t.d),...this.rankInputs(t.node,user,query)};
         });break;
       }
-      case 'RepositoryHead':
       case 'Repository': check(x.owner+'/'+x.name===this.meta.nameWithOwner,'scoped metadata');data={...(x.signedIn?{viewer:this.profile(user)}:{}),repository:clone(this.meta)};break;
       case 'ViewerIdentity': data={viewer:{id:this.profile(user).id}};break;
       case 'ViewerAccess': {

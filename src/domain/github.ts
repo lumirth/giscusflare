@@ -27,7 +27,7 @@ export const QUERIES = {
 const PublicReaction=v.omit(G.ReactionGroup,['viewerHasReacted']);
 const PublicComment=v.object({...v.omit(G.Comment,['viewerDidAuthor','viewerCanUpdate','viewerCanDelete','viewerCanMinimize','viewerCanUnminimize']).entries,reactionGroups:v.array(PublicReaction)});
 const PUBLIC_REACTIONS=GRAPH.reactions.replace('viewerHasReacted','');
-const PublicSummary=v.object({...G.DiscussionSummary.entries,reactionGroups:v.array(PublicReaction)});
+export const PublicSummary=v.object({...G.DiscussionSummary.entries,reactionGroups:v.array(PublicReaction)});
 const SUMMARY=`id number title url locked closed answer{id} ${GRAPH.scope} ${PUBLIC_REACTIONS}`;
 function reactions(groups:v.InferOutput<typeof PublicReaction>[]): Reactions {
     return Object.fromEntries(groups.map(g=>[g.content,{count:g.reactors.totalCount}]));
@@ -48,7 +48,7 @@ function window(connection:Pick<G.Replies,'totalCount'|'pageInfo'>&{nodes:{id:st
 }
 type SelectedDiscussion={id?:string;number:number};
 export interface CommandTarget {discussion:Pick<Discussion,'id'|'number'|'locked'|'closed'>;targetId:string;parentId:string}
-function thread(raw:(Omit<G.DiscussionSummary,'reactionGroups'>&{reactionGroups:v.InferOutput<typeof PublicReaction>[]})|null):Discussion|null{return raw?{id:raw.id,number:raw.number,title:raw.title,url:raw.url,locked:raw.locked,closed:raw.closed,answerId:raw.answer?.id??null,reactions:reactions(raw.reactionGroups)}:null;}
+export function thread(raw:(Omit<G.DiscussionSummary,'reactionGroups'>&{reactionGroups:v.InferOutput<typeof PublicReaction>[]})|null):Discussion|null{return raw?{id:raw.id,number:raw.number,title:raw.title,url:raw.url,locked:raw.locked,closed:raw.closed,answerId:raw.answer?.id??null,reactions:reactions(raw.reactionGroups)}:null;}
 export async function limitedText(response: Response, max = 4 * 1024 * 1024): Promise<string> {
     const oversized = new AppError(502, 'UPSTREAM', 'The GitHub response is too large to display safely. Open the discussion on GitHub.');
     if (response.body && !(Number(response.headers.get('Content-Length') || 0) <= max)) {
@@ -121,9 +121,11 @@ export class GitHub {
         owner: string;
         name: string;
     } { const [owner, name] = this.repo.split('/'); return { owner: owner!, name: name! }; }
-    #scope(repository:G.RepositoryHead,discussion?:G.DiscussionIdentity|null,selected?:SelectedDiscussion):void{
+    #scope<T extends G.RepositoryHead & {discussion?:G.DiscussionIdentity|null}>(repository:T|null,selected?:SelectedDiscussion):T{
+      requireCondition(repository,404,'NOT_FOUND','The repository is not accessible.');
       requireCondition(!repository.isPrivate&&repository.id===this.repositoryId&&repository.nameWithOwner.toLowerCase()===this.repo,403,'PUBLIC_ONLY','The repository is outside this public page.');
-      if(discussion)this.#discussion(discussion,selected);
+      if(repository.discussion)this.#discussion(repository.discussion,selected);
+      return repository;
     }
     #discussion(discussion:G.DiscussionIdentity,selected?:SelectedDiscussion):void{
       discussionScope(discussion,this.repo,this.repositoryId,this.categoryId);
@@ -284,9 +286,7 @@ export class GitHub {
         const schema=v.object({repository:v.nullable(v.object({...G.RepositoryHead.entries,discussion:v.nullable(v.object({...PublicSummary.entries,comments:connection}))})),nodes:ids!==undefined?selectedNodes:v.optional(selectedNodes),parent:parentId?v.nullable(v.object({...observed.entries,replies:publicReplies})):v.optional(v.nullable(v.object({...observed.entries,replies:publicReplies})))});
         const observedAt=this.store.now();
         const data=await this.graph(schema,query,{...this.#names(),number,roots: root, first: root && order === 'oldest' ? 20 : root ? null : 1, last: root && order === 'newest' ? 20 : null, after: root && order === 'oldest' && cursor ? cursor : null, before: root && order === 'newest' && cursor ? cursor : null, replyBefore: parentId && cursor ? cursor : null, prefetch: Math.max(1,replyPrefetch), previewReplies:replyPrefetch>0, ids: ids ?? [], selected: ids !== undefined, parent: parentId ?? 'unused', reply:Boolean(parentId),html:request.html},token, ids !== undefined);
-        requireCondition(data.repository, 404, 'NOT_FOUND', 'The repository is not accessible.');
-        const { discussion: raw, ...repository } = data.repository;
-        this.#scope(repository,raw,selected);
+        const { discussion: raw, ...repository } = this.#scope(data.repository,selected);
         const count=(total:number,parent?:string)=>raw?countObservation({selector:request.selector,window:parent?{kind:'replies',parentId:parent}:{kind:'roots'}},total,{id:raw.id,number:raw.number},observedAt,request.ttl):null;
         const contentHints:Record<string,{markdown:string;html:string}>={},nodes:Record<string,Comment>={},replies:Record<string,Window>={};
         const accept=(item:v.InferOutput<typeof observed>)=>{
@@ -347,9 +347,7 @@ export class GitHub {
             target: v.optional(v.nullable(targetSchema)) }),
             `query OperationAccess($owner:String!,$name:String!,$number:Int!,$target:ID!,$selected:Boolean!){repository(owner:$owner,name:$name){id nameWithOwner isPrivate isArchived discussion(number:$number){${summary}}} target:node(id:$target) @include(if:$selected){... on DiscussionComment{id replyTo{id} ${permission??''} discussion{${IDENTITY}}}}}`,
             { ...this.#names(), number:selected.number, target: targetId || 'unused', selected: Boolean(targetId) }, token);
-        requireCondition(data.repository, 404, 'NOT_FOUND', 'The repository is not accessible.');
-        const { discussion: raw, ...repository } = data.repository;
-        this.#scope(repository,raw,selected);
+        const { discussion: raw, ...repository } = this.#scope(data.repository,selected);
         requireCondition(!repository.isArchived,403,'ARCHIVED','The repository is archived.');
         requireCondition(raw,404,'NOT_FOUND','Discussion not found.');
         const target=data.target;
@@ -367,9 +365,7 @@ export class GitHub {
       const schema=v.object({viewer:v.object({id:NodeID}),repository:v.nullable(v.object({...G.RepositoryHead.entries,discussion:v.nullable(available)})),nodes:v.array(v.nullable(observations))});
       const observedAt=this.store.now();
       const data=await this.graph(schema,`query ViewerAccess($owner:String!,$name:String!,$number:Int!,$ids:[ID!]!){viewer{id} repository(owner:$owner,name:$name){id nameWithOwner isPrivate isArchived discussion(number:$number){id number locked closed ${GRAPH.scope} ${SELECTED_GROUPS}}} nodes(ids:$ids){... on DiscussionComment{id discussion{${IDENTITY}} ${flags} ${SELECTED_GROUPS}}}}`,{...this.#names(),number:selected.number,ids},token,true);
-      requireCondition(data.repository,404,'NOT_FOUND','The repository is not accessible.');
-      const {discussion:raw,...repository}=data.repository;
-      this.#scope(repository,raw,selected);
+      const {discussion:raw,...repository}=this.#scope(data.repository,selected);
       const permissions:Record<string,Permissions>={},chosen:Record<string,Record<string,boolean>>={};
       requireCondition(data.nodes.length===ids.length,502,'UPSTREAM_SCHEMA','GitHub omitted account observations.');
       for(const [i,item] of data.nodes.entries()){

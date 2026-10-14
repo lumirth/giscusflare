@@ -3,22 +3,34 @@ import { AsyncDirective } from 'lit-html/async-directive.js';
 import { directive, type ElementPart } from 'lit-html/directive.js';
 import type { ResourceScope } from '../presentation.js';
 
-/** A renderer-owned element acquires one child lifetime; removal releases it. */
-class Resource extends AsyncDirective {
-  #abort?: AbortController;
+export abstract class OwnedDirective<T> extends AsyncDirective {
+  #scope?: ResourceScope;
+  #key?: unknown;
+  #value?: T;
   #release?: () => void;
-  render(_scope: ResourceScope, _use: (element: HTMLElement, signal: AbortSignal, fresh: boolean) => void) { return noChange; }
-  override update(part: ElementPart, [scope, use]: Parameters<Resource['render']>) {
+  protected owned(scope: ResourceScope, key: unknown, create: (signal: AbortSignal) => T): T {
     scope.signal.throwIfAborted();
-    const fresh = !this.#abort;
-    if (fresh) {
-      const abort = this.#abort = new window.AbortController();
-      this.#release = scope.own(() => { this.#abort = undefined;abort.abort(); });
+    if (this.#scope !== scope || this.#key !== key) this.#release?.();
+    if (!this.#release) {
+      const abort = new window.AbortController(); this.#scope = scope; this.#key = key;
+      this.#release = scope.own(() => { this.#release = undefined; this.#value = undefined; abort.abort(); });
+      try { this.#value = create(abort.signal); }
+      catch (error) { this.disconnected(); throw error; }
     }
-    try { use(part.element as HTMLElement, this.#abort!.signal, fresh); }
-    catch (error) { this.#release?.();throw error; }
-    return noChange;
+    return this.#value!;
   }
   override disconnected() { this.#release?.(); }
+}
+
+/** A renderer-owned element acquires one child lifetime; removal releases it. */
+class Resource extends OwnedDirective<AbortSignal> {
+  render(_scope: ResourceScope, _use: (element: HTMLElement, signal: AbortSignal, fresh: boolean) => void) { return noChange; }
+  override update(part: ElementPart, [scope, use]: Parameters<Resource['render']>) {
+    let fresh = false;
+    const signal = this.owned(scope, undefined, signal => { fresh = true; return signal; });
+    try { use(part.element as HTMLElement, signal, fresh); }
+    catch (error) { this.disconnected(); throw error; }
+    return noChange;
+  }
 }
 export const resource = directive(Resource);

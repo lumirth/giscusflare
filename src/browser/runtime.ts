@@ -217,17 +217,12 @@ export function createConversation(options: ConversationOptions): Conversation {
     document.addEventListener('visibilitychange', fresh, events);
     window.addEventListener('pagehide', flushWriting, events);
     if (persistence) {
-      window.addEventListener('storage', event => {
-        if (event.key === persistence.sessionKey) {
-          const token = persistence.session(event.newValue);session.setSession(token);
-          if (token) void persistence.displayProfile(token).then(displayProfile => { if (displayProfile && !lifetime.signal.aborted && persistence.session() === token) void session.restoreDisplayProfile(displayProfile); }).catch(() => {});
-        } else if (event.key?.startsWith(persistence.writingPrefix)) page.notify();
-      }, events);
+      window.addEventListener('storage', event => persistence.observeStorage(event, data => {
+        if (data.session !== undefined) session.setSession(data.session);
+        if (data.displayProfile) void session.restoreDisplayProfile(data.displayProfile);
+      }, () => page.notify()), events);
       const returned = persistence.returning();
-      page.initialize({session: persistence.session(), handoff: returned?.handoff, position: returned?.position});
-      const token = persistence.session();
-      if (token) void persistence.displayProfile(token).then(displayProfile => { if (displayProfile && !lifetime.signal.aborted && persistence.session() === token) page.initialize({displayProfile}); }).catch(() => {});
-      void persistence.recover().then(state => { if (!lifetime.signal.aborted) page.initialize({writing: state});else recovered(); }, cause => { recoveryError = cause instanceof Error ? cause.message : 'Unable to restore writing.';recovered();page.notify(); });
+      void persistence.initialize(data => page.initialize(data), {handoff: returned?.handoff, position: returned?.position}).finally(recovered);
     }
   } catch (error) { try { page.dispose(); } finally { throw error; } }
   return page;
