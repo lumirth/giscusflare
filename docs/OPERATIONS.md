@@ -17,7 +17,7 @@ Source deployments apply Wrangler variables; copy dashboard-only public settings
 | Open hosting rejected | Returned registration reference and current hosting policy |
 | Sign-in fails after domain change | PUBLIC_ORIGIN, App callback ending /auth/callback, and website service URL |
 | Native requests blocked | CORS plus website CSP connect-src |
-| VERSION_MISMATCH | Matching protocol 7 service/browser, then reload |
+| VERSION_MISMATCH | Matching service/browser [protocol](API.md#http-protocol), then reload |
 | Count unavailable | Count observation request; do not interpret failure as zero |
 | Formatted content unavailable | CONTENT binding, producer revision, safe output and required styles |
 | Open page offers Reload | Producer resource fingerprint differs from the page’s selected manifest; reload the matching website |
@@ -39,4 +39,4 @@ A paused budget result needs a reset or inspected budget change. Upstream means 
 
 Add replacement App credentials and verify real sign-in before retiring the old credentials. Preserve SESSION_SECRET during routine updates; changing it invalidates encrypted operational records. Re-register after an installation/category change rather than adding runtime discovery work to every request.
 
-Log request counts, timings and error codes; exclude bodies, authorization headers, callback query strings and session tokens. The supplied deployment disables Workers observability; account-level logging is separate. See [security](https://github.com/lumirth/giscusflare/blob/main/SECURITY.md).
+Log request counts, timings and error codes; exclude bodies, authorization headers, callback query strings and session tokens. The supplied deployment disables Workers observability; account-level logging is separate. See [security](../SECURITY.md#deployment-and-reports).

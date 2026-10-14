@@ -7,6 +7,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { evidence } from '../test/evidence.mjs';
 import { browserBehavior } from '../test/browser-behavior.mjs';
+import { browserFixture } from '../test/browser-fixture.mjs';
 
 const { chromium, webkit, expect } = await import(process.env.PLAYWRIGHT_MODULE || '@playwright/test');
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -20,33 +21,28 @@ const ports = await Promise.all([0, 1].map(async () => {
   const port = server.address().port; await new Promise(resolve => server.close(resolve)); return port;
 }));
 const service = 'http://127.0.0.1:' + ports[0], blog = 'http://127.0.0.1:' + ports[1];
-const demo = spawn(process.execPath, ['scripts/demo.mjs'], { cwd: root, env: { ...process.env, PORT: String(ports[0]), BLOG_PORT: String(ports[1]) }, stdio: ['ignore', 'pipe', 'pipe'] });
-let output = ''; demo.stdout.on('data', chunk => output += chunk); demo.stderr.on('data', chunk => output += chunk);
+let demo;
 try {
-  await expect.poll(async () => {
-    if (demo.exitCode !== null || demo.signalCode !== null) throw new Error('Demo exited: ' + output);
-    try { return (await fetch(service + '/healthz')).status; } catch { return 0; }
-  }, { timeout: 20000, message: 'local demo readiness' }).toBe(200);
-  assert.equal((await fetch(service + '/%2e%2e%2fpackage.json')).status, 404, 'encoded paths cannot escape the public asset directory');
   for (const [engineName, engine] of [['chromium', chromium], ['webkit', webkit]]) {
+    // Independent browser qualification must not accumulate another engine's account writes.
+    demo = spawn(process.execPath, ['scripts/demo.mjs'], { cwd: root, env: { ...process.env, PORT: String(ports[0]), BLOG_PORT: String(ports[1]) }, stdio: ['ignore', 'pipe', 'pipe'] });
+    let output = ''; demo.stdout.on('data', chunk => output += chunk); demo.stderr.on('data', chunk => output += chunk);
+    await expect.poll(async () => {
+      if (demo.exitCode !== null || demo.signalCode !== null) throw new Error('Demo exited: ' + output);
+      try { return (await fetch(service + '/healthz')).status; } catch { return 0; }
+    }, { timeout: 20000, message: 'local demo readiness' }).toBe(200);
+    assert.equal((await fetch(service + '/%2e%2e%2fpackage.json')).status, 404, 'encoded paths cannot escape the public asset directory');
     const browser = await engine.launch({ headless: true });
     try {
       let capability;
       for (const mode of ['native', 'iframe']) {
-        const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
-        const page = await context.newPage();
+        const fixture = await browserFixture(browser, service, '192.0.2.' + (10 + client++), mode);
+        const { context, page, surface, platformClient, platformFetch, errors } = fixture;
         if (mode === 'native') await page.addInitScript(() => {
           const now = Date.now.bind(Date);
           Date.now = () => now() + Number(sessionStorage.getItem('__qualification_clock') || 0);
         });
-        const clientIP = '192.0.2.' + (10 + client++);
-        const platformClient = route => route.continue({ headers: { ...route.request().headers(), 'CF-Connecting-IP': clientIP } });
-        await context.route(service + '/api/v7/**', platformClient);
-        await page.context().route(service + '/auth/**', platformClient);
-        await page.context().route(service + '/api/v7/auth/**', platformClient);
         await page.context().route('https://avatars.githubusercontent.com/u/1', route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" rx="20" fill="#d9e2ee"/><circle cx="20" cy="15" r="7" fill="#596b82"/><path d="M7 37v-4a13 13 0 0 1 26 0v4" fill="#596b82"/></svg>' }));
-        const errors = [], responseStatuses = [], contentResults = []; page.on('pageerror', error => errors.push(error.message));
-        page.on('response', response => { const path = new URL(response.url()).pathname; if (path.startsWith('/api/') || path.startsWith('/auth/')) responseStatuses.push({ path, status: response.status() }); if (path === '/api/v7/content') void response.json().then(result => contentResults.push(result.results?.map(value => ({error:value.error,prepared:Boolean(value.prepared),html:value.html!==undefined})))).catch(() => {}); });
         const requests = [], proofs = new Set(), capabilities = new Set(), callbackBodies = [];
         let fragmentExposed = false, contentCredentialExposed = false;
         const observe=request=>{
@@ -63,12 +59,11 @@ try {
         const responses = response => {
           if (new URL(response.url()).pathname === '/auth/callback') callbackBodies.push(response.text());
         };
-        page.context().on('request', observe);
-        page.context().on('response', responses);
+        fixture.observe(context, 'request', observe);
+        fixture.observe(context, 'response', responses);
         try {
           const path = mode === 'native' ? '/native' : '/article';
           await page.goto(blog + path);
-          const surface = mode === 'native' ? page : page.frameLocator('iframe.giscus-frame');
           const appearance = changes => mode === 'native'
             ? page.evaluate(changes => window.demoComments.conversation.updateAppearance(changes), changes)
             : page.evaluate(({origin,changes}) => document.querySelector('iframe').contentWindow.postMessage({giscus:{setConfig:changes}},origin), {origin:service,changes});
@@ -76,6 +71,8 @@ try {
           await expect(surface.getByText('Try posting a comment or replying here.', { exact: true })).toBeVisible();
           await expect(surface.getByText('Hono', { exact: true })).toBeVisible();
           await expect(surface.locator('pre').first()).toContainText('export default');
+          await expect(surface.getByRole('link', { name: 'Untrusted executable link', exact: true })).toHaveCount(0);
+          assert.equal(await surface.locator('.gsc-comment-content').evaluateAll(bodies => bodies.every(body => !body.querySelector('script,[onerror],[onclick]') && !body.ownerDocument.defaultView.__unsafeCommentExecuted)), true, 'Published provider content remains readable without executable markup or handlers');
           if (mode === 'iframe') assert.equal(requests.filter(request => new URL(request.url).pathname === '/api/v7/page').length, 0, 'iframe renders its anonymous server bootstrap without fetching the same page again');
           if (screenshots) {
             await expect.poll(() => surface.locator('img').first().evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true);
@@ -83,18 +80,14 @@ try {
           }
           const hostFont = await page.getByRole('heading', { level: 1 }).evaluate(element => getComputedStyle(element).fontFamily);
           assert.match(hostFont, /^system-ui\b/, 'comments retain the host fixture typography when first mounted');
-          let releaseAccount;
-          if (mode === 'native') {
-            const account = new Promise(resolve => { releaseAccount = resolve; });
-            await context.route(service + '/api/v7/access', async route => { await account;await platformClient(route); });
-          }
+          const account = mode === 'native' ? await fixture.hold('/api/v7/access', async (route, gate) => { await gate.wait(); await platformClient(route); }) : undefined;
           await composer.getByRole('button', { name: 'Sign in with GitHub', exact: true }).click();
           const textarea = composer.locator('textarea'); await expect(textarea).toBeEditable();
           if (mode === 'native') {
             await expect.poll(() => page.evaluate(() => window.demoComments.conversation.session.viewer?.login)).toBe('reader');
             assert.equal(await page.evaluate(() => Boolean(window.demoComments.conversation.viewer)), false, 'Verified local display identity is usable before held discussion permissions');
             await composer.getByRole('button', { name: 'Sign out', exact: true }).waitFor();
-            releaseAccount();await context.unroute(service + '/api/v7/access');
+            await account.dispose();
           }
           await expect(page).toHaveURL(blog + path);
           assert.equal(proofs.size,1,'one private proof prepares this sign-in');
@@ -106,6 +99,28 @@ try {
           assert.ok(callbacks.length > 0, 'the actual callback document was observed');
           for (const secret of [...proofs, ...capabilities]) for (const html of callbacks) assert.ok(!html.includes(secret), 'callback document contains neither capability nor private proof');
           for (const capability of capabilities) for (const request of requests) assert.ok(!request.url.includes(capability) && !request.referer.includes(capability) && !request.body.includes(capability), 'the preallocated capability never travels in URLs, referrers or request bodies');
+          // Authored provider votes put a late comment first; a real reaction changes that tie.
+          const roots = surface.locator('.gsc-timeline > .gsc-comment');
+          await surface.getByRole('button', { name: 'popular', exact: true }).click();
+          await expect(roots.first()).toContainText('Conversation 21');
+          await surface.getByRole('button', { name: 'Load more', exact: true }).click();
+          await expect.poll(() => roots.count()).toBeGreaterThan(20);
+          const captured = await roots.evaluateAll(cards => cards.map(card => card.id));
+          assert.equal(new Set(captured).size, captured.length, 'Ranked pagination contains no repeated comments');
+          const originalRoot = roots.filter({ hasText: 'Try posting a comment or replying here.' });
+          await originalRoot.getByRole('button', { name: '+1: 1', exact: true }).click();
+          await expect(originalRoot.getByRole('button', { name: '+1: 2', exact: true })).toHaveAttribute('aria-pressed', 'true');
+          await expect(originalRoot.getByRole('button', { name: '+1: 2', exact: true })).toHaveAttribute('aria-busy', 'false');
+          assert.deepEqual(await roots.evaluateAll(cards => cards.map(card => card.id)), captured, 'A score correction does not move the reader through a new traversal');
+          await surface.getByRole('button', { name: 'Oldest', exact: true }).click();
+          await expect(roots.nth(1)).toContainText('Hono');
+          await surface.getByRole('button', { name: 'popular', exact: true }).click();
+          await expect(roots.first()).toContainText('Try posting a comment or replying here.');
+          await expect(roots.nth(1)).toContainText('Conversation 21');
+          await expect(originalRoot.getByRole('button', { name: '+1: 2', exact: true })).toHaveAttribute('aria-pressed', 'true');
+          await originalRoot.getByRole('button', { name: '+1: 2', exact: true }).click();
+          await expect(originalRoot.getByRole('button', { name: '+1: 1', exact: true })).toHaveAttribute('aria-pressed', 'false');
+          await surface.getByRole('button', { name: 'Oldest', exact: true }).click();
           const resize = async () => {
             await textarea.scrollIntoViewIfNeeded();
             const grip = await textarea.boundingBox();
@@ -262,8 +277,13 @@ try {
           await replyComposer.locator('textarea').fill(reply);
           await replyComposer.getByRole('button', { name: 'Reply', exact: true }).click();
           await expect(surface.getByText(reply, { exact: true })).toBeVisible();
+          await page.reload();
+          await surface.getByRole('button', { name: 'Newest', exact: true }).click();
+          await expect(surface.getByText(contribution, { exact: true })).toBeVisible();
+          await expect(surface.getByText(reply, { exact: true })).toBeVisible();
+          await surface.getByRole('button', { name: 'Oldest', exact: true }).click();
           if (mode === 'native') {
-            const recoveryText = 'Keep this writing when my credential expires';
+            const recoveryText = 'Keep this writing when my session is revoked';
             await page.context().route(service + '/api/v7/contribute', route => route.abort('failed'));
             await textarea.fill(recoveryText);
             await composer.getByRole('button', { name: 'Comment', exact: true }).click();
@@ -271,11 +291,12 @@ try {
               const writing = window.demoComments.conversation.writing();
               return writing.protected && !writing.pending && writing.error?.status === 'uncertain';
             })).toBe(true);
-            const saved = await page.evaluate(() => Object.entries(localStorage).find(([, value]) => value.includes('Keep this writing when my credential expires')));
+            const saved = await page.evaluate(() => Object.entries(localStorage).find(([, value]) => value.includes('Keep this writing when my session is revoked')));
             assert.ok(saved, 'uncertain writing is actually persisted');
             const originalIssuance = requests.filter(request => new URL(request.url).pathname === '/api/v7/contribute').map(request => JSON.parse(request.body)).find(input => input.action.body === recoveryText);
             await page.context().unroute(service + '/api/v7/contribute');
-            await page.context().route(service + '/api/v7/access', route => route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: { code: 'SESSION', phase: 'not-issued', message: 'Credential expired' } }) }));
+            const revoked = await fetch(service + '/api/v7/logout', { method: 'POST', headers: { Origin: blog, 'Content-Type': 'application/json', Authorization: 'Bearer ' + capability }, body: JSON.stringify({ repo: 'example/comments', origin: blog }) });
+            assert.equal(revoked.status, 200, 'The real service revokes the retained browser capability');
             await page.evaluate(() => window.demoComments.conversation.refreshViewer());
             await expect.poll(() => page.evaluate(() => window.demoComments.conversation.session.signedIn)).toBe(false);
             await expect(textarea).toHaveValue(recoveryText);
@@ -283,8 +304,9 @@ try {
             await page.reload();
             await expect(textarea).toHaveValue(recoveryText);
             await expect(textarea).toBeVisible();
-            await page.context().unroute(service + '/api/v7/access');
-            await page.evaluate(capability => window.demoComments.conversation.session.setSession(capability), capability);
+            await composer.getByRole('button', { name: 'Sign in with GitHub', exact: true }).click();
+            await expect(composer.getByRole('button', { name: 'Sign out', exact: true })).toBeVisible();
+            capability = [...capabilities].at(-1);
             await expect.poll(() => page.evaluate(() => window.demoComments.conversation.writing().actions.retry)).toBe(true);
             await page.evaluate(async () => {
               const writing = window.demoComments.conversation.writing();
@@ -292,14 +314,13 @@ try {
               const result = await writing.submit(); if (result.status !== 'saved') throw Error('Unresolved contribution did not recover');
             });
             const recoveredIssuance = requests.filter(request => new URL(request.url).pathname === '/api/v7/contribute').map(request => JSON.parse(request.body)).at(-1);
-            assert.equal(recoveredIssuance.key, originalIssuance.key, 'Passive credential expiry preserves the issued contribution identity');
+            assert.equal(recoveredIssuance.key, originalIssuance.key, 'External session revocation preserves the issued contribution identity');
             assert.deepEqual(recoveredIssuance.action, originalIssuance.action, 'Recovery preserves the authored destination and body');
             await expect(surface.getByText(recoveryText, { exact: true })).toBeVisible();
             const pendingText = engineName + ' reload during a committed request';
-            let committed = false, committedId, releaseResponse;
-            const responseHeld = new Promise(resolve => { releaseResponse = resolve; });
-            await page.context().route(service + '/api/v7/contribute', async route => {
-              const response = await route.fetch(); committedId = (await response.json()).id; committed = true; await responseHeld;
+            let committed = false, committedId;
+            const contributionGate = await fixture.hold('/api/v7/contribute', async (route, gate) => {
+              const response = await platformFetch(route); committedId = (await response.json()).id; committed = true; await gate.wait();
               await route.fulfill({ response }).catch(() => {});
             });
             await textarea.fill(pendingText);
@@ -307,7 +328,7 @@ try {
             await expect.poll(() => committed).toBe(true);
             await expect.poll(() => page.evaluate(() => window.demoComments.conversation.writing().pending)).toBe(true);
             await page.evaluate(() => sessionStorage.setItem('__qualification_clock', '301000'));
-            await page.reload(); releaseResponse(); await page.context().unroute(service + '/api/v7/contribute');
+            await page.reload(); await contributionGate.dispose();
             await expect(textarea).toHaveValue(pendingText);
             await expect(textarea).toBeVisible();
             await page.evaluate(capability => window.demoComments.conversation.session.setSession(capability), capability);
@@ -334,14 +355,14 @@ try {
             const ownerText = engineName + ' unresolved writing belongs to owner A', independentText = engineName + ' separate writing belongs to owner B';
             let ownerProviderId;
             await page.context().route(service + '/api/v7/contribute', async route => {
-              const response = await route.fetch(); ownerProviderId = (await response.json()).id; await route.abort('failed');
+              const response = await platformFetch(route); ownerProviderId = (await response.json()).id; await route.abort('failed');
             });
             await textarea.fill(ownerText); await composer.getByRole('button', { name: 'Comment', exact: true }).click();
             await expect.poll(() => page.evaluate(() => window.demoComments.conversation.writing().error?.status)).toBe('uncertain');
             await page.context().unroute(service + '/api/v7/contribute');
             const ownerRecordId = await page.evaluate(() => window.demoComments.conversation.writing().id);
             const ownerIssuance = requests.filter(request => new URL(request.url).pathname === '/api/v7/contribute').map(request => JSON.parse(request.body)).at(-1);
-            const second = await page.context().newPage(); second.on('pageerror', error => errors.push(error.message));
+            const second = await page.context().newPage(); fixture.observe(second, 'pageerror', error => errors.push(error.message));
             let independentRecordId;
             try {
               await second.goto(blog + '/native');
@@ -353,7 +374,7 @@ try {
             } finally { await second.close(); }
             await expect(textarea).toHaveValue(ownerText);
             await page.close();
-            const recoveredPage = await page.context().newPage(); recoveredPage.on('pageerror', error => errors.push(error.message));
+            const recoveredPage = await page.context().newPage(); fixture.observe(recoveredPage, 'pageerror', error => errors.push(error.message));
             try {
               await recoveredPage.goto(blog + '/native');
               await expect.poll(() => recoveredPage.evaluate(() => window.demoComments?.conversation.ready ?? false)).toBe(true);
@@ -374,20 +395,23 @@ try {
           }
           assert.equal(contentCredentialExposed,false,'Published and preview interpretation never receives commenter credentials');
           assert.deepEqual(errors, [], engineName + ' ' + mode + ' page errors');
-          report.checks.push({ engine: engineName, version: browser.version(), mode, status: 'passed', authReturn: true, privateProofBoundary: true, nativeUndo: true, previewContinuity: true, appearanceContinuity: true, positionContinuity: true, rtl: true, customThemeCSS: true, themeFonts: true, hostFontIsolation: true, contentSizing: true, manualResizeContinuity: true, keyboardFocus: true, contributionReadback: true, replyReadback: true, serverBootstrap: mode === 'iframe', mobileOverflow: false });
+          report.checks.push({ engine: engineName, version: browser.version(), mode, status: 'passed', authReturn: true, privateProofBoundary: true, nativeUndo: true, previewContinuity: true, appearanceContinuity: true, positionContinuity: true, rtl: true, customThemeCSS: true, themeFonts: true, hostFontIsolation: true, contentSizing: true, manualResizeContinuity: true, keyboardFocus: true, contributionReadback: true, replyReadback: true, rankedTraversal: true, serverBootstrap: mode === 'iframe', mobileOverflow: false });
           console.log('PASS', engineName, mode, 'authorization and editor continuity');
         } catch (error) {
-          console.error(JSON.stringify({ engineName, mode, errors, contentResults, responses: responseStatuses, state: await page.evaluate(() => { const runtime = window.demoComments?.conversation; return runtime ? { ready: runtime.ready, error: runtime.error, viewer: runtime.viewer?.principal, session: { signedIn: runtime.session.signedIn, principal: runtime.session.principal, pending: runtime.session.pending, error: runtime.session.error }, text: document.getElementById('comments')?.innerText } : {} }).catch(() => ({})) }, null, 2));
+          fixture.diagnose({ engineName, mode, state: await page.evaluate(() => { const runtime = window.demoComments?.conversation; return runtime ? { ready: runtime.ready, error: runtime.error, viewer: runtime.viewer?.principal, session: { signedIn: runtime.session.signedIn, principal: runtime.session.principal, pending: runtime.session.pending, error: runtime.session.error }, text: document.getElementById('comments')?.innerText } : {} }).catch(() => ({})) });
           throw error;
-        } finally { context.off('request', observe); context.off('response', responses); await context.close(); }
+        } finally { await fixture.close(); }
       }
       await browserBehavior({ browser, service, blog, report, capability });
-    } finally { await browser.close(); }
+    } finally {
+      await browser.close();
+      if (demo.exitCode === null && demo.signalCode === null) { demo.kill('SIGTERM'); await once(demo, 'exit'); }
+    }
   }
   report.status = 'passed';
 } catch (error) { report.status = 'failed'; report.details = error.stack || String(error); console.error(report.details); process.exitCode = 1; }
 finally {
-  if (demo.exitCode === null && demo.signalCode === null) { demo.kill('SIGTERM'); await once(demo, 'exit'); }
+  if (demo && demo.exitCode === null && demo.signalCode === null) { demo.kill('SIGTERM'); await once(demo, 'exit'); }
   report.completedAt = new Date().toISOString();
   await mkdir(resolve(root, 'test-results/evidence'), { recursive: true });
   await writeFile(resolve(root, 'test-results/evidence/browser-acceptance.json'), JSON.stringify(report, null, 2) + '\n');

@@ -1,6 +1,7 @@
 import type { Writing } from "../../conversation/writing.js";
 import type { Conversation } from "../headless.js";
 import type { ResourceScope } from '../presentation.js';
+import type { OwnedContentMount } from '../content.js';
 import type { Comment, Discussion } from "../../contracts/document.js";
 import type { TemplateResult } from 'lit-html';
 import type { DirectiveResult } from 'lit-html/directive.js';
@@ -8,7 +9,7 @@ export type StandardValue = TemplateResult | DirectiveResult | Node | string | n
 export interface StandardContext {
   runtime: Conversation;
   scope: ResourceScope;
-  contentReady(id: string, ready: boolean): void;
+  contentReady(id: string, ready: boolean, mount?: OwnedContentMount | null): void;
   report(error: unknown): void;
 }
 export type ComposerSlot = (

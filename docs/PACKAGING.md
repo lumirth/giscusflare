@@ -55,6 +55,6 @@ Start with an empty generated asset directory on each build. `copyAssets` preser
 
 `npm run build` produces API/producer/browser bundles, registration entry point, type declarations and static assets under `dist/assets`. `npm run build:test` also builds local examples and simulated sign-in.
 
-Run `npm run test:package` to extract the archive outside the checkout and check its public imports and selected assets. The check verifies public entry points and that development assets stay out of the package. Headless consumers explicitly select content and import no default UI or content interpretation.
+Run `npm run check:package` to extract the archive outside the checkout and compile its public imports and copy deployment assets. This is compile/artifact validation, separate from behavior tests, and checks that development assets stay out of the package. Headless consumers explicitly select content and import no default UI or content interpretation.
 
 Hosted and copied asset headers revalidate fixed module and stylesheet URLs. Hashed chunks are immutable. The build derives exact entry-module rules from the emitted graph before hashing the deployment manifest; `package/_headers` owns the remaining header policy.

@@ -11,11 +11,6 @@
     "src/worker/**/*.ts",
     "src/domain/**/*.ts",
     "src/contracts/**/*.ts",
-    "test/service.ts",
-    "types/runtime.d.ts"
-  ],
-  "exclude": [
-    "src/browser",
-    "src/conversation"
+    "worker-runtime.d.ts"
   ]
 }

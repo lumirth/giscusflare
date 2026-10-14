@@ -22,13 +22,13 @@ Static Assets ordinarily serve scripts and styles without dynamic Worker request
 
 An iframe includes the first anonymous comment page. Subsequent pages, expanded replies, counts, authentication and contributions add requests. Native rendering loads through the API. A request served from the application’s public cache still reaches the Worker and counts toward its allowance.
 
-Public reading is shared independently of viewer identity. Account permissions and selected reactions use their own authenticated acquisition; public documents survive account changes. A reader sees their own confirmed contribution immediately; other readers see it through subsequent reads, subject to the public cache expiry. Open tabs refresh on configured focus/reconnect events, rather than continuously polling.
+A reader sees their confirmed contribution immediately; other readers see it through subsequent reads, subject to public cache expiry. Account permissions use separate authenticated requests. Open tabs refresh on configured focus/reconnect events, not continuous polling. [API](docs/API.md) owns account separation, observation freshness and browser defaults.
 
 Set `displayCacheMs` and `countCacheMs` per repository. Increase them when delayed public updates are acceptable. Reduce `fetching.replyPrefetch` to fetch less reply content initially. Readers can expand the remaining replies. [Configuration](docs/CONFIGURATION.md#cache-settings) and [browser options](docs/API.md#browser-construction-and-mounting) describe these settings.
 
-Canonical reading does not wait for content interpretation. Missing formatted bodies use a separate batched request and an internal content Worker reached by a service binding. This isolates compiler execution from repository coordination, but the producer still needs its own CPU/memory qualification. Its disposable completed-artifact store is bounded to 8 MiB/256 items with a 2 MB retained-result limit; it does not spend Repository SQLite rows retaining formatted output. New isolates prepare again. Required resource loading and optional browser enhancement have separate costs.
+Formatted bodies use separate batched requests and an internal content Worker. Compiler execution has its own CPU/memory limits; its disposable [artifact cache](docs/API.md#content-and-counts) consumes no Repository SQLite rows, and cold isolates prepare again. Required resources and optional browser enhancement have separate costs.
 
-Use the shared count capability to batch up to 20 exact page keys. Each observation carries its original time and expiresAt; count-only, page and effect observations share the same owner. Show zero only when the service returns zero; a failed request does not establish that a page has no comments.
+Use the [shared count capability](docs/API.md#content-and-counts) to batch up to 20 targets rather than loading comment bodies for listing totals. Keep stale labels during refresh; failure does not establish zero.
 
 ## Elapsed time and CPU
 
@@ -52,4 +52,4 @@ Measure cold and warm public reads, account access, contributions, count-only re
 
 Measure the actual selected profile: canonical data, anonymous content, optional modules, stylesheet reuse and a genuinely cold producer have different resource graphs. A smaller browser bundle does not establish lower Worker CPU or free-tier capacity. Service-binding isolation also does not remove the producer's execution limits.
 
-Older release benchmarks used a different persistence design and do not establish current capacity. [Verification scope](TESTING.md#historical-evidence-and-limits) separates current local evidence from historical and deployed observations. Before increasing ranking or payload limits, measure the largest discussion and workload you intend to support.
+Before increasing ranking or payload limits, measure the largest discussion and workload you intend to support. [Verification](TESTING.md#deployed-acceptance) defines deployed acceptance; historical benchmarks do not establish current capacity.

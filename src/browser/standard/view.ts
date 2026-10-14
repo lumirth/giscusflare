@@ -10,7 +10,7 @@ import { reactions } from "./reactions.js";
 import { header } from "./header.js";
 import { actions } from "./actions.js";
 import { body } from "./body.js";
-import { resource } from "./resource.js";
+import type { OwnedContentMount } from '../content.js';
 import type { Writing } from "../../conversation/writing.js";
 import type { StandardParts, StandardContext } from "./contracts.js";
 
@@ -27,19 +27,19 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
       if (scheduled || disposed) return;
       scheduled = true; queueMicrotask(() => { scheduled = false; if (!disposed) draw(); });
     };
-    const layout = () => {
-      if (!disposed && !scope.signal.aborted && runtime.ready && !root.querySelector('.gsc-comment[hidden],.gsc-reply[hidden]')) runtime.readingLayout.publish();
-    };
-    const context: StandardContext = { runtime, scope, contentReady(id, ready) {
-      if (disposed) return;
-      const card = root.querySelector<HTMLElement>('#' + CSS.escape('comment-' + id));
-      if (!card) return;
+    const mounts = new Map<string, OwnedContentMount>();
+    const readable = (id: string) => {
       const comment = runtime.document.nodes[id];
-      const force = Boolean(comment?.deletedAt || comment?.isMinimized || runtime.activeWriting({kind:'edit',id})?.open);
-      const hidden = !force && !ready;
-      if (card.hidden !== hidden) { card.hidden = hidden; scheduleDraw(); }
-      else if (hidden && !root.querySelector('.gsc-loading')) scheduleDraw();
-      layout();
+      return Boolean(mounts.get(id)?.ready || comment?.deletedAt || comment?.isMinimized || runtime.activeWriting({kind:'edit',id})?.open);
+    };
+    const preparing = () => [...mounts.keys()].some(id => !readable(id));
+    const layout = () => {
+      if (!disposed && !scope.signal.aborted && runtime.ready && !preparing()) runtime.readingLayout.publish();
+    };
+    const context: StandardContext = { runtime, scope, contentReady(id, _ready, mount) {
+      if (disposed) return;
+      if (mount === null) mounts.delete(id); else if (mount) mounts.set(id, mount);
+      scheduleDraw();
     }, report(cause) {
       error = cause instanceof Error ? cause.message : String(cause);draw();
     } };
@@ -86,12 +86,8 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
                 }
               </div>`;
       }
-      const visibility = (c: Comment) => resource(scope, card => {
-        const published = card.querySelector<HTMLElement>('[data-content-ready]')?.dataset.contentReady === 'true';
-        card.hidden = !(published || c.deletedAt || c.isMinimized || runtime.activeWriting({kind:'edit',id:c.id})?.open);
-      });
       function reply(c: Comment) {
-        return html`<article class="gsc-reply" id=${"comment-" + c.id} ${visibility(c)}>
+        return html`<article class="gsc-reply" id=${"comment-" + c.id} ?hidden=${!readable(c.id)}>
           <div class="gsc-tl-line"></div>
           <div class="flex">
             <div class="gsc-reply-author-avatar">
@@ -121,7 +117,7 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
           count = window?.count?.count ?? replies.length,
           hidden = Math.max(0, count - replies.length),
           replying = Boolean(runtime.activeWriting({ kind: 'reply', id: c.id })?.open);
-        return html`<article class="gsc-comment" id=${"comment-" + c.id} ${visibility(c)}>
+        return html`<article class="gsc-comment" id=${"comment-" + c.id} ?hidden=${!readable(c.id)}>
           <div
             class=${"color-bg-primary w-full min-w-0 rounded-md border " + (runtime.viewer?.permissions[c.id]?.didAuthor ? "gsc-comment-author-is-viewer" : "")}
           >
@@ -187,7 +183,6 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
             [roots, ...Object.values(doc.replies)].some(window => window.cursor === null && window.count !== null && window.count.count > window.ids.length),
           total = Object.values(discussion?.reactions || {}).reduce((sum, group) => sum + group.count, 0),
           replyCount = comments.reduce((sum, node) => sum + (doc.replies[node.id]?.count?.count ?? doc.replies[node.id]?.ids.length ?? 0), 0);
-        const preparing = Boolean(root.querySelector('.gsc-comment[hidden],.gsc-reply[hidden]'));
         const initial = !runtime.ready && !runtime.error;
         if (root.lang !== lang) root.lang = lang;
         if (root.getAttribute('aria-label') !== t.comments) root.setAttribute('aria-label', t.comments);
@@ -217,7 +212,7 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
             </ul>
             ${discussion ? actions(context, target, discussion) : nothing}
           </div>
-          ${initial || preparing || (runtime.ready && runtime.acquisition()?.purpose !== 'revalidate' && runtime.acquisition()) ? loading(t.loading) : nothing}
+          ${initial || preparing() || (runtime.ready && runtime.acquisition()?.purpose !== 'revalidate' && runtime.acquisition()) ? loading(t.loading) : nothing}
           ${restartAvailable ? html`<p class="color-text-secondary text-sm">${runtime.continuity.reason || 'New comments are available.'}<button type="button" class="ml-2 color-text-link" @click=${attempt(() => runtime.restart())}>${t.retry}</button></p>` : nothing}
           <div class="gsc-timeline">${repeat(comments, node => node.id, comment)}</div>
           ${roots.cursor ? html`<div class="gsc-pagination"><button type="button" class="gsc-pagination-button"

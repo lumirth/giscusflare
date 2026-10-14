@@ -1,19 +1,14 @@
 /** Local server with simulated GitHub responses. */
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
-import { resolve, sep, extname } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { nativeService, publicAssets } from '../test/native-service.mjs';
 
-const root = fileURLToPath(new URL('../', import.meta.url));
 const port = Number(process.env.PORT || 8787);
 const blogPort = Number(process.env.BLOG_PORT || 8788);
 for (const p of [port, blogPort]) if (!Number.isInteger(p) || p < 1024 || p > 65535) throw new Error('Use a port between 1024 and 65535.');
 if (port === blogPort) throw new Error('The Worker and blog need different ports.');
 const origin = `http://127.0.0.1:${port}`;
 const blog = `http://127.0.0.1:${blogPort}`;
-const mime = { '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.html': 'text/html; charset=utf-8', '.json': 'application/json' };
-const service = await nativeService({ origin, blog, assets: publicAssets(true) });
+const service = await nativeService({ origin, blog, assets: publicAssets(true), repositories: { 'example/comments': { repositoryId: 'R_fixture', installationId: 123, categoryId: 'CAT_fixture', origins: [blog], category: 'Announcements', defaultCommentOrder: 'oldest', customThemeOrigins: ['https://themes.example'], ranking: { profiles: { popular: { weights: { THUMBS_UP: 1 }, tieBreak: 'oldest' } } } } } });
 const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function parentHTML(url) {
   if(url.pathname==='/__behavior')return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="${origin}/content.css?v=7"></head><body></body></html>`;
@@ -53,13 +48,6 @@ const server = createServer((req, res) => bridge(req, res, async request => {
 }));
 const parent = createServer((req, res) => bridge(req, res, async request => {
   const url = new URL(request.url);
-  if (process.env.PUBLIC_DEMO_DIRECTORY && url.pathname.startsWith('/public-demo/')) {
-    const directory = resolve(process.env.PUBLIC_DEMO_DIRECTORY);
-    const filename = resolve(directory, '.' + (url.pathname.slice('/public-demo'.length) || '/index.html').replace(/^\/$/, '/index.html'));
-    if (!filename.startsWith(directory + sep)) return new Response('Not found', { status: 404 });
-    try { return new Response(await readFile(filename), { headers: { 'Content-Type': mime[extname(filename)] || 'application/octet-stream', 'Cache-Control': 'no-store' } }); }
-    catch { return new Response('Not found', { status: 404 }); }
-  }
   return new Response(parentHTML(url), { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
 }));
 function listen(server, p) { return new Promise((resolve, reject) => { server.once('error', reject); server.listen(p, '127.0.0.1', resolve); }); }

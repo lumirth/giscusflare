@@ -1,22 +1,21 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "baseUrl": ".",
     "paths": {
       "giscusflare": [
-        "src/browser/native.ts"
+        "./src/browser/native.ts"
       ],
       "giscusflare/headless": [
-        "src/browser/headless.ts"
+        "./src/browser/headless.ts"
       ],
       "giscusflare/interactions": [
-        "src/browser/interactions.ts"
+        "./src/browser/interactions.ts"
       ],
       "giscusflare/content": [
-        "src/browser/content.ts"
+        "./src/browser/content.ts"
       ],
       "giscusflare/content/github": [
-        "src/browser/github-content.ts"
+        "./src/browser/github-content.ts"
       ]
     }
   },

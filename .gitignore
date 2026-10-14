@@ -1,4 +1,5 @@
 node_modules/
+/worker-runtime.d.ts
 .wrangler/
 .dev.vars
 .dev.vars.*
@@ -21,7 +22,6 @@ public/themes/
 public/chunks/
 
 /public/widget.css
-/public/iframe.css
 
 .DS_Store
 

@@ -93,7 +93,6 @@ export interface Patch {
   metadataObservedAt?: number;
   observedAt?: number;
 }
-export type EffectPhase = 'not-issued' | 'confirmed' | 'unknown';
 export interface ContributionResult {
   phase: 'confirmed';
   replayed: boolean;

@@ -7,12 +7,10 @@ This example uses the site's safe comment compiler and code resources with the s
 Deploy an internal producer alongside the API:
 
 ```js
-// comments-worker.js
 export { default, Repository } from 'giscusflare/worker';
 ```
 
 ```js
-// content-worker.js
 import { createContentWorker } from 'giscusflare/content/worker';
 import { compileComment } from './comment-compiler.js';
 import resources from './comment-resources.js';
@@ -31,7 +29,7 @@ export default createContentWorker({
 });
 ```
 
-`compileComment` is the site's commenter-safe compiler. Give it canonical source and context, and interpret once. Trusted article extensions must not grant commenters script, URL or authoring permissions. The factory stamps its configured revision on results; the compiler supplies HTML and resource requirements. The producer receives no commenter credentials or Repository storage. Its factory bounds batches, concurrency and disposable artifact reuse; a cold isolate prepares again.
+`compileComment` must enforce a commenter-safe policy even if the site's article compiler supports trusted scripts or authoring extensions. The factory stamps its revision; the compiler returns HTML and resource requirements under the [producer contract](API.md#content-and-counts). Prepared output is trusted, not sanitized again at installation.
 
 Keep this Worker internal and add its service binding to the API configuration:
 
@@ -56,7 +54,9 @@ const resources = {
   styles: manifest.styles.map(path => new URL(path, location.origin).href),
   scripts: manifest.scripts.map(path => new URL(path, location.origin).href),
 };
-const comments = mountComments(document.querySelector('#comments'), {
+const target = document.getElementById('comments');
+if (!target) throw new Error('Add #comments before mounting.');
+const comments = mountComments(target, {
   service: 'https://your-comments.workers.dev',
   page: {
     repo: 'you/comments',
@@ -69,7 +69,7 @@ const comments = mountComments(document.querySelector('#comments'), {
 });
 ```
 
-Publish the immutable resources, producer and consuming website together. Interpretation revision identifies compiler/trust-policy changes; resource revision identifies the actual style/module graph. A code body declares that fingerprint, while prose can remain readable without code resources. Old open pages reject incompatible fingerprints before installation and offer Reload. [API content contracts](API.md#content-and-counts) cover readiness, enhancement failure and installed lifetimes.
+Publish immutable resources, producer and consuming website together. Change interpretation revision for compiler/trust-policy changes and resource revision for a changed style/module graph. Old pages offer Reload on incompatible fingerprints; see [content contracts](API.md#content-and-counts) and [publication/rollback](OPERATIONS.md#update-and-restore).
 
 A custom presentation binds each canonical comment directly:
 
@@ -80,6 +80,4 @@ const body = conversation.content.mount(target, comment, {
 });
 ```
 
-Accepted changes update this binding automatically. Dispose the mount when its card leaves the view. Preview/custom input uses the same owner with `{ markdown, purpose, draft? }`; a [shared editor](API.md#actions-reactions-and-session) owns its form, textarea and preview. Keep those nodes through unrelated redraws to preserve native selection and undo.
-
-For interactive diagrams or framework views, retain mounted output and prepare optional in-place updates with the [renderer contract](API.md#content-and-counts). Preparation must leave the installed tree usable until the shared owner commits the current result. For deliberate browser compilation or code/math replacement, use the same API contracts rather than a second acquisition/cache layer.
+Accepted changes update this binding automatically. Dispose the mount when its card leaves the view. Use the [shared editor](API.md#writing) for preview/input and retain its native nodes through unrelated redraws to preserve selection and undo. Interactive diagrams, whole-body updates and browser code/math replacement use the [renderer contract](API.md#content-and-counts), not another acquisition/cache layer.

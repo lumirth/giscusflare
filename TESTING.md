@@ -6,39 +6,45 @@ Use Node 22.16 or newer and `npm ci`. Run the complete release gate before propo
 | --- | --- |
 | `npm test` | TypeScript, public examples, builds and native/browser workflows |
 | `npm run test:runtime` | Actual Worker/DO RPC, SQLite persistence, encrypted sessions, website policy and interrupted remote writes in local workerd |
-| `npm run test:ranking` | Actual service SQL costs, refresh cadence, observations and resource-budget boundaries |
 | `npm run test:browser` | Chromium/WebKit native/iframe editing, sign-in, contributions, rich content and custom views |
-| `npm run test:package` | Extracted archive, independent browser/Worker consumers and public assets |
+| `npm run check:package` | Extracted archive typechecks, browser/Worker consumer builds and deployment asset copying |
 | `npm run check:release` | Complete local release gate |
 | `npm run deploy:check` | Release gate, public configuration and Wrangler dry run |
 
-The shared provider fixture validates actual GraphQL documents and variables against the recorded official GitHub schema. This establishes the recorded schema shape; real App permissions remain a deployed check.
+The surrounding-world fixture stores independently authored discussions, comment bodies, replies and reactions. It validates GraphQL documents and variables against the recorded official GitHub schema, then executes the selected fields over that state. Unrequested fields cannot conceal an incomplete application query. This establishes the recorded schema contract; real GitHub App permissions remain a deployed check.
 
-Native and browser workflows use the actual production Worker and SQLite Durable Object in local workerd. The shared fixture keeps remote GitHub effects outside workerd so they survive its restart. An uncertain mutation must not become a second contribution after retry. Chromium and WebKit load the built browser modules and use real DOM parsing, AbortSignal, storage, dialogs, editing and layout. GitHub is explicitly simulated; these checks do not establish actual GitHub permissions or production Cloudflare costs.
+Native and browser workflows use the actual production Worker and SQLite Durable Object in local workerd. The shared fixture keeps remote GitHub effects outside workerd so they survive its restart. An uncertain mutation must not become a second contribution after retry. Chromium and WebKit each qualify a fresh service/provider environment with the configured deployment limits and distinct reader ingress identities; qualification does not disable account throttling. They load the built browser modules and use real DOM parsing, AbortSignal, storage, dialogs, editing and layout. GitHub is explicitly simulated; these checks do not establish actual GitHub permissions or production Cloudflare costs.
 
 ## Local use
 
 `npm run demo` prints iframe and native URLs. Comments and sign-in are simulated. `test:browser` starts and stops its own fixture and records the source/runtime conditions in `test-results/evidence/browser-acceptance.json`.
 
-The browser portfolio must exercise native and iframe embedding, future-capability sign-in, actual typing and undo/redo, preview, reading continuity, appearance and contributions. Cohesive custom-view workflows must cover explicit source/prepared/stock content profiles, complete feature replacement, independent public/account/content/count availability, rich-content safety and readable failures, detached current-only content commits, installed-resource lifetime, independent persisted writing records and same-destination recovery, retained writing destination and unresolved outcomes, forum switching and editing, and setup/configuration. Use the current receipt for executed scenarios and engines; a fixed case count is not an acceptance target.
+The retained journeys demonstrate these outcomes through the production Worker and public clients:
+
+| Supported outcome | Independent observation |
+| --- | --- |
+| Reading and chronological/ranked traversal | Authored provider bodies, replies and votes reach the rendered conversation; pagination has no duplicates, score changes preserve captured traversal, and deliberately changing order observes the new ranking |
+| Native writing and publication | Actual typing/undo survives preview, resizing and appearance changes; a fresh browser document reacquires submitted comments and replies |
+| Interrupted contributions | Provider effects survive lost responses and workerd restart; retained author/body/destination/receipt identity prevents duplicate publication |
+| Changed custom content | Published edits receive separate anonymous readback; controlled website interpretation preserves usable installed content, rejects late older output and recovers through visible Retry |
+| Independent authority | Real session revocation preserves protected writing; transport failure during identity/account acquisition preserves reading and local drafts |
+| Safe rich reading | The stock producer and browser keep authored code/tables/task lists readable while rejecting executable provider markup |
+
+Typechecks, builds and extracted consumer compilation are separate evidence. These workflows do not qualify every custom producer or renderer. Custom manifest-mismatch/failed-resource paths, physical-device behavior and production permissions/capacity need their own bounded acceptance when those environments are changed or released.
 
 CI runs the complete gate on [macOS 26](https://docs.github.com/en/actions/reference/runners/github-hosted-runners) to exercise WebKit's native controls on the Apple port. The Linux Playwright GTK build used during qualification did not enter resize mode through the mouse driver even for isolated plain textareas with fixed or content sizing. That observation does not establish behavior in a deployed GTK browser. The gate retains actual resize, subsequent typing and native undo assertions on macOS; it has no programmatic resize substitute or engine-specific skip.
 
-Browser fixtures navigate an actual local HTTP document served by the native service and load the same built assets as consumers. The resource command measures native SQLite counters across the complete repository service. Its controlled clock delivers due alarms; its receipt distinguishes actual SQL use, admitted HTTP allowance, and upstream requests from unmeasured ingress CPU, object billing and production latency.
+Browser fixtures navigate an actual local HTTP document served by the native service and load the same built assets as consumers. Typechecks, builds, package qualification and deployment dry runs establish compile and artifact validity separately from behavior coverage. Local qualification does not establish production CPU, billing or capacity.
 
 For manual editor checks, compare real typing, undo and redo with a plain textarea. Repeat after Preview/Write, theme changes, refresh and an asynchronous contribution completion. Verify the intended text, selection and focus; DOM identity alone is supporting evidence.
 
 ## Visual reference
 
-Current qualification compares successful default states with an independently frozen pre-change build outside Git. Exercise Chromium and WebKit, native and iframe modes, narrow and wide layouts, published rich content and normal composer states. Use equal deterministic inputs and complete pixels; record the actual comparison outcome in its run artifact.
-
-The demo/default presentation must retain its established appearance. Capture reading/editing states before mutating journeys so freshness cannot change fixture data; capture contribution/edit/delete states after real local fixture sign-in and writes.
-
-The comparison uses complete RGBA pixels and equal image dimensions, without masking or tolerance. Both versions receive the same deterministic avatar, display date, focus/hover state and settled fonts. These controlled inputs establish the recorded visual states; they do not turn historical DOM structure or ownership into a contract. The reference runner is a qualification artifact, not a second maintained runtime or a source-shape regression suite.
+Review the default presentation in Chromium and WebKit, native and iframe modes, narrow and wide layouts, published rich content and normal composer states. Screenshots support visual review; fixed pixels, geometry and historical DOM structure are not behavior contracts.
 
 ## Independent behavior
 
-Tautological tests and change detectors are harmful. Unit tests are presumed unnecessary in most cases. These rules apply to existing tests as well as new ones. Retained workflows must independently establish valuable user behavior or a real boundary; neither an old expectation nor a historic bug earns a test by itself. Avoid assertions about source spelling, prose, chosen maps/tables, dependency identity or a copy of the implementation’s calculation. A bug fix needs a new test only when existing behavior coverage has a genuine gap.
+Tautological tests, change detectors, unit tests and integration tests are harmful. This policy applies retroactively. Retain only justified end-to-end workflows that demonstrate important supported outcomes through the application and independent observations. A browser or real local runtime does not turn an isolated helper test into end-to-end coverage. Default cleanup to deletion and consolidation; do not replace each deleted assertion, archive rejected suites or move them into diagnostics. Remove orphaned machinery after checking its consumers. A bug fix needs a new regression test only when it closes a genuine gap in behavior coverage; prefer an existing workflow. Typechecks, lint, builds and artifact validation remain distinct from behavior tests.
 
 Use controlled interleavings for asynchronous behavior: retirement during a read, identity change during authentication, a correction during ranking acquisition, and a response lost after a remote effect commits. Compare with independent remote state or physical storage counters rather than internal bookkeeping.
 
@@ -54,10 +60,6 @@ Test commands write generated reports to ignored `test-results/evidence/`. CI up
 
 ## Historical evidence and limits
 
-Local checks simulate GitHub and do not establish production latency/CPU distributions, object duration, billing, real App permissions, fresh-account deployment, Safari, Firefox or physical iOS. Package checks establish an extracted consumer, not a deployed service. Deployed acceptance requires matching versions and independent GitHub readback.
+The [archived visual/workload receipts](https://github.com/lumirth/giscusflare/blob/bc5e342214f8357d699bab97a7fdf5182b398580/TESTING.md#historical-evidence-and-limits) do not qualify the current release or establish current capacity. [Provenance](docs/PROVENANCE.md) owns pinned-source history and regeneration; use current run artifacts and deployed measurements for current claims.
 
-The [version 3 visual qualification](https://github.com/lumirth/giscusflare/pull/2) recorded 168 paired renders: 167 pixel-identical and one differing at five SVG antialiasing pixels. Its source build was `b39375bbba0b8249c3bc661c63150b5917b31d80`; the pinned giscus presentation inputs are `3d6430237108ca4ee3eb6a1a20595201c09c72d5`. [Provenance](docs/PROVENANCE.md) distinguishes those inputs. This history does not replace the current independent comparison described above.
-
-A September 27, 2026 workload recorded 12,100 requests, 6.85 ms p99 Worker CPU, 20.57 GB-s object duration and 3,071 SQLite writes. It predates current cache/ranking representations and is not a current capacity guarantee. Measure declared cold/warm workloads and actual platform metrics. Ranking acquisition intervals and cadence do not establish atomic remote snapshots or a universal source-age bound.
-
-Source accounting includes complete replacements, defaults, examples, downstream consumers and verification support, with generated/vendor data reported separately. Moving work between repositories or categories is not a saving. Claims about cold paths need actual necessary-request measurements, including credential renewal, separately from warm traffic.
+Source accounting includes complete replacements, defaults, examples, downstream consumers and verification support, with generated/vendor data reported separately. Moving work between repositories or categories is not a saving.

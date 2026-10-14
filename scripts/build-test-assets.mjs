@@ -16,7 +16,7 @@ await build({
   } }]
 });
 
-for (const [entry, name] of [['examples/custom.ts', 'custom-example'], ['test/forum-browser.ts', 'forum-example']]) {
+for (const [entry, name] of [['examples/custom.ts', 'custom-example'], ['examples/forum.ts', 'forum-example']]) {
   await build({
     entryPoints: [entry], outdir: 'public', entryNames: name,
     chunkNames: 'chunks/example-[name]-[hash]', bundle: true, splitting: true,

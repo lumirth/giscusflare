@@ -1,6 +1,6 @@
 import { html, render, nothing } from "lit-html";
-import { AsyncDirective } from "lit-html/async-directive.js";
 import { directive } from "lit-html/directive.js";
+import { OwnedDirective } from './resource.js';
 import { createEditor } from "../headless.js";
 import { strings, message } from "../i18n.js";
 import { icon } from "./icon.js";
@@ -77,21 +77,9 @@ export function createComposer({ runtime, report }: StandardContext, contributio
   } }).form;
 }
 
-class Composer extends AsyncDirective {
-  #element?: HTMLElement;
-  #release?: () => void;
-  #writing?: string;
+class Composer extends OwnedDirective<HTMLElement> {
   render(context: StandardContext, contribution: Writing) {
-    context.scope.signal.throwIfAborted();
-    if (this.#writing !== contribution.id) { this.#release?.(); this.#writing = contribution.id; }
-    if (!this.#element) {
-      const abort = new window.AbortController();
-      this.#release = context.scope.own(() => { abort.abort();this.#element = undefined; });
-      try { this.#element = createComposer(context, contribution, abort.signal); }
-      catch (error) { this.#release();throw error; }
-    }
-    return this.#element;
+    return this.owned(context.scope, contribution.id, signal => createComposer(context, contribution, signal));
   }
-  override disconnected() { this.#release?.(); }
 }
 export const composer = directive(Composer);

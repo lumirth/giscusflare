@@ -35,6 +35,4 @@ export function configurationValues(origin: string, repo: string, website: strin
   };
 }
 
-export function sessionSecret(): string {
-  return btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '');
-}
+export { randomProof as sessionSecret } from './dom.js';

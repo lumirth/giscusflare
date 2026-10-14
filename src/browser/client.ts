@@ -5,7 +5,6 @@ import {fetchPolicy} from '../conversation/fetch-policy.js';
 import {conversationSettings} from './options.js';
 import {validDisplayProfile,validLogin} from './session.js';
 import {recoveredWriting} from '../conversation/writing.js';
-import type {ConversationInitialization} from './runtime.js';
 (() => {
   const script = document.currentScript;
   if (!(script instanceof HTMLScriptElement)) return;
@@ -43,8 +42,8 @@ import type {ConversationInitialization} from './runtime.js';
   style.href = service + assetURL('/embed.css');
   persistence.usePage(config);
   const post = (value: unknown) => frame.contentWindow?.postMessage({giscus: value}, service);
-  const initialize = (init: ConversationInitialization & {availableWriting?: readonly import('../conversation/writing.js').SavedWriting[]}) => post({init});
-  let initialization = 0, interrupted = false;
+  const initialize: Parameters<typeof persistence.initialize>[0] = init => post({init});
+  let interrupted = false;
   const interrupt = () => { interrupted = true; };
   for (const name of ['pointerdown', 'keydown', 'wheel', 'touchstart']) window.addEventListener(name, interrupt, {signal: lifetime.signal, passive: true});
   const handler = (event: MessageEvent) => {
@@ -57,15 +56,8 @@ import type {ConversationInitialization} from './runtime.js';
           if (next.repo === repo && next.origin === config.origin) persistence.usePage(next);
         } catch { return; }
       }
-      const generation = ++initialization, returning = handoff;handoff = undefined;
-      initialize({session: persistence.session(), fetching, handoff: returning, ...(composer ? {position: {composer}} : {})});composer = undefined;
-      const token = persistence.session();
-      if (token) void persistence.displayProfile(token).then(displayProfile => { if (displayProfile && !lifetime.signal.aborted && generation === initialization && persistence.session() === token) initialize({displayProfile}); }).catch(() => {});
-      void persistence.recover().then(writing => {
-        if (!lifetime.signal.aborted && generation === initialization) initialize({writing,availableWriting:persistence.records()});
-      }).catch(cause => {
-        if (!lifetime.signal.aborted && generation === initialization) initialize({writing: {records: [], selected: [], error: cause instanceof Error ? cause.message : 'Unable to restore writing.'}});
-      });
+      const returning = handoff;handoff = undefined;
+      void persistence.initialize(initialize, {fetching, handoff: returning, ...(composer ? {position: {composer}} : {})}, true);composer = undefined;
     }
     if (typeof message.resizeHeight === 'number' && Number.isFinite(message.resizeHeight)) frame.style.height = `${Math.min(100000, Math.max(80, Math.ceil(message.resizeHeight)))}px`;
     if (typeof message.session === 'string') persistence.saveSession(message.session);
@@ -91,13 +83,7 @@ import type {ConversationInitialization} from './runtime.js';
     if (message.error) console.warn('[giscusflare]', String(message.error).slice(0, 300));
     if (Object.hasOwn(message, 'discussion')) host?.dispatchEvent(new CustomEvent('giscus', {detail: message}));
   };
-  const storage = (event: StorageEvent) => {
-    if (event.key === persistence.sessionKey) {
-      const token = persistence.session(event.newValue);initialize({session: token});
-      if (token) void persistence.displayProfile(token).then(displayProfile => { if (displayProfile && !lifetime.signal.aborted && persistence.session() === token) initialize({displayProfile}); }).catch(() => {});
-    }
-    else if (event.key?.startsWith(persistence.writingPrefix)) initialize({availableWriting: persistence.records()});
-  };
+  const storage = (event: StorageEvent) => persistence.observeStorage(event, initialize, () => initialize({availableWriting: persistence.records()}));
   window.addEventListener('message', handler);window.addEventListener('storage', storage);
   host.__gwCleanup = () => { lifetime.abort();persistence.dispose();window.removeEventListener('message', handler);window.removeEventListener('storage', storage); };
 })();

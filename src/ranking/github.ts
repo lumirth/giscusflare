@@ -1,6 +1,6 @@
 import * as v from 'valibot';
 import * as G from '../contracts/github.js';
-import {Count,Reaction} from '../contracts/primitives.js';
+import {PublicSummary,thread} from '../domain/github.js';
 import {parse} from '../contracts/parse.js';
 import { AppError } from '../domain/errors.js';
 import { INPUTS, validCandidate, type Candidate, type DiscoveryPage, type Input, type Signature } from './types.js';
@@ -65,11 +65,11 @@ function candidate(value: unknown, inputs: readonly Input[]): Candidate {
 }
 export function parseHead(payload:unknown,scope:RankingScope,observedAt:number,profiles:string[]):Signature{
   const raw=scoped(data(payload).node,scope),connection=object(raw.comments);
-  const summary=parse(v.object({...G.DiscussionSummary.entries,repository:G.RepositoryHead,reactionGroups:v.array(v.object({content:Reaction,reactors:v.object({totalCount:Count})}))}),raw,'upstream');
+  const summary=parse(v.object({...PublicSummary.entries,repository:G.RepositoryHead}),raw,'upstream');
   if (!Number.isSafeInteger(connection.totalCount) || Number(connection.totalCount) < 0 || !Array.isArray(connection.nodes) || connection.nodes.length > 1) throw Error('Incomplete ranking head.');
   const newestRootID = connection.nodes.length ? object(connection.nodes[0]).id : null;
   if ((connection.totalCount === 0) !== (newestRootID === null) || (newestRootID !== null && typeof newestRootID !== 'string')) throw Error('Incomplete ranking head.');
-  return {rootCount:Number(connection.totalCount),newestRootID:newestRootID as string|null,target:{observedAt,metadata:{archived:summary.repository.isArchived,unavailable:false,profiles,thread:{id:summary.id,number:summary.number,title:summary.title,url:summary.url,locked:summary.locked,closed:summary.closed,answerId:summary.answer?.id??null,reactions:Object.fromEntries(summary.reactionGroups.map(g=>[g.content,{count:g.reactors.totalCount}]))}}}};
+  return {rootCount:Number(connection.totalCount),newestRootID:newestRootID as string|null,target:{observedAt,metadata:{archived:summary.repository.isArchived,unavailable:false,profiles,thread:thread(summary)}}};
 }
 export function parseDiscovery(payload: unknown, scope: RankingScope, inputs: readonly Input[]): DiscoveryPage {
   const connection = object(scoped(data(payload).node, scope).comments), page = object(connection.pageInfo);
