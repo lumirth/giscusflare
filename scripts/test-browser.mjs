@@ -89,7 +89,8 @@ try {
             await refresh.dispose();await page.evaluate(()=>sessionStorage.setItem('__qualification_clock','0'));
           }
           const account = mode === 'native' ? await fixture.hold('/api/v7/access', async (route, gate) => { await gate.wait(); await platformClient(route); }) : undefined;
-          const visitor=mode==='native'?await context.newPage():undefined;
+          const visitorFixture=mode==='native'?await browserFixture(browser,service,'192.0.2.'+(10+client++),mode):undefined;
+          const visitor=visitorFixture?.page;
           if(visitor){await visitor.clock.install();await visitor.goto(blog+path);await expect(visitor.getByText('Try posting a comment or replying here.',{exact:true})).toBeVisible();}
           await composer.getByRole('button', { name: 'Sign in with GitHub', exact: true }).click();
           if(mode==='native'){
@@ -106,7 +107,7 @@ try {
             await visitor.getByRole('link',{name:'Return to comments',exact:true}).click();
             await expect(visitor.getByText('Try posting a comment or replying here.',{exact:true})).toBeVisible();
             await expect(visitor.getByRole('button',{name:'Sign in with GitHub',exact:true})).toBeVisible();
-            await visitor.close();
+            await visitorFixture.close();
             await expect(retry).toBeEnabled();await retry.click();
             // GitHub can refuse the identity read after consuming the authorization code.
             await expect(retry).toBeVisible();await expect(retry).toBeEnabled();await retry.click();
@@ -119,7 +120,7 @@ try {
             await account.dispose();
           }
           await expect(page).toHaveURL(blog + path);
-          assert.equal(proofs.size,mode==='native'?2:1,'each sign-in keeps one private proof across retries');
+          assert.equal(proofs.size,1,'each sign-in keeps one private proof across retries');
           assert.equal(fragmentExposed,false,'the authorization page must remove its private fragment before preparing');
           for (const proof of proofs) for (const request of requests) assert.ok(!request.url.includes(proof) && !request.referer.includes(proof), 'private sign-in proof must not appear in URLs or referrers');
           await expect.poll(() => capabilities.size).toBeGreaterThan(0);
