@@ -91,7 +91,7 @@ try {
           const account = mode === 'native' ? await fixture.hold('/api/v7/access', async (route, gate) => { await gate.wait(); await platformClient(route); }) : undefined;
           const visitorFixture=mode==='native'?await browserFixture(browser,service,'192.0.2.'+(10+client++),mode):undefined;
           const visitor=visitorFixture?.page;
-          if(visitor){await visitor.clock.install();await visitor.goto(blog+path);await expect(visitor.getByText('Try posting a comment or replying here.',{exact:true})).toBeVisible();}
+          if(visitor){await visitor.clock.install();await visitor.goto(blog+path+'#comments');await expect(visitor.getByText('Try posting a comment or replying here.',{exact:true})).toBeVisible();}
           await composer.getByRole('button', { name: 'Sign in with GitHub', exact: true }).click();
           if(mode==='native'){
             await expect(page.getByRole('link',{name:'Return to comments',exact:true})).toBeVisible();
@@ -107,6 +107,7 @@ try {
             await visitor.getByRole('link',{name:'Return to comments',exact:true}).click();
             await expect(visitor.getByText('Try posting a comment or replying here.',{exact:true})).toBeVisible();
             await expect(visitor.getByRole('button',{name:'Sign in with GitHub',exact:true})).toBeVisible();
+            await expect(visitor).toHaveURL(blog+path+'#comments');
             await visitorFixture.close();
             await expect(retry).toBeEnabled();await retry.click();
             // GitHub can refuse the identity read after consuming the authorization code.

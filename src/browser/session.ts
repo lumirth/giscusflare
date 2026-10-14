@@ -35,7 +35,7 @@ export function validLogin(value: unknown): value is Login {
   const login = value as Partial<Login>;
   return login.version === 5 && typeof login.capability === 'string' && capability.test(login.capability) &&
     typeof login.attempt === 'string' && capability.test(login.attempt) && typeof login.created === 'number' &&
-    login.created <= Date.now() && Date.now() - login.created < 600000 &&
+    login.created <= Date.now() && (login.status === 'failed' || login.status === 'denied' || Date.now() - login.created < 600000) &&
     (login.status === undefined || login.status === 'ready' || login.status === 'denied' || login.status === 'failed');
 }
 type AuthFlow = Login & { popup?: Window | null };
