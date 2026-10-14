@@ -62,6 +62,8 @@ export class PageModel {
     #activeWriting = new Map<string, string>();
     get writings(): ReadonlyMap<string, Writing> { return this.#writings; }
     #order: CommentOrder;
+    #displayedOrder:CommentOrder;
+    #displayedRanking:OrderResult|null=null;
     ready = false;
     error = '';
     viewerError = '';
@@ -93,6 +95,7 @@ export class PageModel {
         this.document.roots = this.#window(this.document.roots);
         const stopCounts = this.counts.subscribe(change => { if (change.value && !this.#ownCounts) this.notify(); }, target => this.#countScope(target));
         this.#order = typeof order === 'string' ? order : Object.freeze({ ...order });
+        this.#displayedOrder=this.#order;
         this.signal.addEventListener('abort', () => { stopCounts(); this.#identity.abort(); this.#cancelReads(); this.#listeners.clear(); }, { once: true });
     }
     #visibleIds():string[]{return unique(this.document.roots.ids.flatMap(id=>[id,...(this.document.replies[id]?.ids??[])]));}
@@ -210,6 +213,7 @@ export class PageModel {
     #replace(page: WindowPage, baseline = this.document, acceptance = this.#accepted, countAfter = this.counts.revision, countFresh = false): AcceptedObservation | undefined {
         for (const [parent, read] of this.#reads) if (parent) { read.abort.abort(); this.#reads.delete(parent); }
         const content = this.#accept({ page, baseline, replacing: true, acceptance, countAfter, countFresh });
+        this.#displayedOrder=this.#order;this.#displayedRanking=this.ranking;
         this.ready = true;
         this.error = '';this.notice = '';
         this.lastRefresh = Math.max(this.lastRefresh, page.observedAt);
@@ -226,6 +230,8 @@ export class PageModel {
         const countFresh = input.countFresh ?? !page;
         const observedAt = page?.observedAt ?? patch?.observedAt;
         if (observedAt === undefined || !Number.isFinite(observedAt)) return;
+        const unavailable=(page?.metadata??patch?.metadata)?.unavailable;
+        if(unavailable&&[...this.#facts].some(([scope,fact])=>!scope.startsWith('account:')&&(fact.age>observedAt||fact.age===observedAt&&fact.accepted>acceptance)))return;
         const conflictingIds = new Set<string>();let conflicted = false;
         const accept = (scope: string, before?: unknown, incoming?: unknown, age = observedAt, id = ''): boolean => !(input.replayed && age === this.#facts.get(scope)?.age) && this.#fact(scope, age, acceptance, effect, input.replayed ? undefined : [before,incoming], () => { conflicted = true;if (id && id !== current.metadata.thread?.id) conflictingIds.add(id); });
         const count = (value: CountObservation | null | undefined, replayed = false, fresh = countFresh, effect = false) => {
@@ -285,6 +291,10 @@ export class PageModel {
             if (id === metadata.thread?.id) metadata = { ...metadata, thread: { ...metadata.thread, reactions: reactions(id, metadata.thread.reactions, groups) } };
             else if (nodes[id]) nodes[id] = { ...nodes[id]!, reactions: reactions(id, nodes[id]!.reactions, groups) };
         }
+        if(unavailable&&metadata.unavailable||current.metadata.thread&&current.metadata.thread.id!==metadata.thread?.id){
+            for(const id of Object.keys(nodes)){accept('exists:'+id,true,false);delete nodes[id];}
+            this.#viewer=null;
+        }
         const replies = replacing ? Object.fromEntries(Object.entries(current.replies).filter(([id, window]) => window !== baseline.replies[id])) : { ...current.replies };
         const acquireWindow = (key: string, old: Window, acquired: Window, replace: boolean): Window => {
             const added = replace ? old.ids.filter(id => !((key ? baseline.replies[key] : baseline.roots)?.ids ?? []).includes(id)) : [];
@@ -327,6 +337,7 @@ export class PageModel {
         for (const [id, window] of Object.entries(replies)) {
             if (!nodes[id]) delete replies[id]; else replies[id] = this.#window({ids:window.ids.filter(child=>nodes[child]),cursor:window.cursor},id);
         }
+        if(metadata.unavailable||current.metadata.thread&&current.metadata.thread.id!==metadata.thread?.id)roots=emptyWindow();
         this.document = { nodes, roots, replies, metadata };
         this.#resumeReactions();
         const contentHints = Object.fromEntries(Object.entries(page?.contentHints ?? patch?.contentHints ?? {}).filter(([id, hint]) => (!inserted.has(id) || !current.nodes[id]) && nodes[id]?.body === hint.markdown && observedAt >= (this.#facts.get('node:' + id + ':body')?.age ?? -Infinity) && this.#fact('content:' + id, observedAt, acceptance)));
@@ -347,11 +358,12 @@ export class PageModel {
         if (!parentId && !observing && !continuing) this.#cancelReads();
         else current?.abort.abort();
         const abort = new AbortController(), signal = AbortSignal.any([this.signal, abort.signal]);
-        let authorityIds = observedIds;
+        let authorityIds = observedIds,acceptance=this.#accepted;
         const work = Promise.resolve().then(async () => {
             try {
                 signal.throwIfAborted();
-                let baseline = this.document, acceptance = this.#accepted, countAfter = this.counts.revision;
+                let baseline = this.document, countAfter = this.counts.revision;
+                acceptance=this.#accepted;
                 const cursor = continuing ? (parentId ? this.document.replies[parentId]?.cursor ?? '' : this.document.roots.cursor!) : '';
                 let ids: string[] | undefined, loaded: string[] = [];
                 if (observing) {
@@ -392,7 +404,7 @@ export class PageModel {
                 else if (this.document.metadata.thread?.id !== page.metadata?.thread?.id || observing && page.metadata?.unavailable) {
                     const previous = this.document.metadata.thread?.id;
                     this.#accept({ patch: {metadata: page.metadata, observedAt: page.observedAt},acceptance });
-                    if (previous !== this.document.metadata.thread?.id || observing && this.document.metadata.unavailable) this.continuity = { status: 'restart-required', reason: observing ? 'The discussion changed or is unavailable. Restart deliberately to acquire a new reading order.' : 'The discussion changed. Restart to acquire its comments.' };
+                    if (previous !== this.document.metadata.thread?.id || observing && this.document.metadata.unavailable) this.continuity = { status: 'restart-required', ...(this.document.metadata.unavailable?{}:{reason:'Comments have changed. Refresh to continue.'}) };
                     if (!observing) return false;
                 } else {
                     content = this.#accept({ page, baseline, parentId, observedIds: observing ? ids : undefined, acceptance, countAfter, countFresh:fresh });
@@ -407,11 +419,11 @@ export class PageModel {
                 return true;
             } catch (error) {
                 if (!signal.aborted) {
-                    if (purpose === 'change-order' || continuing && [400, 404, 410].includes(Number(Object(error).status))) this.continuity = { status: 'restart-required', reason: message(error) };
-                    if(observing&&[403,404].includes(Number(Object(error).status))&&['PUBLIC_ONLY','NOT_FOUND','CATEGORY','PERMISSION'].includes(String(Object(error).code))){
+                    if (continuing && [400, 404, 410].includes(Number(Object(error).status))) this.continuity = { status: 'restart-required', reason: message(error) };
+                    if(observing&&[403,404].includes(Number(Object(error).status))&&['PUBLIC_ONLY','NOT_FOUND','CATEGORY','PERMISSION'].includes(String(Object(error).code))&&![...this.#facts].some(([scope,fact])=>!scope.startsWith('account:')&&fact.accepted>acceptance)){
                         this.document={nodes:{},roots:emptyWindow(),replies:{},metadata:{...this.document.metadata,thread:null,unavailable:true}};
-                        this.continuity={status:'restart-required',reason:message(error)};
-                        this.error=message(error);
+                        this.continuity={status:'restart-required'};
+                        this.error='';
                     }else if (!observing || !this.ready) this.error = message(error);
                     this.notify();
                 }
@@ -433,9 +445,11 @@ export class PageModel {
     }
     async setOrder(order: CommentOrder): Promise<void> {
         if (JSON.stringify(this.order) === JSON.stringify(order)) return;
+        const previous=this.#displayedOrder,previousRanking=this.#displayedRanking;
         this.#order = typeof order === 'string' ? order : Object.freeze({ ...order });
+        const requested=this.#order;
         this.ranking = null;
-        await this.#acquire('', 'change-order');
+        if(!await this.#acquire('', 'change-order')&&this.#order===requested){this.#order=previous;this.ranking=previousRanking;this.notify();}
     }
     async loadReplies(parentId: string): Promise<void> { await this.#acquire(parentId, 'continue'); }
     activeWriting(target: WritingTarget = { kind: 'comment' }): Writing | undefined {

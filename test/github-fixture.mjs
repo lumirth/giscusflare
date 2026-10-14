@@ -72,7 +72,10 @@ export class FakeGitHub {
     check(['https://api.github.com','https://github.com'].includes(url.origin),'only fixed upstream hosts');
     const call={path:url.pathname,method:request.method,token};this.calls.push(call);
     const refusal=this.refusals.get(url.pathname)?.shift();
-    if(refusal)return response({message:refusal.message},refusal.status,{'Retry-After':String(refusal.retryAfter)});
+    if(refusal){
+      if(refusal.consumeCode&&url.pathname==='/login/oauth/access_token')this.authorizationCodes.add(new URLSearchParams(payload).get('code'));
+      return response({message:refusal.message},refusal.status,{'Retry-After':String(refusal.retryAfter)});
+    }
     if(this.failNext){const fail=this.failNext;this.failNext=null;if(fail==='network')throw new TypeError('simulated disconnect');return response({message:'PRIVATE_UPSTREAM_DETAILS'},fail);}
     if(url.pathname==='/login/oauth/access_token'){
       const p=new URLSearchParams(payload);check(p.get('client_secret')==='fixture-client-secret','correct OAuth secret');

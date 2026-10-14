@@ -2,7 +2,7 @@ export type ErrorCode =
   | 'BAD_INPUT' | 'BODY_TOO_LARGE' | 'MEDIA_TYPE' | 'CONFIGURATION' | 'ORIGIN' | 'METHOD'
   | 'AUTH_REQUIRED' | 'SESSION' | 'OAUTH' | 'NOT_FOUND' | 'PERMISSION' | 'PUBLIC_ONLY'
   | 'RANKING_BUDGET' | 'CATEGORY' | 'LOCKED' | 'ARCHIVED' | 'RATE_LIMIT' | 'GITHUB_AUTH' | 'UPSTREAM'
-  | 'VERSION_MISMATCH' | 'OPERATION_EXPIRED' | 'UPSTREAM_SCHEMA' | 'WRITE_UNCERTAIN' | 'CONFLICT' | 'STORAGE' | 'INTERNAL';
+  | 'VERSION_MISMATCH' | 'OPERATION_EXPIRED' | 'UPSTREAM_SCHEMA' | 'WRITE_UNCERTAIN' | 'CONFLICT' | 'STORAGE' | 'INTERNAL' | 'PROVIDER_DENIED';
 export class AppError extends Error {
   constructor(readonly status: number, readonly code: ErrorCode, message: string, readonly retryAfter?:number,readonly phase:'not-issued'|'unknown'='not-issued',readonly rateKind?:'primary'|'secondary') {
     super(message); this.name = 'AppError';

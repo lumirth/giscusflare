@@ -19,7 +19,7 @@ export const publicAssets = (demo = false) => async (request) => {
     if (!file.startsWith(directory + sep))
         return new Response('Not found', { status: 404 });
     try {
-        const bytes = await readFile(demo && path === '/auth-window.js' ? resolve(root, 'dist/auth-window-demo.js') : file);
+        const bytes = await readFile(demo && /^\/auth-(window|complete)\.js$/.test(path) ? resolve(root, 'dist',path.slice(1).replace('.js','-demo.js')) : file);
         return new Response(request.method === 'HEAD' ? null : bytes, { headers: { 'Content-Type': mime[extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*' } });
     }
     catch {

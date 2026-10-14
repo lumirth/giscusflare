@@ -14,7 +14,7 @@ import { Store } from './store.js';
 const DAY = 86400000, TEN_MINUTES = 600000;
 export type AuthorizedSession=S.Session&{credentials:NonNullable<S.Session['credentials']>};
 export type CallbackResult = { attempt: string; repo: string; returnURL: string; mode: 'popup' | 'redirect'; openerOrigin: string } &
-  ({status:'ready'|'denied'}|{status:'waiting';retryAfter:number;expires:number}|{status:'failed';message:string});
+  ({status:'ready'|'denied'}|{status:'waiting';retryAfter:number;expires:number;authorizeURL?:string}|{status:'failed';message:string});
 export function stateValue(repo:string,attempt:string,registration?:string):string{return b64(new TextEncoder().encode(repo))+'.'+attempt+(registration?'.'+b64(new TextEncoder().encode(registration)):'');}
 export function stateParts(state:string):R.AuthStartQuery {
   const match=/^([A-Za-z0-9_-]{1,200})\.([A-Za-z0-9_-]{43})(?:\.([A-Za-z0-9_-]{1,8192}))?$/.exec(state);
@@ -31,6 +31,13 @@ export class Auth {
   #fields(data: OAuthToken,now=this.store.now()): NonNullable<S.Session['credentials']> {
     return { accessToken: data.access_token, accessExpires: data.expires_in ? now + data.expires_in * 1000 : Number.MAX_SAFE_INTEGER,
       refreshToken: data.refresh_token || null, refreshExpires: data.refresh_token_expires_in ? now + data.refresh_token_expires_in * 1000 : 0 };
+  }
+  #authorize(attempt:string,verifier:string,registration?:string):Promise<string>{
+    return hash(verifier).then(challenge=>{
+      const url=new URL('https://github.com/login/oauth/authorize');
+      url.search=new URLSearchParams({client_id:this.config.clientId,redirect_uri:this.config.origin+'/auth/callback',state:stateValue(this.repo,attempt,registration),code_challenge:challenge,code_challenge_method:'S256'}).toString();
+      return url.toString();
+    });
   }
   async prepare(request: C.Input<'authPrepare'>,browserCookie:string): Promise<{ attempt: string; authorizeURL: string }> {
     const origin=request.origin;
@@ -49,9 +56,7 @@ export class Auth {
       sessionID: request.proof, githubVerifier, cookieHash: await hash(browserCookie), created: now, expires,
       status: 'pending' };
     await this.store.putSecret('auth:' + attempt, S.OAuthAttempt, record, this.keys.sessionSecret, this.#purpose, record.expires);
-    const authorize = new URL('https://github.com/login/oauth/authorize');
-    authorize.search = new URLSearchParams({ client_id: this.config.clientId, redirect_uri: this.config.origin + '/auth/callback', state: stateValue(this.repo,attempt,request.registration), code_challenge: await hash(githubVerifier), code_challenge_method: 'S256' }).toString();
-    return { attempt, authorizeURL: authorize.toString() };
+    return { attempt, authorizeURL: await this.#authorize(attempt,githubVerifier,request.registration) };
     }));
   }
   async #attempt(id: string): Promise<S.OAuthAttempt | null> {
@@ -102,9 +107,10 @@ export class Auth {
         return {...context,status:'ready'};
       } catch (error) {
         const safe=failure(error);
+        const restart=attempt.status==='exchanging'&&safe.phase==='unknown'&&[429,502,503].includes(safe.status);
         const resumable=error instanceof AppError&&
-          (attempt.status==='exchanging'&&safe.phase==='not-issued'&&[429,503].includes(safe.status)||attempt.status==='exchanged'&&[429,502,503].includes(safe.status));
-        console.warn(JSON.stringify({event:resumable?'auth_deferred':'auth_failed',requestId:this.github.requestId,stage:attempt.status==='exchanged'?'identity':'exchange',...safe}));
+          (restart||attempt.status==='exchanging'&&safe.phase==='not-issued'&&[429,503].includes(safe.status)||attempt.status==='exchanged'&&[429,502,503].includes(safe.status));
+        console.warn(JSON.stringify({event:resumable?'auth_deferred':'auth_failed',requestId:this.github.requestId,stage:attempt.status==='exchanged'?'identity':'exchange',recovery:restart?'new_authorization':resumable?'resume':'return',...safe}));
         if(resumable){
           const retryAfter=safe.retryAfter??60;
           if(this.store.now()+retryAfter*1000>=attempt.expires){
@@ -112,8 +118,9 @@ export class Auth {
             return {...context,status:'failed',message:'GitHub sign-in is temporarily unavailable. Return to the comments and try again later.'};
           }
           if(attempt.status==='exchanging')attempt.status='pending';
+          if(restart){delete attempt.code;attempt.githubVerifier=random();}
           await this.#saveAttempt(input.attempt,attempt);
-          return {...context,status:'waiting',retryAfter,expires:attempt.expires};
+          return {...context,status:'waiting',retryAfter,expires:attempt.expires,...(restart?{authorizeURL:await this.#authorize(input.attempt,attempt.githubVerifier,input.registration)}:{})};
         }
         this.store.delete('auth:'+input.attempt);
         return {...context,status:'failed',message:safe.message};

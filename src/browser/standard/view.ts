@@ -213,8 +213,8 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
             ${discussion ? actions(context, target, discussion) : nothing}
           </div>
           ${initial || preparing() || (runtime.ready && runtime.acquisition()?.purpose !== 'revalidate' && runtime.acquisition()) ? loading(t.loading) : nothing}
-          ${restartAvailable ? html`<p class="color-text-secondary text-sm">${runtime.continuity.reason || 'New comments are available.'}<button type="button" class="ml-2 color-text-link" @click=${attempt(() => runtime.restart())}>${t.retry}</button></p>` : nothing}
-          <div class="gsc-timeline">${repeat(comments, node => node.id, comment)}</div>
+          ${restartAvailable&&!metadata.unavailable ? html`<p class="color-text-secondary text-sm">${runtime.continuity.reason || 'New comments are available.'}<button type="button" class="ml-2 color-text-link" @click=${attempt(() => runtime.restart())}>${t.retry}</button></p>` : nothing}
+          <div class="gsc-timeline" ?hidden=${runtime.acquisition()?.purpose==='change-order'}>${repeat(comments, node => node.id, comment)}</div>
           ${roots.cursor ? html`<div class="gsc-pagination"><button type="button" class="gsc-pagination-button"
             ?disabled=${runtime.acquisition()} @click=${attempt(() => runtime.loadMore())}>${t.more}</button></div>` : nothing}
         </section>`;
@@ -233,7 +233,7 @@ export function createStandardPresentation(parts: StandardParts = {}): Presentat
           </section>` : nothing}
           ${problem ? html`<div class="flash flash-error" role="alert">${problem}${retry ? html`<button class="ml-2 color-text-link" type="button" @click=${attempt(retry)}>${t.retry}</button>` : nothing}</div>` : nothing}
           ${runtime.notice ? html`<p class="flash">${runtime.notice}<button class="ml-2 color-text-link" type="button" @click=${attempt(() => runtime.restart())}>${t.retry}</button></p>` : nothing}
-          ${composition.status === 'unavailable' ? html`<p class="flash">${composition.cause === 'unavailable' ? t.discussionUnavailable : composition.cause === 'archived' ? t.archived : composition.cause === 'locked' ? t.locked : composition.reason}</p>` : nothing}
+          ${composition.status === 'unavailable' ? html`<p class="flash">${composition.cause === 'unavailable' ? t.discussionUnavailable : composition.cause === 'archived' ? t.archived : composition.cause === 'locked' ? t.locked : composition.reason}${metadata.unavailable ? html`<button type="button" class="ml-2 color-text-link" @click=${attempt(() => runtime.restart())}>${t.retry}</button>` : nothing}</p>` : nothing}
           ${commentsView}
           <div class="gsc-main-composer" ?hidden=${composition.status === 'unavailable' && !mainWriting.text && !mainWriting.protected && !mainWriting.actions.undoClear}>${composer(mainWriting)}</div>`, root);
         queueMicrotask(layout);

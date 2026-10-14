@@ -20,6 +20,7 @@ export async function publicRead(c:Context<AppEnv>, input:{repo:string;origin:st
   if('config' in input)authorizeWidget(config,input.config);
   else parentOrigin(policy(config,input.repo),input.origin);
   const fresh='fresh'in input&&input.fresh===true;
+  const log=(outcome:string)=>console.info(JSON.stringify({event:'public_edge',requestId:c.get('requestId'),path:new URL(c.req.url).pathname,outcome}));
   const respond=async()=>{
     const {value,expires} = await read(), response = render(value,expires);
     const remaining = Math.max(0, Math.min(15,Math.floor((expires - Date.now()) / 1000)));
@@ -30,7 +31,7 @@ export async function publicRead(c:Context<AppEnv>, input:{repo:string;origin:st
     return response;
   };
 
-  if(c.req.method==='POST'||fresh||c.req.header('Cache-Control')?.includes('no-cache'))return respond();
+  if(c.req.method==='POST'||fresh||c.req.header('Cache-Control')?.includes('no-cache')){log('bypass');return respond();}
   const cache=typeof caches==='undefined'?null:caches.default;
   if(!cache)return respond();
   const url=new URL(c.req.url);
@@ -45,7 +46,8 @@ export async function publicRead(c:Context<AppEnv>, input:{repo:string;origin:st
   url.searchParams.set('policy',await policyKey(config));
   const key=new Request(url,{method:'GET'});
   const found=await cache.match(key);
-  if(found&&Number(found.headers.get('X-Giscusflare-Edge-Expires'))>Date.now())return new Response(found.body,found);
+  if(found&&Number(found.headers.get('X-Giscusflare-Edge-Expires'))>Date.now()){log('hit');return new Response(found.body,found);}
+  log('miss');
   const response=await respond();
   if(response.ok&&Number(response.headers.get('X-Giscusflare-Expires'))>Date.now()&&response.headers.get('Cache-Control')?.startsWith('public,')){
     c.executionCtx.waitUntil(cache.put(key,response.clone()).catch(()=>undefined));

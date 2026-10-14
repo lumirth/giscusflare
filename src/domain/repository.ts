@@ -63,7 +63,13 @@ export class RepositoryEngine {
       const credential=await token();reserve?.();
       const response=await base.client.counts(pages,credential);
       return new Map<string,Lookup|Failure>(pages.map((page,i)=>{
-        const item=response.summaries[i]!;if(item&&'code'in item)return [page.key,item];
+        const item=response.summaries[i]!;if(item&&'code'in item){
+          if(item.status===410&&item.code==='NOT_FOUND'&&page.mapped){
+            const mappingKey=this.#mapping(page.target.selector,base.policy),current=this.store.get(mappingKey,S.Mapping);
+            if(current?.id===page.mapped.id&&current?.number===page.mapped.number)this.store.delete(mappingKey);
+          }
+          return [page.key,item];
+        }
           const selected=item?.discussion??null;
 
           return [page.key,{repository:response.meta,selected,count:item?.count??0,observedAt:response.observedAt}];
@@ -73,8 +79,10 @@ export class RepositoryEngine {
       const key=countKey(target),group=this.#groupSelector(repo,target.selector);
       const read=this.#reads.read<Lookup>('selection:'+base.policy.categoryId+':'+key,group,base.policy.countCacheMs,async()=>{
         missing.set(key,target);batch??=Promise.resolve().then(load);const value=(await batch).get(key)!;
-        if('code'in value)throw new AppError(value.status,value.code,value.message,value.retryAfter,value.phase,value.rateKind);return value;
-      },{fresh,retention:base.policy.outageRetentionMs,accept:lookup=>{if(lookup.selected){this.store.put(this.#mapping(target.selector,base.policy),S.Mapping,{id:lookup.selected.id,number:lookup.selected.number});this.#reads.identify(group,'discussion:'+lookup.selected.number);if(target.selector.kind==='page'&&target.window.kind==='roots')this.store.delete(this.#creationKey(target.selector.key,base.policy));}}});
+        if('code'in value){
+          throw new AppError(value.status,value.code,value.message,value.retryAfter,value.phase,value.rateKind);
+        }return value;
+      },{fresh,retention:base.policy.outageRetentionMs,requestId:base.client.requestId,accept:lookup=>{if(lookup.selected){this.store.put(this.#mapping(target.selector,base.policy),S.Mapping,{id:lookup.selected.id,number:lookup.selected.number});this.#reads.identify(group,'discussion:'+lookup.selected.number);if(target.selector.kind==='page'&&target.window.kind==='roots')this.store.delete(this.#creationKey(target.selector.key,base.policy));}}});
       const number=target.selector.kind==='discussion'?target.selector.number:this.store.get(this.#mapping(target.selector,base.policy),S.Mapping)?.number;
       if(number)this.#reads.identify(group,'discussion:'+number);
       return read.then(entry=>entry.value);
@@ -204,6 +212,7 @@ export class RepositoryEngine {
   }
   async page(r:R.PageRequest,base:RepositoryContext):Promise<ReadValue<WindowPage>>{
     const w=r.config,p=base.policy;
+    let missing:{id?:string;number:number}|undefined;
     const load=async():Promise<WindowPage>=>this.#publicAcquisition(base,w.origin,async token=>{
       const credential=()=>Promise.resolve(token);
       const resolved=await this.#resolveSelection(base,w,credential);
@@ -214,10 +223,20 @@ export class RepositoryEngine {
       const read='replyPrefetch'in r.read?{...r.read,replyPrefetch:Math.min(r.read.replyPrefetch,p.maxReplyPrefetch)}:r.read;
       this.#remember(w,resolved.selection.number);
       const page=await base.client.page(resolved.selection,{read,selector:w.selector,ttl:p.countCacheMs,profiles:Object.keys(p.ranking?.profiles??{}),html:r.providerHTML},await credential());
+      if(page.metadata?.unavailable)missing=resolved.selection;
       return page;
     });
     const key=JSON.stringify(['page',p.categoryId,w.selector,r.read,r.providerHTML]);
-    return this.#reads.read(key,this.#group(w),p.displayCacheMs,load,{fresh:r.fresh,retention:p.outageRetentionMs,accept:page=>this.#seedPage(base,w,page)});
+    return this.#reads.read(key,this.#group(w),p.displayCacheMs,load,{fresh:r.fresh,retention:p.outageRetentionMs,requestId:base.client.requestId,accept:page=>{
+      if(missing&&w.selector.kind==='page'){
+        const mappingKey=this.#mapping(w.selector,p),mapped=this.store.get(mappingKey,S.Mapping);
+        if(mapped&&mapped.id===missing.id&&mapped.number===missing.number){
+          this.store.delete(mappingKey);this.#reads.invalidate([this.#group(w),'discussion:'+mapped.number]);
+          console.info(JSON.stringify({event:'public_mapping',requestId:base.client.requestId,outcome:'withdrawn',number:mapped.number,observedAt:page.observedAt}));
+        }
+      }
+      this.#seedPage(base,w,page);
+    }});
   }
   async info(input:R.InfoRequest,base:RepositoryContext){const p=base.policy;return {value:{repo:input.repo,repoId:this.#repositoryId!,category:p.category,categoryId:p.categoryId,defaultCommentOrder:p.defaultCommentOrder,profiles:Object.keys(p.ranking?.profiles??{})},expires:this.store.now()+p.displayCacheMs};}
   async counts(input:R.CountsRequest,base:RepositoryContext){
@@ -339,7 +358,6 @@ export class RepositoryEngine {
                 if(effect.patch){effect.patch.observedAt=observedAt;const invalidatedCounts:CountTarget[]=[];if((action.type==='comment'||action.type==='delete')&&!parentId&&rootCount===undefined)invalidatedCounts.push(this.#rootTarget(w));if((action.type==='comment'||action.type==='delete')&&parentId&&replyCount===undefined)invalidatedCounts.push({selector:w.selector,window:{kind:'replies',parentId}});if(invalidatedCounts.length)effect.patch.invalidatedCounts=invalidatedCounts;if(rootCount!==undefined)effect.patch.roots={...effect.patch.roots,count:observeCount(this.#rootTarget(w),rootCount,{id:a.discussion.id,number:a.discussion.number},observedAt,base.policy.countCacheMs)};if(replyCount!==undefined&&parentId)effect.patch.replies={...effect.patch.replies,[parentId]:{...effect.patch.replies?.[parentId],count:observeCount({selector:w.selector,window:{kind:'replies',parentId}},replyCount,{id:a.discussion.id,number:a.discussion.number},observedAt,base.policy.countCacheMs)}};}
                 if (selected.created) effect.patch={...effect.patch,metadata:{thread:selected.created.thread},metadataObservedAt:selected.created.observedAt};
                 this.store.put(receiptKey, S.Receipt, {owner,fingerprint,result:effect}, expires);
-                this.#applyEffect(w,a.discussion.number,effect);
             }
             catch (error) {
                 if (error instanceof AppError && [400, 401, 403, 404, 429].includes(error.status)) {
@@ -350,6 +368,11 @@ export class RepositoryEngine {
                 throw new AppError(502,'WRITE_UNCERTAIN','GitHub may have saved this change. Check the discussion before submitting it again.',undefined,'unknown');
             }
 
+            try{this.#applyEffect(w,a.discussion.number,effect);}
+            catch(error){
+              console.error(JSON.stringify({event:'public_effect_failed',requestId:base.client.requestId,number:a.discussion.number,code:error instanceof AppError?error.code:'STORAGE'}));
+              try{this.#invalidate(w,a.discussion.number);}catch{/* Durable confirmation remains authoritative even if cache storage is unavailable. */}
+            }
             if (action.type === 'reaction' && !parentId && action.subject.kind === 'comment') {
                 const count = effect.patch?.reactions?.[effect.id]?.[action.reaction]?.count;
                 if (count !== undefined) try { this.#ranker(w.repo)?.reaction(a.discussion.id, effect.id, action.reaction, count); }

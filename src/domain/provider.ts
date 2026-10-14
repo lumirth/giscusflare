@@ -6,7 +6,7 @@ import {Creation} from '../contracts/storage.js';
 import type { Store } from './store.js';
 const Deadline = v.strictObject({ until: v.number(),unavailable:v.optional(v.boolean()) });
 export interface ProviderPermit { id: string; resource: string }
-export interface ProviderFeedback { retryAfter?: number; remaining?: number; reset?: number; secondary?: boolean;unavailable?:boolean }
+export interface ProviderFeedback { retryAfter?: number; remaining?: number; reset?: number; secondary?: boolean;unavailable?:boolean;requestId?:string }
 export interface Renewal {token:v.InferOutput<typeof OAuthToken>;observedAt:number}
 export interface ProviderCoordination {
   renew(refreshToken:string,requestId?:string):Promise<Result<Renewal>>;
@@ -70,12 +70,14 @@ export class ProviderGate {
       const key = 'cooldown:' + (feedback.secondary ? 'all' : permit.resource);
       const previous=this.store.get(key,Deadline),cooldown=previous&&previous.until>=until?previous:{until,unavailable:Boolean(feedback.unavailable)};
       this.store.put(key,Deadline,cooldown,cooldown.until);
-      console.warn(JSON.stringify({event:'provider_cooldown',resource:permit.resource,secondary:Boolean(feedback.secondary),unavailable:Boolean(cooldown.unavailable),until:cooldown.until}));
+      console.warn(JSON.stringify({event:'provider_cooldown',requestId:feedback.requestId,resource:permit.resource,secondary:Boolean(feedback.secondary),unavailable:Boolean(cooldown.unavailable),until:cooldown.until}));
     }
   }
 }
-export async function admitted<T>(coordination: ProviderCoordination, scope: string, resource: string, action: (feedback: ProviderFeedback) => Promise<T>,priority:'interactive'|'background'='interactive'): Promise<T> {
-  const permit = unwrap(await coordination.begin(scope, resource,priority)), feedback: ProviderFeedback = {};
+export async function admitted<T>(coordination: ProviderCoordination, scope: string, resource: string, action: (feedback: ProviderFeedback) => Promise<T>,priority:'interactive'|'background'='interactive',requestId?:string): Promise<T> {
+  const admission=await coordination.begin(scope,resource,priority);
+  if(!admission.ok)console.info(JSON.stringify({event:'provider_admission',requestId,authority:scope.split(':')[0],resource,outcome:'deferred',code:admission.error.code,retryAfter:admission.error.retryAfter}));
+  const permit = unwrap(admission), feedback: ProviderFeedback = {requestId};
   try { return await action(feedback); }
   finally {
     try { await coordination.finish(scope, permit, feedback); }

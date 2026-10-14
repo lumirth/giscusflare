@@ -10,7 +10,7 @@ const origin = `http://127.0.0.1:${port}`;
 const blog = `http://127.0.0.1:${blogPort}`;
 const service = await nativeService({ origin, blog, assets: publicAssets(true), repositories: { 'example/comments': { repositoryId: 'R_fixture', installationId: 123, categoryId: 'CAT_fixture', origins: [blog], category: 'Announcements', defaultCommentOrder: 'oldest', customThemeOrigins: ['https://themes.example'], ranking: { profiles: { popular: { weights: { THUMBS_UP: 1 }, tieBreak: 'oldest' } } } } } });
 if(process.env.DEMO_OAUTH_COOLDOWN){
-  service.github.refusals.set('/login/oauth/access_token',[{status:429,retryAfter:5,message:'Access to this site has been restricted. Please wait a few minutes before you try again.'}]);
+  service.github.refusals.set('/login/oauth/access_token',[{status:429,retryAfter:5,consumeCode:true,message:'Access to this site has been restricted. Please wait a few minutes before you try again.'}]);
   service.github.refusals.set('/user',[{status:503,retryAfter:1,message:'Temporarily unavailable'}]);
 }
 const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));

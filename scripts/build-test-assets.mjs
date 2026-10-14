@@ -6,11 +6,11 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 await mkdir(resolve(root, 'dist'), { recursive: true });
 await build({
   absWorkingDir: root,
-  entryPoints: ['src/browser/auth-window.ts'], outfile: 'dist/auth-window-demo.js',
+  entryPoints: ['src/browser/auth-window.ts','src/browser/auth-complete.ts'], outdir: 'dist',entryNames:'[name]-demo',
   bundle: true, platform: 'browser', target: 'es2022', format: 'esm', minify: true,
   plugins: [{ name: 'local-authorization-only', setup(builder) {
     builder.onResolve({ filter: /^\.\/navigation\.js$/ }, args => {
-      if (args.importer.endsWith('/auth-window.ts')) return { path: resolve(root, 'test/navigation-demo.ts') };
+      if (/\/auth-(?:window|complete)\.ts$/.test(args.importer)) return { path: resolve(root, 'test/navigation-demo.ts') };
       return null;
     });
   } }]
