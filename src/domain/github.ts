@@ -83,7 +83,7 @@ async function githubText(url: string, init: RequestInit, maximum = 4 * 1024 * 1
         let envelope: { message?: unknown; error?: unknown; errors?: {type?: string;resource?: string;field?: string;code?: string}[] } = {};
         try { envelope = JSON.parse(body); } catch { /* Non-JSON failure is classified by HTTP status. */ }
         const graphqlLimited = (Array.isArray(envelope.errors)?envelope.errors:[]).some(error => error.type === 'RATE_LIMITED');
-        const secondary = remaining !== 0 && (response.status === 429 || response.status === 403 && (retry !== null || /secondary rate|abuse detection/i.test(String(envelope.message ?? ''))));
+        const secondary = remaining !== 0 && (graphqlLimited || response.status === 429 || response.status === 403 && (retry !== null || /secondary rate|abuse detection/i.test(String(envelope.message ?? ''))));
         if (graphqlLimited || response.status === 429 || response.status === 403 && (remaining === 0 || secondary)) {
             const seconds = retry ? Number(retry) || Math.ceil((Date.parse(retry) - Date.now()) / 1000) : remaining === 0 && reset > Date.now() ? Math.ceil((reset - Date.now()) / 1000) : 60;
             feedback.retryAfter = Math.min(3600, Math.max(1, seconds)); feedback.secondary = secondary;
@@ -91,7 +91,8 @@ async function githubText(url: string, init: RequestInit, maximum = 4 * 1024 * 1
         const redact = (value: unknown) => typeof value === 'string' ? value.replace(/(?:gh[opsur]_[A-Za-z0-9_]+|Bearer\s+\S+)/g, '<redacted>').slice(0, 1000) : undefined;
         diagnostic.message = redact(envelope.message); diagnostic.oauthError = redact(envelope.error);
         diagnostic.errors = (Array.isArray(envelope.errors)?envelope.errors:[]).slice(0, 10).map(({type,resource,field,code}) => ({type,resource,field,code}));
-        if (response.ok) return body;
+        const mutation = path === '/graphql' && typeof init.body === 'string' && String(JSON.parse(init.body).query ?? '').trimStart().startsWith('mutation');
+        if (response.ok && !(graphqlLimited && !mutation)) return body;
         if (feedback.retryAfter) throw new AppError(429, 'RATE_LIMIT', 'GitHub is limiting requests. Try again later.', feedback.retryAfter,'not-issued',feedback.secondary?'secondary':'primary');
         if (response.status === 401) throw new AppError(401, 'GITHUB_AUTH', 'GitHub authorization is no longer valid. Sign in again.');
         if (response.status === 403) throw new AppError(403, 'PERMISSION', 'GitHub did not permit this operation.');

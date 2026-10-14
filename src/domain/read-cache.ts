@@ -79,6 +79,9 @@ export class ReadCache {
           if (current) return { value: current.value as T, expires: current.expires };
           throw new AppError(503, 'UPSTREAM', 'The conversation changed while refreshing. Try again.', 1);
         }
+        const newer = this.#get(key);
+        if (newer && Number((newer.value as { observedAt?: number }).observedAt) > observed)
+          return { value: newer.value as T, expires: newer.expires };
         options.accept?.(value);
         if (ttl > 0) this.#put(key, group, value, expires, observed + Math.max(ttl, options.retention ?? 3600000), cached?.alias ?? this.#aliases.get(group) ?? null);
         console.info(JSON.stringify({ event: 'public_acquisition', group, outcome: 'updated', observedAt: observed }));
