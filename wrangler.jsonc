@@ -62,7 +62,8 @@
     "REPOSITORIES": {}
   },
   "observability": {
-    "enabled": true
+    "enabled": true,
+    "redact_query_string": true
   },
   "build": {
     "command": "node scripts/wrangler-build.mjs"
