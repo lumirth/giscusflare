@@ -36,13 +36,14 @@ export class ReadCache {
       this.store.sql.exec('DELETE FROM public_reads WHERE key=?', String(row.key)); total -= Number(row.bytes);
     }
   }
-  identify(group: string, alias: string): void { this.#aliases.set(group,alias); this.store.sql.exec('UPDATE public_reads SET alias=? WHERE group_key=? AND alias IS NOT ?', alias, group, alias); }
+  identify(group: string, alias: string): void { if([...this.#pendingGroups.values()].includes(group))this.#aliases.set(group,alias); this.store.sql.exec('UPDATE public_reads SET alias=? WHERE group_key=? AND alias IS NOT ?', alias, group, alias); }
   #rows(groups?:readonly string[]){
     const where=groups?.length?' WHERE group_key IN ('+groups.map(()=>'?').join(',')+') OR alias IN ('+groups.map(()=>'?').join(',')+')':'';
     return [...this.store.sql.exec('SELECT * FROM public_reads'+where,...(groups?[...groups,...groups]:[]))];
   }
   #advance(groups?:readonly string[]):void{
     const pending=new Set(this.#pendingGroups.values());
+    if(!pending.size)return;
     const affected=new Set(this.#rows(groups).map(row=>String(row.group_key)).filter(group=>pending.has(group)));
     for(const group of this.#pendingGroups.values())if(!groups||groups.includes(group)||Boolean(this.#aliases.get(group)&&groups.includes(this.#aliases.get(group)!)))affected.add(group);
     for(const group of affected)this.#versions.set(group,(this.#versions.get(group)??0)+1);
