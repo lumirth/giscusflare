@@ -20,7 +20,21 @@ const { countKey } = await import(pathToFileURL(join(packageDirectory, 'dist/bro
 const rootTarget = key => ({selector:{kind:'page',key},window:{kind:'roots'}});
 const articleKey = countKey(rootTarget('article')), missingKey = countKey(rootTarget('missing')), disappearingKey = countKey(rootTarget('disappearing'));
 const entry = join(consumer, 'worker.ts'), contentEntry = join(consumer, 'content.ts');
-await writeFile(entry, "export { default, Repository } from 'giscusflare/worker';\n");
+await writeFile(entry, `import service, { Repository as CoreRepository } from 'giscusflare/worker';
+export class Repository extends CoreRepository {
+  constructor(state,env){super(state,env);this.fixtureStorage=state.storage;}
+  async cacheFault(enabled){
+    this.fixtureStorage.sql.exec(enabled
+      ? "CREATE TRIGGER fixture_cache_failure BEFORE INSERT ON public_reads BEGIN SELECT RAISE(FAIL,'Fixture cache storage unavailable'); END"
+      : 'DROP TRIGGER IF EXISTS fixture_cache_failure');
+  }
+}
+export default {fetch(request,env,context){
+  const url=new URL(request.url);
+  if(url.pathname==='/__fixture/cache')return env.REPOSITORY_STORE.get(env.REPOSITORY_STORE.idFromName('v3:12345:R_fixture')).cacheFault(url.searchParams.has('fail')).then(()=>new Response('ok'));
+  return service.fetch(request,env,context);
+}};
+`);
 const writeConsumer = revision => writeFile(contentEntry, `import { createContentWorker } from 'giscusflare/content/worker';
 export default createContentWorker({ revision: ${JSON.stringify(revision)}, prepare(input) {
   if (input.markdown === 'Failed isolated body') throw Error('Fixture interpretation failed');
@@ -197,6 +211,14 @@ try {
     const optionalReplay = await json(await contribute(optionalCreation, cap, optionalKey));
     assert.equal(optionalReplay.id, optionalAck.id, 'An optional field error does not turn a confirmed receipt into uncertainty');
     assert.equal(discussion.comments.filter(comment => comment.body === optionalCreation.body).length, 1, 'Confirmed receipt recovery cannot repeat the independently observed provider effect');
+    await service.fetch(origin+'/__fixture/cache?fail');
+    const cacheFaultKey=key(),cacheFaultAction={type:'comment',body:'Confirmed while disposable cache storage fails'};
+    let cacheFaultAck;
+    try{cacheFaultAck=await json(await contribute(cacheFaultAction,cap,cacheFaultKey));}
+    finally{await service.fetch(origin+'/__fixture/cache');}
+    const cacheFaultReplay=await json(await contribute(cacheFaultAction,cap,cacheFaultKey));
+    assert.equal(cacheFaultReplay.id,cacheFaultAck.id,'Cache storage failure cannot relabel a confirmed effect or repeat its external write');
+    assert.equal(discussion.comments.filter(comment=>comment.body===cacheFaultAction.body).length,1);
     const reply = await json(await contribute({ type: 'comment', body: 'A native reply', replyToId: ack.id }, cap));
     assert.equal(root.replies.find(comment => comment.id === reply.id)?.body, 'A native reply');
     await json(await contribute({ type: 'edit', id: ack.id, body: 'Revised contribution' }, cap));
@@ -614,7 +636,8 @@ try {
     const beforeThrottle=service.github.calls.length,realProvider=service.github.fetch;
     service.github.fetch=async request=>new URL(request.url).pathname==='/graphql'?Response.json({message:'Secondary rate limit'},{status:429,headers:{'Retry-After':'1','X-GitHub-Request-Id':'fixture-throttle'}}):realProvider(request);
     try{
-      const fallback=await json(await read('page',{config:coldConfig,read:{kind:'roots',order:'oldest',replyPrefetch:0},fresh:true}));
+      await json(await read('page',{config:coldConfig,read:{kind:'roots',order:'oldest',replyPrefetch:0},fresh:true}),429);
+      const fallback=await json(await read('page',{config:coldConfig,read:{kind:'roots',order:'oldest',replyPrefetch:0}}));
       assert.equal(fallback.observedAt,reconciled.observedAt,'A throttle retains reading without renewing its observation age');
       await service.restart();
       const coldFailure=await json(await read('page',{config:{...config,selector:{kind:'page',key:'throttled-cold'}},read:{kind:'roots',order:'oldest',replyPrefetch:0},fresh:true}),429);
@@ -624,6 +647,56 @@ try {
     await new Promise(resolve=>setTimeout(resolve,1100));
     const recoveredReading=await json(await read('page',{config:coldConfig,read:{kind:'roots',order:'oldest',replyPrefetch:0},fresh:true}));
     assert.equal(recoveredReading.nodes[external.id].body,external.body);
+    const recoveryConfig={...config,selector:{kind:'page',key:'recovery-view'}};
+    const recoveryThread=service.github.addThread('recovery-view');service.github.addComment(recoveryThread,'Reading with an independently changing provider');
+    let readingCapability='';
+    const readingTransport={request:async(operation,input)=>{
+      const response=await read(operation,input,readingCapability),body=await response.json();
+      if(!response.ok)throw Object.assign(new Error(body.error.message),body.error);
+      return body;
+    }};
+    const reading=new PageModel(recoveryConfig,readingTransport),otherReading=new PageModel(recoveryConfig,readingTransport);
+    try{
+      await reading.start();
+      const beforeSort=[...reading.document.roots.ids],draft=reading.writing().show();draft.update('Keep my draft through provider failures');
+      service.github.refusals.set('/graphql',[{status:503,retryAfter:1,message:'Unavailable'}]);
+      await reading.setOrder('newest');
+      assert.equal(reading.order,'oldest','A failed requested view restores the sort belonging to the displayed conversation');
+      assert.deepEqual(reading.document.roots.ids,beforeSort);
+      await new Promise(resolve=>setTimeout(resolve,1100));
+      readingCapability=await signIn('denied-reader');
+      service.github.fetch=async request=>new URL(request.url).pathname==='/graphql'?new Response('<html>Access to this site has been restricted.</html>',{status:403,headers:{'Content-Type':'text/html'}}):realProvider(request);
+      await reading.revalidate();
+      assert.deepEqual(reading.document.roots.ids,beforeSort,'A transport denial does not establish public content withdrawal');
+      assert.equal((await json(await read('page',{config:recoveryConfig}))).nodes[recoveryThread.comments[0].id].body,recoveryThread.comments[0].body);
+      readingCapability='';service.github.fetch=realProvider;
+      await otherReading.start();
+      service.github.discussions=service.github.discussions.filter(thread=>thread!==recoveryThread);
+      await reading.revalidate();
+      assert.deepEqual(reading.document.roots.ids,[],'Successful absence withdraws the previously displayed conversation');
+      assert.deepEqual(reading.document.nodes,{});
+      assert.equal(draft.text,'Keep my draft through provider failures');
+      const replacement=service.github.addThread('recovery-view');service.github.addComment(replacement,'Replacement discovered after a missed webhook');
+      await reading.restart();
+      assert.equal(reading.document.metadata.thread.id,replacement.id);
+      await otherReading.restart();
+      assert.equal(otherReading.document.nodes[replacement.comments[0].id]?.body,replacement.comments[0].body,'An already-open reader adopts the complete replacement window on deliberate restart');
+      assert.equal(Object.values(reading.document.nodes)[0].body,replacement.comments[0].body,'Demand reconciliation repairs a missing mapping without webhook delivery');
+    }finally{reading.dispose();otherReading.dispose();service.github.fetch=realProvider;}
+    const discoveryConfig={...config,selector:{kind:'page',key:'current-before-creation'}};
+    const creationReader=await signIn('discovery-reader');
+    await json(await read('page',{config:discoveryConfig}));
+    const discovered=service.github.addThread('current-before-creation');
+    service.github.fetch=async request=>{
+      const payload=request.method==='POST'&&new URL(request.url).pathname==='/graphql'?await request.clone().json():null;
+      if(payload?.query.startsWith('query CommentCounts'))return Response.json({message:'Primary limit'},{status:403,headers:{'X-RateLimit-Remaining':'0','X-RateLimit-Reset':String(Math.ceil(Date.now()/1000)+1)}});
+      return realProvider(request);
+    };
+    try{
+      await json(await post('contribute',{config:discoveryConfig,key:key(),action:{type:'comment',body:'Wait for current discovery'},creation:{description:discovered.title}},creationReader),429);
+      assert.equal(service.github.discussions.filter(thread=>thread.title===discovered.title).length,1,'Retained negative discovery cannot authorize a second discussion');
+    }finally{service.github.fetch=realProvider;}
+    await new Promise(resolve=>setTimeout(resolve,1100));
     // A temporary renewal refusal must preserve the actual single-use credential family.
     const previousLifetime=service.github.accessLifetime;service.github.accessLifetime=1;
     const renewing=await signIn('renewable-reader');service.github.accessLifetime=previousLifetime;
@@ -683,6 +756,18 @@ try {
       assert.equal((await call('access',{config:registeredConfig,ids:[]},openCap)).status,401,'Open-hosted logout cleans the same registered actor');
     } finally { await open.dispose(); }
     report.checks.push({workflow:'open-hosting explicit registration, authorization return, verified identity, contribution, local preview and cleanup through the actual Worker',status:'passed'});
+    service.github.accessLifetime=1;
+    const restrictedRenewal=await signIn('restricted-renewal');service.github.accessLifetime=previousLifetime;
+    const rotationsBeforeDenial=service.github.refreshes;
+    service.github.fetch=async request=>new URL(request.url).pathname==='/login/oauth/access_token'?new Response('<html>Access to this site has been restricted.</html>',{status:403,headers:{'Content-Type':'text/html'}}):realProvider(request);
+    try{
+      const deniedRenewal=await json(await post('access',{config:coldConfig,ids:[]},restrictedRenewal),403);
+      assert.equal(deniedRenewal.error.code,'PROVIDER_DENIED');
+      const remembered=await json(await post('session',{repo:config.repo,origin:config.origin},restrictedRenewal));
+      assert.equal(remembered.principal,'U_restricted-renewal');assert.equal(remembered.needsAuthorization,false,'A generic temporary OAuth denial preserves the renewable account');
+      await json(await post('access',{config:coldConfig,ids:[]},restrictedRenewal),503);
+      assert.equal(service.github.refreshes,rotationsBeforeDenial,'Known provider cooldown performs no extra token exchange');
+    }finally{service.github.fetch=realProvider;}
     report.status = 'passed';
 }
 catch (error) {

@@ -67,17 +67,19 @@ export class ReadCache {
     }
   }
   seed(key: string, group: string, value: unknown, expires: number, retention: number, alias?: string): void { const existing=this.#get(key);if(existing&&Number((existing.value as {observedAt:number}).observedAt)>=Number((value as {observedAt:number}).observedAt))return;this.#put(key, group, value, expires, Math.max(expires, this.store.now() + retention), alias ?? null); }
-  async read<T>(key: string, group: string, ttl: number, load: () => Promise<T>, options: { fresh?: boolean; retention?: number; accept?:(value:T)=>void } = {}): Promise<ReadValue<T>> {
+  async read<T>(key: string, group: string, ttl: number, load: () => Promise<T>, options: { fresh?: boolean; retention?: number; accept?:(value:T)=>void;requestId?:string } = {}): Promise<ReadValue<T>> {
     const cached = this.#get(key) as Observation & { value: T } | undefined;
-    if (cached && !options.fresh && cached.expires > this.store.now()) return { value: cached.value, expires: cached.expires };
+    const log=(outcome:string,entry?:ReadValue<unknown>,code?:string)=>console.info(JSON.stringify({event:'public_cache',requestId:options.requestId,group,outcome,observedAt:(entry?.value as {observedAt?:number})?.observedAt,expires:entry?.expires,code}));
+    if (cached && !options.fresh && cached.expires > this.store.now()) {log('hit',cached);return { value: cached.value, expires: cached.expires };}
     let pending = this.#pending.get(key) as Promise<ReadValue<T>> | undefined;
+    log(pending?'coalesced':'miss',cached);
     if (!pending) {
-      const revision = this.#versions.get(group)??0;
+      const revision = this.#versions.get(group)??0,started=this.store.now();
       pending = Promise.resolve().then(load).then(value => {
         const observed = Number((value as { observedAt?: number })?.observedAt ?? this.store.now()), expires = observed + ttl;
         if (revision !== (this.#versions.get(group)??0)) {
           const current = this.#get(key);
-          if (current) return { value: current.value as T, expires: current.expires };
+          if (current && Number((current.value as {observedAt?:number}).observedAt)>=started) return { value: current.value as T, expires: current.expires };
           throw new AppError(503, 'UPSTREAM', 'The conversation changed while refreshing. Try again.', 1);
         }
         const newer = this.#get(key);
@@ -85,20 +87,17 @@ export class ReadCache {
           return { value: newer.value as T, expires: newer.expires };
         options.accept?.(value);
         if (ttl > 0) this.#put(key, group, value, expires, observed + Math.max(ttl, options.retention ?? 3600000), cached?.alias ?? this.#aliases.get(group) ?? null);
-        console.info(JSON.stringify({ event: 'public_acquisition', group, outcome: 'updated', observedAt: observed }));
+        log('updated',{value,expires});
         return { value, expires };
       }).catch(error => {
-        if (error instanceof AppError && (error.status === 429 || error.status >= 500) && error.code !== 'CONFIGURATION' && cached && cached.retained > this.store.now() && revision === (this.#versions.get(group)??0)) {
-          console.info(JSON.stringify({ event: 'public_acquisition', group, outcome: 'retained', code: error.code }));
-          return { value: cached.value, expires: cached.expires };
-        }
-        if (error instanceof AppError && [401, 403, 404].includes(error.status)) this.invalidate([group,...(cached?.alias?[cached.alias]:[])]);
-        throw error;
+        if (revision===(this.#versions.get(group)??0)&&error instanceof AppError && [401, 403, 404,410].includes(error.status)&&error.code!=='PROVIDER_DENIED') {this.invalidate([group,...(cached?.alias?[cached.alias]:[])]);log('withdrawn',undefined,error.code);}
+        log('failed',undefined,error instanceof AppError?error.code:'INTERNAL');throw error;
       }).finally(() => { this.#pending.delete(key);this.#pendingGroups.delete(key);if(![...this.#pendingGroups.values()].includes(group)){this.#versions.delete(group);this.#aliases.delete(group);} });
       this.#pending.set(key, pending);this.#pendingGroups.set(key,group);
     }
     if (cached && !options.fresh) {
-      this.background(pending.catch(error => console.warn(JSON.stringify({ event: 'public_refresh_failed', code: error instanceof AppError ? error.code : 'INTERNAL' }))));
+      log('retained',cached);
+      this.background(pending.catch(error => console.warn(JSON.stringify({ event: 'public_refresh_failed',requestId:options.requestId, code: error instanceof AppError ? error.code : 'INTERNAL' }))));
       return { value: cached.value, expires: cached.expires };
     }
     return pending;

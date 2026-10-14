@@ -98,6 +98,8 @@ try {
             const retry=page.getByRole('button',{name:'Retry sign-in',exact:true});
             await expect(retry).toBeVisible();await expect(retry).toBeDisabled();
             await expect.poll(()=>new URL(page.url()).searchParams.has('code')).toBe(false);
+            await page.reload();
+            await expect(retry).toBeVisible();await expect(retry).toBeDisabled();
             // A second reader stays on the service during the shared cooldown and can return anonymously.
             await visitor.getByRole('button',{name:'Sign in with GitHub',exact:true}).click();
             await expect(visitor).toHaveURL(/\/auth\/window\?/);
@@ -127,6 +129,8 @@ try {
           await expect.poll(() => capabilities.size).toBeGreaterThan(0);
           capability = [...capabilities][0];
           const callbacks = await Promise.all(callbackBodies);
+          const authorizations=requests.filter(request=>new URL(request.url).pathname==='/__demo/authorize').map(request=>new URL(request.url).searchParams.get('code_challenge'));
+          assert.equal(new Set(authorizations).size,mode==='native'?2:1,'Upstream exchange refusal starts a fresh code; identity recovery never redeems an issued code again');
           assert.ok(callbacks.length > 0, 'the actual callback document was observed');
           for (const secret of [...proofs, ...capabilities]) for (const html of callbacks) assert.ok(!html.includes(secret), 'callback document contains neither capability nor private proof');
           for (const capability of capabilities) for (const request of requests) assert.ok(!request.url.includes(capability) && !request.referer.includes(capability) && !request.body.includes(capability), 'the preallocated capability never travels in URLs, referrers or request bodies');
@@ -145,6 +149,15 @@ try {
           assert.deepEqual(await roots.evaluateAll(cards => cards.map(card => card.id)), captured, 'A score correction does not move the reader through a new traversal');
           await surface.getByRole('button', { name: 'Oldest', exact: true }).click();
           await expect(roots.nth(1)).toContainText('Hono');
+          const displayed=await roots.evaluateAll(cards=>cards.map(card=>card.id));
+          const failedSort=await fixture.hold('/api/v7/page?*',async(route,gate)=>{await gate.wait();await route.abort('failed');});
+          await surface.getByRole('button',{name:'Newest',exact:true}).click();
+          await expect.poll(()=>failedSort.arrived).toBeGreaterThan(0);
+          await failedSort.dispose();
+          await expect(surface.getByRole('button',{name:'Oldest',exact:true})).toHaveAttribute('aria-pressed','true');
+          assert.deepEqual(await roots.evaluateAll(cards=>cards.map(card=>card.id)),displayed,'A failed sort retains the reading traversal belonging to the selected order');
+          await surface.getByRole('alert').getByRole('button',{name:'Retry',exact:true}).click();
+          await expect(surface.getByRole('alert')).toHaveCount(0);
           await surface.getByRole('button', { name: 'popular', exact: true }).click();
           await expect(roots.first()).toContainText('Try posting a comment or replying here.');
           await expect(roots.nth(1)).toContainText('Conversation 21');
