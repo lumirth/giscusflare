@@ -90,7 +90,7 @@ try {
           }
           const account = mode === 'native' ? await fixture.hold('/api/v7/access', async (route, gate) => { await gate.wait(); await platformClient(route); }) : undefined;
           const visitor=mode==='native'?await context.newPage():undefined;
-          if(visitor){await visitor.goto(blog+path);await expect(visitor.getByText('Try posting a comment or replying here.',{exact:true})).toBeVisible();}
+          if(visitor){await visitor.clock.install();await visitor.goto(blog+path);await expect(visitor.getByText('Try posting a comment or replying here.',{exact:true})).toBeVisible();}
           await composer.getByRole('button', { name: 'Sign in with GitHub', exact: true }).click();
           if(mode==='native'){
             await expect(page.getByRole('link',{name:'Return to comments',exact:true})).toBeVisible();
@@ -101,6 +101,8 @@ try {
             await visitor.getByRole('button',{name:'Sign in with GitHub',exact:true}).click();
             await expect(visitor).toHaveURL(/\/auth\/window\?/);
             await expect(visitor.getByRole('button',{name:'Retry sign-in',exact:true})).toBeDisabled();
+            await visitor.clock.fastForward(600001);
+            await expect(visitor.getByText('This sign-in expired. Return to the comments and start again.',{exact:true})).toBeVisible();
             await visitor.getByRole('link',{name:'Return to comments',exact:true}).click();
             await expect(visitor.getByText('Try posting a comment or replying here.',{exact:true})).toBeVisible();
             await expect(visitor.getByRole('button',{name:'Sign in with GitHub',exact:true})).toBeVisible();

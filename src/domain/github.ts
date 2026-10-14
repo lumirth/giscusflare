@@ -85,7 +85,8 @@ async function githubText(url: string, init: RequestInit, maximum = 4 * 1024 * 1
         const graphqlLimited = (Array.isArray(envelope.errors)?envelope.errors:[]).some(error => error.type === 'RATE_LIMITED');
         const secondary = remaining !== 0 && (graphqlLimited || response.status === 429 || response.status === 403 && (retry !== null || /secondary rate|abuse detection/i.test(String(envelope.message ?? ''))));
         const rateLimited=graphqlLimited||response.status===429||response.status===403&&(remaining===0||secondary);
-        if (rateLimited || response.status>=500&&retry!==null) {
+        const oauthUnavailable=authority==='oauth'&&['temporarily_unavailable','server_error'].includes(String(envelope.error??''));
+        if (rateLimited || response.status>=500&&retry!==null || oauthUnavailable) {
             const seconds = retry ? Number(retry) || Math.ceil((Date.parse(retry) - Date.now()) / 1000) : remaining === 0 && reset > Date.now() ? Math.ceil((reset - Date.now()) / 1000) : 60;
             feedback.retryAfter = Math.min(3600, Math.max(1, seconds)); feedback.secondary = rateLimited&&secondary;
             feedback.unavailable=!rateLimited;
@@ -496,8 +497,8 @@ export class GitHub {
             if (v.is(v.object({ error: v.string() }), raw)) {
                 console.warn(JSON.stringify({event:'oauth_refused',reason:raw.error}));
                 if(['temporarily_unavailable','server_error'].includes(raw.error)){
-                  feedback.retryAfter=60;feedback.unavailable=true;
-                  throw new AppError(503,'UPSTREAM','GitHub authorization is temporarily unavailable.',60);
+                  feedback.retryAfter??=60;feedback.unavailable=true;
+                  throw new AppError(503,'UPSTREAM','GitHub authorization is temporarily unavailable.',feedback.retryAfter);
                 }
                 throw new AppError(401,'GITHUB_AUTH','GitHub did not authorize this session. Sign in again.');
             }

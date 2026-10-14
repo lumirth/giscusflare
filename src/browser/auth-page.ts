@@ -16,10 +16,10 @@ export function retrySignIn(seconds:number,run:()=>void|Promise<void>,expires:nu
   button.type='button';button.textContent='Retry sign-in';button.disabled=true;
   document.getElementById('auth-return')!.before(button);
   const update=()=>{
-    if(Date.now()>=expires){button.remove();status.textContent='This sign-in expired. Return to the comments and start again.';return 0;}
+    if(Date.now()>=expires){button.remove();status.textContent='This sign-in expired. Return to the comments and start again.';return false;}
     const remaining=Math.max(0,Math.ceil((until-Date.now())/1000));
     status.textContent=remaining?'GitHub sign-in is temporarily unavailable. Try again in '+(remaining<60?`${remaining} seconds.`:`${Math.ceil(remaining/60)} minutes.`):'GitHub sign-in is temporarily unavailable. You can try again now.';
-    button.disabled=remaining>0;return remaining;
+    button.disabled=remaining>0;return true;
   };
   update();const timer=setInterval(()=>{if(!update())clearInterval(timer);},250);
   button.addEventListener('click',()=>{clearInterval(timer);if(Date.now()>=expires){update();return;}button.remove();void run();},{once:true});

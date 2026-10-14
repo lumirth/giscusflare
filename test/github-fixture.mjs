@@ -34,7 +34,9 @@ export class FakeGitHub {
   }
   grant(principal){
     const id=++this.grants,access_token='ghu_'+principal+'_'+id,refresh_token='ghr_'+principal+'_'+id;
-    this.accessTokens.set(access_token,{principal,expires:this.now()+this.accessLifetime*1000});this.refreshTokens.set(refresh_token,{principal,access:access_token});
+    this.accessTokens.set(access_token,{principal,expires:this.accessLifetime===null?Number.MAX_SAFE_INTEGER:this.now()+this.accessLifetime*1000});
+    if(this.accessLifetime===null)return {access_token};
+    this.refreshTokens.set(refresh_token,{principal,access:access_token});
     return {access_token,expires_in:this.accessLifetime,refresh_token,refresh_token_expires_in:15552000};
   }
   profile(principal) {

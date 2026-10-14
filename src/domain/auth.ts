@@ -29,7 +29,7 @@ export class Auth {
     this.#purpose = `${config.appId}:${config.clientId}:${repositoryId}`;
   }
   #fields(data: OAuthToken,now=this.store.now()): NonNullable<S.Session['credentials']> {
-    return { accessToken: data.access_token, accessExpires: now + (data.expires_in ? data.expires_in * 1000 : Number.MAX_SAFE_INTEGER),
+    return { accessToken: data.access_token, accessExpires: data.expires_in ? now + data.expires_in * 1000 : Number.MAX_SAFE_INTEGER,
       refreshToken: data.refresh_token || null, refreshExpires: data.refresh_token_expires_in ? now + data.refresh_token_expires_in * 1000 : 0 };
   }
   async prepare(request: C.Input<'authPrepare'>,browserCookie:string): Promise<{ attempt: string; authorizeURL: string }> {
