@@ -128,7 +128,7 @@ export function hostStorage(service: string, repo: string, recovery: WritingStor
         const bytes = Uint8Array.from(atob(location.hash.slice(9).replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
         const value = JSON.parse(new TextDecoder().decode(bytes));
         const stored = read('pending'), url = new URL(location.href);
-        const matched = value.repo === repo && capability(value.attempt) && ['ready','denied'].includes(value.status) && pending(stored) && stored.attempt === value.attempt;
+        const matched = value.repo === repo && capability(value.attempt) && ['ready','denied','failed'].includes(value.status) && pending(stored) && stored.attempt === value.attempt;
         url.hash = matched ? stored.fragment || '' : '';
         history.replaceState(history.state, '', url);
         if (matched) return { handoff: { capability: stored.capability, attempt: stored.attempt, created: stored.created, version: 5, status: value.status }, position: stored };

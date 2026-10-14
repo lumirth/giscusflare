@@ -4,9 +4,9 @@ import {hash} from './crypto.js';
 import {OAuthToken} from '../contracts/github.js';
 import {Creation} from '../contracts/storage.js';
 import type { Store } from './store.js';
-const Deadline = v.strictObject({ until: v.number() });
+const Deadline = v.strictObject({ until: v.number(),unavailable:v.optional(v.boolean()) });
 export interface ProviderPermit { id: string; resource: string }
-export interface ProviderFeedback { retryAfter?: number; remaining?: number; reset?: number; secondary?: boolean }
+export interface ProviderFeedback { retryAfter?: number; remaining?: number; reset?: number; secondary?: boolean;unavailable?:boolean }
 export interface Renewal {token:v.InferOutput<typeof OAuthToken>;observedAt:number}
 export interface ProviderCoordination {
   renew(refreshToken:string,requestId?:string):Promise<Result<Renewal>>;
@@ -46,8 +46,13 @@ export class ProviderGate {
   begin(resource: string,priority:'interactive'|'background'='interactive'): Promise<Result<ProviderPermit>> {
     return result(async () => {
       const now = this.store.now();
-      const shared=this.store.get('cooldown:all',Deadline)?.until??0,until=Math.max(shared,this.store.get('cooldown:'+resource,Deadline)?.until??0);
-      if (until > now) throw new AppError(429, 'RATE_LIMIT', 'GitHub is limiting requests. Try again later.', Math.ceil((until - now) / 1000),'not-issued',shared>now?'secondary':'primary');
+      const shared=this.store.get('cooldown:all',Deadline),local=this.store.get('cooldown:'+resource,Deadline);
+      const cooldown=(shared?.until??0)>=(local?.until??0)?shared:local,until=cooldown?.until??0;
+      if(until>now){
+        const retryAfter=Math.ceil((until-now)/1000);
+        if(cooldown?.unavailable)throw new AppError(503,'UPSTREAM','GitHub is temporarily unavailable. Try again later.',retryAfter);
+        throw new AppError(429,'RATE_LIMIT','GitHub is limiting requests. Try again later.',retryAfter,'not-issued',(shared?.until??0)>now?'secondary':'primary');
+      }
       this.store.sql.exec('CREATE TABLE IF NOT EXISTS provider_permits (id TEXT PRIMARY KEY, expires INTEGER NOT NULL)');
       this.store.sql.exec('DELETE FROM provider_permits WHERE expires<=?', now);
       const active = Number([...this.store.sql.exec('SELECT COUNT(*) AS count FROM provider_permits')][0]?.count ?? 0);
@@ -63,9 +68,9 @@ export class ProviderGate {
     const now = this.store.now(), until = feedback.retryAfter ? now + feedback.retryAfter * 1000 : feedback.remaining === 0 && feedback.reset ? feedback.reset : 0;
     if (until > now) {
       const key = 'cooldown:' + (feedback.secondary ? 'all' : permit.resource);
-      const deadline = Math.max(until, this.store.get(key, Deadline)?.until ?? 0);
-      this.store.put(key, Deadline, { until: deadline }, deadline);
-      console.warn(JSON.stringify({ event: 'provider_cooldown', resource: permit.resource, secondary: Boolean(feedback.secondary), until: deadline }));
+      const previous=this.store.get(key,Deadline),cooldown=previous&&previous.until>=until?previous:{until,unavailable:Boolean(feedback.unavailable)};
+      this.store.put(key,Deadline,cooldown,cooldown.until);
+      console.warn(JSON.stringify({event:'provider_cooldown',resource:permit.resource,secondary:Boolean(feedback.secondary),unavailable:Boolean(cooldown.unavailable),until:cooldown.until}));
     }
   }
 }

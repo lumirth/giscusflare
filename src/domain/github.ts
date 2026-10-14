@@ -84,21 +84,23 @@ async function githubText(url: string, init: RequestInit, maximum = 4 * 1024 * 1
         try { envelope = JSON.parse(body); } catch { /* Non-JSON failure is classified by HTTP status. */ }
         const graphqlLimited = (Array.isArray(envelope.errors)?envelope.errors:[]).some(error => error.type === 'RATE_LIMITED');
         const secondary = remaining !== 0 && (graphqlLimited || response.status === 429 || response.status === 403 && (retry !== null || /secondary rate|abuse detection/i.test(String(envelope.message ?? ''))));
-        if (graphqlLimited || response.status === 429 || response.status === 403 && (remaining === 0 || secondary)) {
+        const rateLimited=graphqlLimited||response.status===429||response.status===403&&(remaining===0||secondary);
+        if (rateLimited || response.status>=500&&retry!==null) {
             const seconds = retry ? Number(retry) || Math.ceil((Date.parse(retry) - Date.now()) / 1000) : remaining === 0 && reset > Date.now() ? Math.ceil((reset - Date.now()) / 1000) : 60;
-            feedback.retryAfter = Math.min(3600, Math.max(1, seconds)); feedback.secondary = secondary;
+            feedback.retryAfter = Math.min(3600, Math.max(1, seconds)); feedback.secondary = rateLimited&&secondary;
+            feedback.unavailable=!rateLimited;
         }
         const redact = (value: unknown) => typeof value === 'string' ? value.replace(/(?:gh[opsur]_[A-Za-z0-9_]+|Bearer\s+\S+)/g, '<redacted>').slice(0, 1000) : undefined;
         diagnostic.message = redact(envelope.message); diagnostic.oauthError = redact(envelope.error);
         diagnostic.errors = (Array.isArray(envelope.errors)?envelope.errors:[]).slice(0, 10).map(({type,resource,field,code}) => ({type,resource,field,code}));
         const mutation = path === '/graphql' && typeof init.body === 'string' && String(JSON.parse(init.body).query ?? '').trimStart().startsWith('mutation');
         if (response.ok && !(graphqlLimited && !mutation)) return body;
-        if (feedback.retryAfter) throw new AppError(429, 'RATE_LIMIT', 'GitHub is limiting requests. Try again later.', feedback.retryAfter,'not-issued',feedback.secondary?'secondary':'primary');
+        if (rateLimited) throw new AppError(429, 'RATE_LIMIT', 'GitHub is limiting requests. Try again later.', feedback.retryAfter,'not-issued',feedback.secondary?'secondary':'primary');
         if (response.status === 401) throw new AppError(401, 'GITHUB_AUTH', 'GitHub authorization is no longer valid. Sign in again.');
         if (response.status === 403) throw new AppError(403, 'PERMISSION', 'GitHub did not permit this operation.');
         if (response.status === 404) throw new AppError(404, 'NOT_FOUND', 'The GitHub resource is not accessible.');
         if ([400, 422].includes(response.status)) throw new AppError(400, 'BAD_INPUT', 'GitHub rejected the request. Check the content or repository settings.');
-        throw new AppError(502, 'UPSTREAM', 'GitHub could not complete the request.', undefined, 'unknown');
+        throw new AppError(502, 'UPSTREAM', 'GitHub could not complete the request.', feedback.retryAfter, 'unknown');
     } catch (error) {
         if (error instanceof AppError) throw error;
         throw new AppError(502, 'UPSTREAM', 'The connection to GitHub ended before a complete response arrived.', undefined, 'unknown');
@@ -503,6 +505,9 @@ export class GitHub {
                 throw error;
             throw new AppError(502, 'OAUTH', 'GitHub sign-in failed. Start again.');
         }
+    }
+    async authorizationAvailable():Promise<void>{
+      if(this.provider)await admitted(this.provider,'oauth:'+this.config.clientId,'oauth',async()=>{});
     }
     /** Authentication retains immutable identity; Page owns current display. */
     async principal(token:string):Promise<string>{return (await this.graph(v.object({viewer:v.object({id:NodeID})}),'query ViewerIdentity{viewer{id}}',{},token)).viewer.id;}

@@ -6,7 +6,7 @@ import type { Person, Viewer } from '../contracts/document.js';
 import type { Transport } from '../conversation/page.js';
 import { isWebURL } from '../contracts/primitives.js';
 
-export interface Login { capability: string; attempt: string; created: number; version: 5; status?: 'ready' | 'denied' }
+export interface Login { capability: string; attempt: string; created: number; version: 5; status?: 'ready' | 'denied' | 'failed' }
 export interface DisplayProfile { fingerprint: string; profile: Person }
 export type SessionChange = 'identity' | 'verified' | 'changed';
 export interface SessionHost {
@@ -36,7 +36,7 @@ export function validLogin(value: unknown): value is Login {
   return login.version === 5 && typeof login.capability === 'string' && capability.test(login.capability) &&
     typeof login.attempt === 'string' && capability.test(login.attempt) && typeof login.created === 'number' &&
     login.created <= Date.now() && Date.now() - login.created < 600000 &&
-    (login.status === undefined || login.status === 'ready' || login.status === 'denied');
+    (login.status === undefined || login.status === 'ready' || login.status === 'denied' || login.status === 'failed');
 }
 type AuthFlow = Login & { popup?: Window | null };
 /** Shared authentication/transport for both embedding modes and custom views. */
@@ -177,6 +177,7 @@ export class BrowserSession implements Transport {
     if (this.#login === flow && done?.attempt === flow.attempt) {
       if (done.status === 'ready') void this.adopt(flow);
       else if (done.status === 'denied') this.#failed('Sign-in cancelled.', flow);
+      else if (done.status === 'failed') this.#failed('GitHub sign-in did not finish. Try again.', flow);
     }
   };
   async adopt(login: Login): Promise<void> {
@@ -187,6 +188,7 @@ export class BrowserSession implements Transport {
     if (this.lifetime.aborted || this.#login !== flow) return;
     if (!matched) { this.#failed('Invalid sign-in return.', flow);return; }
     if (login.status === 'denied') { this.#failed('Sign-in cancelled.', flow);return; }
+    if (login.status === 'failed') { this.#failed('GitHub sign-in did not finish. Try again.', flow);return; }
     this.host.saveSession?.(login.capability);this.host.clearPending?.(login.attempt);this.#retire(flow);
     const same = this.#token === login.capability;this.setSession(login.capability);if (same) this.#emit();
   }

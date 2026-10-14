@@ -25,7 +25,7 @@ let demo;
 try {
   for (const [engineName, engine] of [['chromium', chromium], ['webkit', webkit]]) {
     // Independent browser qualification must not accumulate another engine's account writes.
-    demo = spawn(process.execPath, ['scripts/demo.mjs'], { cwd: root, env: { ...process.env, PORT: String(ports[0]), BLOG_PORT: String(ports[1]) }, stdio: ['ignore', 'pipe', 'pipe'] });
+    demo = spawn(process.execPath, ['scripts/demo.mjs'], { cwd: root, env: { ...process.env, DEMO_OAUTH_COOLDOWN:'1', PORT: String(ports[0]), BLOG_PORT: String(ports[1]) }, stdio: ['ignore', 'pipe', 'pipe'] });
     let output = ''; demo.stdout.on('data', chunk => output += chunk); demo.stderr.on('data', chunk => output += chunk);
     await expect.poll(async () => {
       if (demo.exitCode !== null || demo.signalCode !== null) throw new Error('Demo exited: ' + output);
@@ -89,7 +89,27 @@ try {
             await refresh.dispose();await page.evaluate(()=>sessionStorage.setItem('__qualification_clock','0'));
           }
           const account = mode === 'native' ? await fixture.hold('/api/v7/access', async (route, gate) => { await gate.wait(); await platformClient(route); }) : undefined;
+          const visitor=mode==='native'?await context.newPage():undefined;
+          if(visitor){await visitor.goto(blog+path);await expect(visitor.getByText('Try posting a comment or replying here.',{exact:true})).toBeVisible();}
           await composer.getByRole('button', { name: 'Sign in with GitHub', exact: true }).click();
+          if(mode==='native'){
+            await expect(page.getByRole('link',{name:'Return to comments',exact:true})).toBeVisible();
+            const retry=page.getByRole('button',{name:'Retry sign-in',exact:true});
+            await expect(retry).toBeVisible();await expect(retry).toBeDisabled();
+            await expect.poll(()=>new URL(page.url()).searchParams.has('code')).toBe(false);
+            // A second reader stays on the service during the shared cooldown and can return anonymously.
+            await visitor.getByRole('button',{name:'Sign in with GitHub',exact:true}).click();
+            await expect(visitor).toHaveURL(/\/auth\/window\?/);
+            await expect(visitor.getByRole('button',{name:'Retry sign-in',exact:true})).toBeDisabled();
+            await visitor.getByRole('link',{name:'Return to comments',exact:true}).click();
+            await expect(visitor.getByText('Try posting a comment or replying here.',{exact:true})).toBeVisible();
+            await expect(visitor.getByRole('button',{name:'Sign in with GitHub',exact:true})).toBeVisible();
+            await expect(visitor.locator('[data-composer="main"] textarea')).toHaveCount(0);
+            await visitor.close();
+            await expect(retry).toBeEnabled();await retry.click();
+            // GitHub can refuse the identity read after consuming the authorization code.
+            await expect(retry).toBeVisible();await expect(retry).toBeEnabled();await retry.click();
+          }
           const textarea = composer.locator('textarea'); await expect(textarea).toBeEditable();
           if (mode === 'native') {
             await expect.poll(() => page.evaluate(() => window.demoComments.conversation.session.viewer?.login)).toBe('reader');
@@ -98,7 +118,7 @@ try {
             await account.dispose();
           }
           await expect(page).toHaveURL(blog + path);
-          assert.equal(proofs.size,1,'one private proof prepares this sign-in');
+          assert.equal(proofs.size,mode==='native'?2:1,'each sign-in keeps one private proof across retries');
           assert.equal(fragmentExposed,false,'the authorization page must remove its private fragment before preparing');
           for (const proof of proofs) for (const request of requests) assert.ok(!request.url.includes(proof) && !request.referer.includes(proof), 'private sign-in proof must not appear in URLs or referrers');
           await expect.poll(() => capabilities.size).toBeGreaterThan(0);

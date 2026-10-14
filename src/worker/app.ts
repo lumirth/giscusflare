@@ -52,6 +52,10 @@ const requireSession = (value: string): string => { requireCondition(value, 401,
 app.onError((error, c) => {
   const safe = failure(error), id = c.get('requestId')??crypto.randomUUID();
   console.error(JSON.stringify({event:'request_failed',id,code:safe.code,status:safe.status,phase:safe.phase,retryAfter:safe.retryAfter,path:c.req.path}));
+  if(c.req.path.startsWith('/auth/')){
+    const document=authHTML(safe.message,'/auth-complete.js',{status:'failed',message:safe.message});
+    return security(new Response(document.body,{status:safe.status,headers:document.headers}));
+  }
   return security(json({ error: safe, requestId: id }, safe.status, safe.retryAfter ? { 'Retry-After': String(safe.retryAfter) } : {}));
 });
 app.use('*',async(c,next)=>{c.set('requestId',crypto.randomUUID());await next();});
@@ -115,7 +119,7 @@ app.get(C.operations.authCallback.path, rateLimit('auth'), async c => {
   policy(c.get('config'), state.repo);
   const result = unwrap(await invoke(c.env,'authCallback', {...state,code:query.code||'',denied:Boolean(query.error)},{browserCookie:cookie(c.req.raw,cookieName(c.get('config').origin,state.attempt)),requestId:c.get('requestId')}));
   const response = authHTML('Returning to comments…', '/auth-complete.js', result);
-  response.headers.append('Set-Cookie', cookieHeader(c.get('config').origin, state.attempt, '', true));
+  if(result.status!=='waiting')response.headers.append('Set-Cookie', cookieHeader(c.get('config').origin, state.attempt, '', true));
   return security(response);
 });
 // Native consumers authenticate with explicit bearer capabilities. CORS never

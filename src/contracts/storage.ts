@@ -3,16 +3,18 @@ import { EffectResult } from './results.js';
 import { Capability, Ciphertext, Count, Digest, Origin, PageURL, PositiveInteger, NodeID, RepositoryName, Timestamp, Token } from './primitives.js';
 export const EncryptedRecord=Ciphertext;
 export const InstallationRecord = v.strictObject({ token:Token,expires:Timestamp,installationId:PositiveInteger });
+const Credentials=v.strictObject({accessToken:Token,accessExpires:Timestamp,refreshToken:v.nullable(Token),refreshExpires:Timestamp});
 export const Session = v.strictObject({
   principal: NodeID,
-  credentials:v.nullable(v.strictObject({accessToken:Token,accessExpires:Timestamp,refreshToken:v.nullable(Token),refreshExpires:Timestamp})),
+  credentials:v.nullable(Credentials),
   origin: Origin, expires: Timestamp,
 });
 /** A pending exchange owns its browser binding and future capability hash. */
 export const OAuthAttempt = v.strictObject({
   sessionID: Capability, cookieHash: Digest, githubVerifier: Capability,
   origin: Origin, returnURL: PageURL, mode: v.picklist(['popup', 'redirect']), openerOrigin: v.optional(Origin),
-  created: Timestamp, expires: Timestamp, status: v.picklist(['pending', 'exchanging']),
+  created: Timestamp, expires: Timestamp, status: v.picklist(['pending', 'exchanging', 'exchanged']),
+  code:v.optional(Token), credentials:v.optional(Credentials),
 });
 export const Mapping = v.strictObject({id:NodeID,number:PositiveInteger});
 export const Creation = v.strictObject({ started: Timestamp });
