@@ -1,6 +1,6 @@
 /** Stateful GitHub responses for local tests. */
 import { createHash } from 'node:crypto';
-import { validateGitHubQuery } from './github-schema.mjs';
+import { validateGitHubQuery, projectGitHubResponse } from './github-schema.mjs';
 const AUTHOR = { login: 'reader', avatarUrl: 'https://avatars.githubusercontent.com/u/1', url: 'https://github.com/reader' };
 const reactions = ['THUMBS_UP','THUMBS_DOWN','LAUGH','HOORAY','CONFUSED','HEART','ROCKET','EYES'];
 const clone = value => JSON.parse(JSON.stringify(value));
@@ -25,9 +25,10 @@ export class FakeGitHub {
       const d=this.addThread('article');
       const root=this.addComment(d,'Try posting a comment or replying here.',{author:'maintainer'});
       for(let i=0;i<7;i++)this.addComment(d,'Reply '+(i+1),{replyTo:root.id,author:i%2?'reader':'visitor'});
-      this.addComment(d,'**Code**, tables, and task lists stay readable on small screens.',{html:'<p><strong>Code</strong>, tables, and task lists stay readable on small screens.</p><pre><code>export default {\n  fetch(request, env) {\n    return new Response("Hello");\n  }\n};</code></pre><table><tr><th>Layer</th><th>Implementation</th></tr><tr><td>HTTP</td><td>Hono</td></tr><tr><td>Contracts</td><td>Valibot</td></tr></table><ul><li><input type="checkbox" checked disabled> Shared conversation model</li></ul>'});
+      this.addComment(d,'**Code**, tables, and task lists stay readable on small screens.',{html:'<p><strong>Code</strong>, tables, and task lists stay readable on small screens.</p><script>window.__unsafeCommentExecuted=true</script><img src="data:x" onerror="window.__unsafeCommentExecuted=true"><a href="javascript:window.__unsafeCommentExecuted=true">Untrusted executable link</a><pre><code>export default {\n  fetch(request, env) {\n    return new Response("Hello");\n  }\n};</code></pre><table><tr><th>Layer</th><th>Implementation</th></tr><tr><td>HTTP</td><td>Hono</td></tr><tr><td>Contracts</td><td>Valibot</td></tr></table><ul><li><input type="checkbox" checked disabled> Shared conversation model</li></ul>'});
       for(let i=0;i<21;i++)this.addComment(d,'Conversation '+(i+1),{author:'visitor'});
       root.votes.THUMBS_UP=['visitor']; d.votes.THUMBS_UP=['visitor'];
+      d.comments.at(-1).votes.THUMBS_UP=['visitor','maintainer'];
     }
     this.fetch=this.fetch.bind(this);
   }
@@ -177,6 +178,6 @@ export class FakeGitHub {
     }
     if(this.corruptNext){const change=this.corruptNext;this.corruptNext=null;data=change(data,operation);}
     if(this.failAfterMutation&&query.startsWith('mutation')){this.failAfterMutation=false;throw new TypeError('lost response after commit');}
-    return response({data});
+    return response(projectGitHubResponse(query,x,data));
   }
 }

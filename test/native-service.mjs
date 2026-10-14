@@ -35,6 +35,7 @@ export const providerTransport = origin => async (request) => {
 };
 /** The real Worker and SQLite repository, with one independent simulated provider. */
 export async function nativeService({ origin, blog, seed = true, assets = publicAssets(), repositories, openHosting, entry = 'src/worker/entry.ts', contentEntry = 'dist/stock-content-worker.mjs' }) {
+    const deployment = JSON.parse(await readFile(resolve(root, 'wrangler.jsonc'), 'utf8'));
     const github = await githubServer({ seed });
     let runtime;
     try {
@@ -43,7 +44,7 @@ export async function nativeService({ origin, blog, seed = true, assets = public
             serviceBindings: { ASSETS: assets, CONTENT: { name: 'content' } },
             outboundService: providerTransport(github.origin),
             durableObjects: { REPOSITORY_STORE: { className: 'Repository', useSQLite: true } },
-            ratelimits: Object.fromEntries([['READ_LIMITER', 120], ['WRITE_LIMITER', 30], ['AUTH_LIMITER', 6]].map(([name, limit], i) => [name, { namespace_id: String(84101 + i), simple: { limit, period: 60 } }])),
+            ratelimits: Object.fromEntries(deployment.ratelimits.map(({ name, simple }, i) => [name, { namespace_id: String(84101 + i), simple }])),
             bindings: {
                 PUBLIC_ORIGIN: origin, GITHUB_APP_ID: '12345', GITHUB_CLIENT_ID: 'Iv1.fixture',
                 GITHUB_CLIENT_SECRET: 'fixture-client-secret', GITHUB_PRIVATE_KEY: privateKey.export({ type: 'pkcs1', format: 'pem' }).toString(),

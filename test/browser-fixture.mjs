@@ -7,8 +7,11 @@ export function responseGate() {
 export async function browserFixture(browser, service, clientIP, mode = 'native') {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } }), page = await context.newPage();
   const surface = mode === 'native' ? page : page.frameLocator('iframe.giscus-frame');
-  const platformClient = route => route.continue({ headers: { ...route.request().headers(), 'CF-Connecting-IP': clientIP } });
-  for (const pattern of ['/api/v7/**', '/auth/**']) await context.route(service + pattern, platformClient);
+  const platformHeaders = route => ({ ...route.request().headers(), 'CF-Connecting-IP': clientIP });
+  const platformClient = route => route.continue({ headers: platformHeaders(route) });
+  const platformFetch = route => route.fetch({ headers: platformHeaders(route) });
+  // Include the local provider redirect so one reader keeps its ingress identity.
+  await context.route(service + '/**', platformClient);
   const errors = [], responses = [], accountObservations = [], contentResults = [], observers = [], holds = [];
   const observe = (target, event, listener) => { target.on(event, listener); observers.push(() => target.off(event, listener)); };
   const account = path => ['session', 'access', 'identity', 'logout', 'auth/prepare'].some(operation => path === '/api/v7/' + operation);
@@ -23,7 +26,7 @@ export async function browserFixture(browser, service, clientIP, mode = 'native'
     if (account(path)) accountObservations.push({ path, status });
     if (path === '/api/v7/content') void response.json().then(result => contentResults.push(result.results?.map(value => ({ error: value.error, prepared: Boolean(value.prepared), html: value.html !== undefined })))).catch(() => {});
   });
-  return { context, page, surface, platformClient, errors, observe,
+  return { context, page, surface, platformClient, platformFetch, errors, observe,
     diagnose: details => console.error(JSON.stringify({ engine: browser.browserType().name(), errors, responses, contentResults, accountObservations, ...details }, null, 2)),
     async hold(pattern, handle) {
       const gate = responseGate(), listener = route => handle(route, gate);

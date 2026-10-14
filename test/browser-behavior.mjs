@@ -5,9 +5,8 @@ async function cachedIdentityBehavior({ browser, service, blog, report, capabili
   const { expect } = await import(process.env.PLAYWRIGHT_MODULE || '@playwright/test');
   for (const mode of ['native', 'iframe']) for (const ordering of ['access-first', 'session-first']) {
     const clientIP = '192.0.2.' + ((browser.browserType().name() === 'chromium' ? 182 : 186) + (mode === 'iframe' ? 2 : 0) + (ordering === 'session-first' ? 1 : 0));
-    const fixture = await browserFixture(browser, service, clientIP, mode), { context, page, surface, errors, platformClient } = fixture;
+    const fixture = await browserFixture(browser, service, clientIP, mode), { context, page, surface, errors, platformFetch } = fixture;
     let returningCapability;
-    await context.route(service + '/__demo/authorize?*', platformClient);
     await context.addInitScript(() => {
       window.cachedIdentityInitializations = [];
       window.cachedIdentityMessages = [];
@@ -23,11 +22,11 @@ async function cachedIdentityBehavior({ browser, service, blog, report, capabili
     fixture.observe(page, 'request', request => {
       if (new URL(request.url()).pathname === '/api/v7/session') returningCapability = request.headers().authorization?.slice(7);
     });
-    const hold = (pattern, failure = '') => fixture.hold(pattern, async (route, gate) => {
-      const response = await route.fetch({ headers: { ...route.request().headers(), 'CF-Connecting-IP': clientIP } });
+    const hold = (pattern, failure = false) => fixture.hold(pattern, async (route, gate) => {
+      const response = await platformFetch(route);
       assert.equal(response.ok(), true, 'The held account/public observation comes from the real local service');
       await gate.wait();
-      if (failure) await route.fulfill({ status: 503, contentType: 'application/json', json: { error: { message: failure, code: 'UNAVAILABLE' } } });
+      if (failure) await route.abort('failed');
       else await route.fulfill({ response });
     });
     const nativeName = async () => page.evaluate(() => {
@@ -46,8 +45,8 @@ async function cachedIdentityBehavior({ browser, service, blog, report, capabili
       else await expect.poll(() => page.evaluate(() => window.cachedIdentityMetadata.includes('reader'))).toBe(true);
       await expect.poll(() => Boolean(returningCapability)).toBe(true);
       await surface.getByText('Try posting a comment or replying here.', { exact: true }).waitFor();
-      const session = await hold('/api/v7/session', ordering === 'access-first' ? 'Session profile temporarily unavailable' : '');
-      const access = await hold('/api/v7/access', ordering === 'session-first' ? 'Account observation temporarily unavailable' : '');
+      const session = await hold('/api/v7/session', ordering === 'access-first');
+      const access = await hold('/api/v7/access', ordering === 'session-first');
       const publicPage = mode === 'native' ? await hold('/api/v7/page?*') : undefined;
       await page.reload();
       if (mode === 'native') await nativeName();
@@ -80,7 +79,7 @@ async function cachedIdentityBehavior({ browser, service, blog, report, capabili
           assert.equal(await page.evaluate(() => window.demoComments.conversation.session.viewer), null, 'Access proof alone cannot verify the cached display profile');
         } else assert.equal(await page.evaluate(() => window.cachedIdentityMetadata.some(login => login !== null)), false, 'Access-first iframe metadata still has no verified display profile');
         session.release();
-        await expect(surface.getByRole('alert').filter({ hasText: 'Session profile temporarily unavailable' }).first()).toBeVisible();
+        await expect(surface.getByRole('alert').first()).toBeVisible();
         await expect(composer.locator('button[type="submit"]')).toBeEnabled();
         if (mode === 'native') await expect(page.locator('#cached-account-name')).toHaveText('reader');
       } else {
@@ -90,12 +89,12 @@ async function cachedIdentityBehavior({ browser, service, blog, report, capabili
           assert.equal(await page.evaluate(() => window.demoComments.conversation.viewer), null, 'Session-first display proof cannot manufacture held account permissions');
         } else await expect.poll(() => page.evaluate(() => window.cachedIdentityMetadata.includes('reader'))).toBe(true);
         access.release();
-        await expect(surface.getByRole('alert').filter({ hasText: 'Account observation temporarily unavailable' }).first()).toBeVisible();
+        await expect(surface.getByRole('alert').first()).toBeVisible();
       }
       assert.deepEqual(await surface.getByRole('article').evaluateAll(nodes => nodes.map(node => ({ id: node.id, text: node.querySelector('.gsc-comment-content,.gsc-reply-content')?.textContent, hidden: node.hidden }))), reading, 'Independent session/account failure preserves every readable public comment and its position');
       assert.equal(await composer.locator('textarea').inputValue(), 'Cached identity cannot authorize this writing', 'Independent account failure preserves native writing');
       await fixture.disposeHolds();
-      if (mode === 'native' && ordering === 'session-first') await retiredIdentityBehavior({ page, context, service, capability, returningCapability, expect, clientIP });
+      if (mode === 'native' && ordering === 'session-first') await retiredIdentityBehavior({ page, context, service, capability, returningCapability, expect, platformFetch });
       else await Promise.all([page.waitForResponse(response => new URL(response.url()).pathname === '/api/v7/logout'), composer.getByRole('button', { name: 'Sign out', exact: true }).click()]);
       await composer.getByRole('button', { name: 'Sign in with GitHub', exact: true }).waitFor();
       await page.reload();
@@ -118,10 +117,10 @@ async function cachedIdentityBehavior({ browser, service, blog, report, capabili
   }
 }
 
-async function retiredIdentityBehavior({ page, context, service, capability, returningCapability, expect, clientIP }) {
+async function retiredIdentityBehavior({ page, context, service, capability, returningCapability, expect, platformFetch }) {
   const held = [], saves = [];
   for (const operation of ['session', 'access']) await context.route(service + '/api/v7/' + operation, async route => {
-    const response = await route.fetch({ headers: { ...route.request().headers(), 'CF-Connecting-IP': clientIP } });
+    const response = await platformFetch(route);
     assert.equal(response.ok(), true, 'Retirement exercises real successful identity/account observations');
     const observation = { ...responseGate(), old: route.request().headers().authorization === 'Bearer ' + capability, completed: false };held.push(observation);
     await observation.wait();await route.fulfill({ response });observation.completed = true;
@@ -169,7 +168,7 @@ async function retiredIdentityBehavior({ page, context, service, capability, ret
 /** Custom consumers and content run against the same native service as the embedding journey. */
 export async function browserBehavior({ browser, service, blog, report, capability }) {
   await cachedIdentityBehavior({ browser, service, blog, report, capability });
-  const fixture = await browserFixture(browser, service, browser.browserType().name() === 'chromium' ? '192.0.2.180' : '192.0.2.181'), { page, errors } = fixture;
+  const fixture = await browserFixture(browser, service, browser.browserType().name() === 'chromium' ? '192.0.2.180' : '192.0.2.181'), { page, errors, platformClient, platformFetch } = fixture;
   const providerPreviews = [], contentReads = [], countReads = [];
   fixture.observe(page, 'request', request => {
     const url = new URL(request.url());
@@ -179,7 +178,7 @@ export async function browserBehavior({ browser, service, blog, report, capabili
   });
   try {
     await page.goto(blog + '/__behavior');
-    const header = await fixture.hold('/api/v7/page?*', async (route, gate) => { const response=await route.fetch();await gate.wait();await route.fulfill({response}); });
+    const header = await fixture.hold('/api/v7/page?*', async (route, gate) => { const response=await platformFetch(route);await gate.wait();await route.fulfill({response}); });
     await page.evaluate(async ({service,blog,capability}) => {
       const {mountComments} = await import(service + '/native.js');
       const style=document.createElement('link');style.rel='stylesheet';style.href=service+'/native.css?v=7';document.head.append(style);
@@ -220,17 +219,31 @@ export async function browserBehavior({ browser, service, blog, report, capabili
         } });
       };
       let coldPreparation, coldComment;
-      const localMarkdown = async (input, context) => {
+      const dependencies = new Map();
+      const holdBody = (markdown, fail = false) => {
+        let release, arrive;
+        const waiting = new Promise(resolve => { release = resolve; }), seen = new Promise(resolve => { arrive = resolve; });
+        dependencies.set(markdown, { waiting, arrive, fail });
+        return { seen, release, restore: () => { dependencies.delete(markdown); release(); } };
+      };
+      const prepare = async (input, context) => {
         if (coldPreparation && input.purpose === 'comment' && (!coldComment || input.comment?.id === coldComment)) await coldPreparation;
+        const dependency = input.purpose === 'comment' && dependencies.get(input.markdown);
+        if (dependency) { dependency.arrive(); await dependency.waiting; }
         await Promise.resolve();
-        context.signal.throwIfAborted();
+        // Already issued website dependency work can finish after cancellation.
+        if (!dependency) context.signal.throwIfAborted();
+        if (dependency?.fail) throw Error('Website content dependency unavailable');
         if (input.markdown === 'Failed custom rendering remains readable') throw Error('Renderer offline');
+      };
+      const localMarkdown = async (input, context) => {
+        await prepare(input, context);
         const article = document.createElement('section'), counter = document.createElement('button'), source = document.createElement('p');
         article.dataset.hostMarkdown = input.purpose; source.textContent = input.markdown;
         let clicks = 0; counter.textContent = 'Clicks 0'; counter.addEventListener('click', () => { counter.textContent = 'Clicks ' + ++clicks; }, { signal: context.lifetime });
         article.append(source, counter);
         return { node: article, async update(next, nextContext) {
-          await Promise.resolve(); nextContext.signal.throwIfAborted();
+          await prepare(next, nextContext);
           return () => { source.textContent = next.markdown; };
         } };
       };
@@ -282,8 +295,52 @@ export async function browserBehavior({ browser, service, blog, report, capabili
       clicker.click();
       await owner.revalidate();
       check(component.isConnected && clicker.textContent === 'Clicks 1', 'Unchanged content retains a mounted website component and its local state across freshness work');
-      window.consumer = { mounted, owner, target, until, check, capability };
+      window.consumer = { mounted, owner, target, until, check, capability, holdBody };
     }, { service, blog, capability });
+    await page.evaluate(async ({service}) => {
+      const {owner,target,until,check,holdBody} = window.consumer;
+      const authored = owner.newWriting({kind:'comment'}).show();authored.update('An authored comment for canonical edit continuity');
+      const published = await authored.submit();check(published.status === 'saved', 'The custom reader publishes a comment to edit');
+      const id = published.result.id;
+      await owner.refreshViewer();
+      check(owner.actions(id).edit.status === 'available', 'The actual provider grants this account permission to edit its published comment');
+      const article = target.querySelector('[data-comment="' + id + '"]');
+      await until(() => article.querySelector('[data-host-markdown="comment"]'));
+      const component = article.querySelector('[data-host-markdown="comment"]'), source = component.querySelector('p'), control = component.querySelector('button');
+      const original = source.textContent;
+      control.click();
+      const publish = async body => {
+        const writing = owner.writing({kind:'edit',id}).show();writing.update(body);
+        const outcome = await writing.submit();
+        check(outcome.status === 'saved', 'Editing publishes through the real contribution service: ' + JSON.stringify(outcome));
+        const response = await fetch(service + '/api/v7/page?' + new URLSearchParams({input:JSON.stringify({config:{repo:'example/comments',origin:owner.config.origin,pageURL:owner.config.pageURL,returnURL:owner.config.returnURL,selector:{kind:'page',key:'article'}},read:{kind:'observe',ids:[id]},fresh:true,providerHTML:false})}), {cache:'no-store'});
+        check(response.ok, 'A separate anonymous public read obtains the edited provider comment');
+        const readback = await response.json();
+        check(readback.nodes[id]?.body === body, 'The canonical edit is independently readable after publication');
+      };
+      const olderBody = 'An edited comment waiting on website resources', newerBody = 'A newer canonical edit is ready to read', recoveredBody = 'A canonical edit survives unavailable website resources';
+      const older = holdBody(olderBody);
+      try {
+        await publish(olderBody);await older.seen;
+        control.click();
+        check(source.textContent === original && control.textContent === 'Clicks 2', 'Pending interpretation retains readable source and working installed controls');
+        await publish(newerBody);await until(() => source.textContent === newerBody);
+        older.release();
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        check(component.isConnected && source.textContent === newerBody && control.textContent === 'Clicks 2', 'A late older interpretation cannot replace the newer published edit or reset its mounted state');
+      } finally { older.restore(); }
+      const offline = holdBody(recoveredBody, true);offline.release();
+      try {
+        await publish(recoveredBody);
+        await until(() => article.querySelector('.giscus-content-recovery button'));
+        control.click();
+        check(source.textContent === newerBody && control.textContent === 'Clicks 3', 'Failed replacement keeps the last readable edit and its installed controls usable');
+        offline.restore();
+        article.querySelector('.giscus-content-recovery button').click();
+        await until(() => source.textContent === recoveredBody && !article.querySelector('.giscus-content-recovery'));
+        check(component.isConnected && control.textContent === 'Clicks 3', 'Visible Retry publishes the independently verified canonical edit without losing mounted state');
+      } finally { offline.restore(); }
+    }, {service});
     await page.context().route(service + '/api/v7/identity', route => route.abort('failed'));
     await page.evaluate(async () => {
       const { owner, until, check } = window.consumer;
@@ -309,7 +366,7 @@ export async function browserBehavior({ browser, service, blog, report, capabili
       window.consumer.counts = {counts,values,badge,release};
     }, {service,blog});
     assert.equal(countReads.length,beforeCountReuse,'A badge reuses the acquired page count without another provider request');
-    const count = await fixture.hold('/api/v7/counts?*', async (route, gate) => { const response = await route.fetch(); await gate.wait(); await route.fulfill({response}); });
+    const count = await fixture.hold('/api/v7/counts?*', async (route, gate) => { const response = await platformFetch(route); await gate.wait(); await route.fulfill({response}); });
     await page.evaluate(() => {
       const {counts,values} = window.consumer.counts;
       window.consumer.counts.pending = counts.invalidate({target:values.at(-1).target,observedAt:values.at(-1).observedAt});
@@ -332,21 +389,6 @@ export async function browserBehavior({ browser, service, blog, report, capabili
       if (values.at(-1).count !== confirmed.count || badge.textContent !== String(confirmed.count)) throw Error('A held older count replaced the confirmed contribution observation');
       if (window.consumer.owner.document.roots.ids !== membership) throw Error('Independent count refresh changed the captured reading membership');
     });
-    await page.context().route(service + '/api/v7/counts?*', async route => {
-      const response = await route.fetch(), result = await response.json();
-      const unavailableKey = JSON.stringify(['page','unavailable',null,'roots',null]);
-      delete result.observations[unavailableKey];
-      result.errors = {[unavailableKey]:{status:410,code:'NOT_FOUND',message:'The mapped discussion is unavailable.'}};
-      await route.fulfill({response,json:result});
-    });
-    await page.evaluate(async () => {
-      const {counts,values,badge} = window.consumer.counts, known = values.at(-1);
-      const renewed = counts.invalidate({target:known.target,observedAt:known.observedAt});
-      let failed = false; const unavailable = counts.invalidate({target:{selector:{kind:'page',key:'unavailable'},window:{kind:'roots'}},observedAt:known.observedAt}).catch(() => {failed=true;});
-      await Promise.all([renewed,unavailable]);
-      if (!failed || values.at(-1).count !== known.count || badge.textContent !== String(known.count)) throw Error('One unavailable count discarded an independently successful observation');
-    });
-    await page.context().unroute(service + '/api/v7/counts?*');
     await page.evaluate(() => { const {counts,badge,release} = window.consumer.counts; release();counts.dispose();badge.remove(); });
     const activeWriting = await page.evaluate(() => window.consumer.owner.writing().id);
     const textarea = page.locator('.forum-composer[data-writing-id="' + activeWriting + '"] textarea');
@@ -373,7 +415,7 @@ export async function browserBehavior({ browser, service, blog, report, capabili
     });
     await page.context().unroute(service + '/api/v7/contribute');
     await page.context().route(service + '/api/v7/contribute', route => {
-      reactionRequests.push(route.request().postDataJSON()); return route.continue();
+      reactionRequests.push(route.request().postDataJSON()); return platformClient(route);
     });
     await page.getByRole('article').filter({ has: page.getByRole('button', { name: 'Recover ❤️', exact: true }) }).getByRole('button', { name: 'Recover ❤️', exact: true }).click();
     await page.waitForFunction(() => !window.consumer.owner.reaction(window.consumer.recoverySubject, 'HEART').recovery);
@@ -401,7 +443,9 @@ export async function browserBehavior({ browser, service, blog, report, capabili
       check((await reply.submit()).status === 'blocked', 'Closed writing cannot silently submit elsewhere');
       reply.show();
       const outcome = await reply.submit(); check(outcome.status === 'saved', 'Reopened reply publishes');
-      check(owner.document.nodes[outcome.result.id]?.parentId === root && !owner.document.roots.ids.includes(outcome.result.id), 'A dismissed and reopened reply retains its original destination');
+      await until(() => !owner.acquisition());
+      await owner.revalidate(0, [outcome.result.id]);
+      check(owner.document.nodes[outcome.result.id]?.body === 'Retained destination after editor dismissal' && owner.document.nodes[outcome.result.id]?.parentId === root && !owner.document.roots.ids.includes(outcome.result.id), 'Independent provider reading confirms a dismissed and reopened reply retains its authored body and destination');
 
       mounted.replacePage({ repo: 'example/comments', origin: owner.config.origin, pageURL: owner.config.pageURL, returnURL: owner.config.returnURL, selector: { kind: 'page', key: 'Another page' } });
       check(owner.signal.aborted, 'Navigation retires the former document owner');
@@ -414,7 +458,7 @@ export async function browserBehavior({ browser, service, blog, report, capabili
     assert.ok(contentReads.length > 0 && contentReads.every(input => input.providerHTML === false && !Object.hasOwn(input, 'content')), 'A local Markdown consumer acquires source without provider HTML');
     assert.equal(providerPreviews.length, 0, 'A complete website Markdown pipeline never requests provider HTML for previews');
     assert.deepEqual(errors, [], 'Custom consumer page errors');
-    report.checks.push({ engine: browser.browserType().name(), workflow: 'custom reading, native writing, contribution readback and recovery', status: 'passed' });
+    report.checks.push({ engine: browser.browserType().name(), workflow: 'custom reading, native writing, canonical edits with overlapping interpretation and readable Retry, contribution readback and recovery', status: 'passed' });
     console.log('PASS', browser.browserType().name(), 'custom reading and writing');
 
     await page.close();

@@ -11,15 +11,26 @@ Use Node 22.16 or newer and `npm ci`. Run the complete release gate before propo
 | `npm run check:release` | Complete local release gate |
 | `npm run deploy:check` | Release gate, public configuration and Wrangler dry run |
 
-The shared provider fixture validates actual GraphQL documents and variables against the recorded official GitHub schema. This establishes the recorded schema shape; real App permissions remain a deployed check.
+The surrounding-world fixture stores independently authored discussions, comment bodies, replies and reactions. It validates GraphQL documents and variables against the recorded official GitHub schema, then executes the selected fields over that state. Unrequested fields cannot conceal an incomplete application query. This establishes the recorded schema contract; real GitHub App permissions remain a deployed check.
 
-Native and browser workflows use the actual production Worker and SQLite Durable Object in local workerd. The shared fixture keeps remote GitHub effects outside workerd so they survive its restart. An uncertain mutation must not become a second contribution after retry. Chromium and WebKit load the built browser modules and use real DOM parsing, AbortSignal, storage, dialogs, editing and layout. GitHub is explicitly simulated; these checks do not establish actual GitHub permissions or production Cloudflare costs.
+Native and browser workflows use the actual production Worker and SQLite Durable Object in local workerd. The shared fixture keeps remote GitHub effects outside workerd so they survive its restart. An uncertain mutation must not become a second contribution after retry. Chromium and WebKit each qualify a fresh service/provider environment with the configured deployment limits and distinct reader ingress identities; qualification does not disable account throttling. They load the built browser modules and use real DOM parsing, AbortSignal, storage, dialogs, editing and layout. GitHub is explicitly simulated; these checks do not establish actual GitHub permissions or production Cloudflare costs.
 
 ## Local use
 
 `npm run demo` prints iframe and native URLs. Comments and sign-in are simulated. `test:browser` starts and stops its own fixture and records the source/runtime conditions in `test-results/evidence/browser-acceptance.json`.
 
-The browser portfolio must exercise native and iframe embedding, future-capability sign-in, actual typing and undo/redo, preview, reading continuity, appearance and contributions. Cohesive custom-view workflows must cover explicit source/prepared/stock content profiles, complete feature replacement, independent public/account/content/count availability, rich-content safety and readable failures, detached current-only content commits, installed-resource lifetime, independent persisted writing records and same-destination recovery, retained writing destination and unresolved outcomes, forum switching and editing, and setup/configuration. Use the current receipt for executed scenarios and engines; a fixed case count is not an acceptance target.
+The retained journeys demonstrate these outcomes through the production Worker and public clients:
+
+| Supported outcome | Independent observation |
+| --- | --- |
+| Reading and chronological/ranked traversal | Authored provider bodies, replies and votes reach the rendered conversation; pagination has no duplicates, score changes preserve captured traversal, and deliberately changing order observes the new ranking |
+| Native writing and publication | Actual typing/undo survives preview, resizing and appearance changes; a fresh browser document reacquires submitted comments and replies |
+| Interrupted contributions | Provider effects survive lost responses and workerd restart; retained author/body/destination/receipt identity prevents duplicate publication |
+| Changed custom content | Published edits receive separate anonymous readback; controlled website interpretation preserves usable installed content, rejects late older output and recovers through visible Retry |
+| Independent authority | Real session revocation preserves protected writing; transport failure during identity/account acquisition preserves reading and local drafts |
+| Safe rich reading | The stock producer and browser keep authored code/tables/task lists readable while rejecting executable provider markup |
+
+Typechecks, builds and extracted consumer compilation are separate evidence. These workflows do not qualify every custom producer or renderer. Custom manifest-mismatch/failed-resource paths, physical-device behavior and production permissions/capacity need their own bounded acceptance when those environments are changed or released.
 
 CI runs the complete gate on [macOS 26](https://docs.github.com/en/actions/reference/runners/github-hosted-runners) to exercise WebKit's native controls on the Apple port. The Linux Playwright GTK build used during qualification did not enter resize mode through the mouse driver even for isolated plain textareas with fixed or content sizing. That observation does not establish behavior in a deployed GTK browser. The gate retains actual resize, subsequent typing and native undo assertions on macOS; it has no programmatic resize substitute or engine-specific skip.
 

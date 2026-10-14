@@ -8,7 +8,7 @@ for (const p of [port, blogPort]) if (!Number.isInteger(p) || p < 1024 || p > 65
 if (port === blogPort) throw new Error('The Worker and blog need different ports.');
 const origin = `http://127.0.0.1:${port}`;
 const blog = `http://127.0.0.1:${blogPort}`;
-const service = await nativeService({ origin, blog, assets: publicAssets(true) });
+const service = await nativeService({ origin, blog, assets: publicAssets(true), repositories: { 'example/comments': { repositoryId: 'R_fixture', installationId: 123, categoryId: 'CAT_fixture', origins: [blog], category: 'Announcements', defaultCommentOrder: 'oldest', customThemeOrigins: ['https://themes.example'], ranking: { profiles: { popular: { weights: { THUMBS_UP: 1 }, tieBreak: 'oldest' } } } } } });
 const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function parentHTML(url) {
   if(url.pathname==='/__behavior')return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="${origin}/content.css?v=7"></head><body></body></html>`;
