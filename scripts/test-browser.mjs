@@ -98,6 +98,8 @@ try {
             const retry=page.getByRole('button',{name:'Retry sign-in',exact:true});
             await expect(retry).toBeVisible();await expect(retry).toBeDisabled();
             await expect.poll(()=>new URL(page.url()).searchParams.has('code')).toBe(false);
+            await page.reload();
+            await expect(retry).toBeVisible();await expect(retry).toBeDisabled();
             // A second reader stays on the service during the shared cooldown and can return anonymously.
             await visitor.getByRole('button',{name:'Sign in with GitHub',exact:true}).click();
             await expect(visitor).toHaveURL(/\/auth\/window\?/);

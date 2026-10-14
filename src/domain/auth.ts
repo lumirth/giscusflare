@@ -86,6 +86,12 @@ export class Auth {
       }
       try {
         if(attempt.status==='pending'){
+          if(!attempt.code&&!input.code){
+            let retryAfter=1;
+            try{await this.github.authorizationAvailable();}
+            catch(error){if(error instanceof AppError&&[429,503].includes(error.status))retryAfter=error.retryAfter??60;else throw error;}
+            return {...context,status:'waiting',retryAfter,expires:attempt.expires,authorizeURL:await this.#authorize(input.attempt,attempt.githubVerifier,input.registration)};
+          }
           requireCondition(attempt.code||input.code,400,'OAUTH','GitHub did not return an authorization code.');
           attempt.code ??= input.code;
           attempt.status='exchanging';await this.#saveAttempt(input.attempt,attempt);
