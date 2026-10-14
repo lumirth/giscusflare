@@ -230,8 +230,9 @@ export class PageModel {
         const countFresh = input.countFresh ?? !page;
         const observedAt = page?.observedAt ?? patch?.observedAt;
         if (observedAt === undefined || !Number.isFinite(observedAt)) return;
-        const unavailable=(page?.metadata??patch?.metadata)?.unavailable;
-        if(unavailable&&[...this.#facts].some(([scope,fact])=>!scope.startsWith('account:')&&(fact.age>observedAt||fact.age===observedAt&&fact.accepted>acceptance)))return;
+        const incomingMetadata=page?.metadata??patch?.metadata,unavailable=incomingMetadata?.unavailable;
+        const changingTarget=current.metadata.thread&&incomingMetadata?.thread!==undefined&&current.metadata.thread.id!==incomingMetadata.thread?.id;
+        if((unavailable||changingTarget)&&[...this.#facts].some(([scope,fact])=>!scope.startsWith('account:')&&(fact.age>observedAt||fact.age===observedAt&&fact.accepted>acceptance)))return;
         const conflictingIds = new Set<string>();let conflicted = false;
         const accept = (scope: string, before?: unknown, incoming?: unknown, age = observedAt, id = ''): boolean => !(input.replayed && age === this.#facts.get(scope)?.age) && this.#fact(scope, age, acceptance, effect, input.replayed ? undefined : [before,incoming], () => { conflicted = true;if (id && id !== current.metadata.thread?.id) conflictingIds.add(id); });
         const count = (value: CountObservation | null | undefined, replayed = false, fresh = countFresh, effect = false) => {
@@ -292,7 +293,7 @@ export class PageModel {
             else if (nodes[id]) nodes[id] = { ...nodes[id]!, reactions: reactions(id, nodes[id]!.reactions, groups) };
         }
         if(unavailable&&metadata.unavailable||current.metadata.thread&&current.metadata.thread.id!==metadata.thread?.id){
-            for(const id of Object.keys(nodes)){accept('exists:'+id,true,false);delete nodes[id];}
+            for(const id of Object.keys(nodes))if(unavailable||!page?.nodes[id]){accept('exists:'+id,true,false);delete nodes[id];}
             this.#viewer=null;
         }
         const replies = replacing ? Object.fromEntries(Object.entries(current.replies).filter(([id, window]) => window !== baseline.replies[id])) : { ...current.replies };
@@ -337,7 +338,7 @@ export class PageModel {
         for (const [id, window] of Object.entries(replies)) {
             if (!nodes[id]) delete replies[id]; else replies[id] = this.#window({ids:window.ids.filter(child=>nodes[child]),cursor:window.cursor},id);
         }
-        if(metadata.unavailable||current.metadata.thread&&current.metadata.thread.id!==metadata.thread?.id)roots=emptyWindow();
+        if(metadata.unavailable||!replacing&&current.metadata.thread&&current.metadata.thread.id!==metadata.thread?.id)roots=emptyWindow();
         this.document = { nodes, roots, replies, metadata };
         this.#resumeReactions();
         const contentHints = Object.fromEntries(Object.entries(page?.contentHints ?? patch?.contentHints ?? {}).filter(([id, hint]) => (!inserted.has(id) || !current.nodes[id]) && nodes[id]?.body === hint.markdown && observedAt >= (this.#facts.get('node:' + id + ':body')?.age ?? -Infinity) && this.#fact('content:' + id, observedAt, acceptance)));

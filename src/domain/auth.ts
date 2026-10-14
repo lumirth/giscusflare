@@ -107,7 +107,7 @@ export class Auth {
         return {...context,status:'ready'};
       } catch (error) {
         const safe=failure(error);
-        const restart=attempt.status==='exchanging'&&safe.phase==='unknown'&&[429,502,503].includes(safe.status);
+        const restart=attempt.status==='exchanging'&&safe.phase==='unknown'&&[403,429,502,503].includes(safe.status);
         const resumable=error instanceof AppError&&
           (restart||attempt.status==='exchanging'&&safe.phase==='not-issued'&&[429,503].includes(safe.status)||attempt.status==='exchanged'&&[429,502,503].includes(safe.status));
         console.warn(JSON.stringify({event:resumable?'auth_deferred':'auth_failed',requestId:this.github.requestId,stage:attempt.status==='exchanged'?'identity':'exchange',recovery:restart?'new_authorization':resumable?'resume':'return',...safe}));
@@ -168,7 +168,7 @@ export class Auth {
           requireCondition(await this.store.putSecret(key,S.Session,data,this.keys.sessionSecret,this.#purpose,data.expires,retired),401,'SESSION','Your local session ended. Sign in again.');
         }catch(error){
           if(error instanceof AppError&&error.code==='SESSION')throw error;
-          if(error instanceof AppError&&error.phase==='not-issued'&&(error.status===429||error.status>=500)){
+          if(error instanceof AppError&&error.phase==='not-issued'&&(error.status===429||error.status>=500||error.code==='PROVIDER_DENIED')){
             if(!this.github.provider)requireCondition(await this.store.putSecret(key,S.Session,data,this.keys.sessionSecret,this.#purpose,data.expires,retired),401,'SESSION','Your local session ended. Sign in again.');
             console.info(JSON.stringify({event:'authorization_renewal',outcome:'retryable',code:error.code}));throw error;
           }

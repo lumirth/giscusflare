@@ -650,11 +650,12 @@ try {
     const recoveryConfig={...config,selector:{kind:'page',key:'recovery-view'}};
     const recoveryThread=service.github.addThread('recovery-view');service.github.addComment(recoveryThread,'Reading with an independently changing provider');
     let readingCapability='';
-    const reading=new PageModel(recoveryConfig,{request:async(operation,input)=>{
+    const readingTransport={request:async(operation,input)=>{
       const response=await read(operation,input,readingCapability),body=await response.json();
       if(!response.ok)throw Object.assign(new Error(body.error.message),body.error);
       return body;
-    }});
+    }};
+    const reading=new PageModel(recoveryConfig,readingTransport),otherReading=new PageModel(recoveryConfig,readingTransport);
     try{
       await reading.start();
       const beforeSort=[...reading.document.roots.ids],draft=reading.writing().show();draft.update('Keep my draft through provider failures');
@@ -669,6 +670,7 @@ try {
       assert.deepEqual(reading.document.roots.ids,beforeSort,'A transport denial does not establish public content withdrawal');
       assert.equal((await json(await read('page',{config:recoveryConfig}))).nodes[recoveryThread.comments[0].id].body,recoveryThread.comments[0].body);
       readingCapability='';service.github.fetch=realProvider;
+      await otherReading.start();
       service.github.discussions=service.github.discussions.filter(thread=>thread!==recoveryThread);
       await reading.revalidate();
       assert.deepEqual(reading.document.roots.ids,[],'Successful absence withdraws the previously displayed conversation');
@@ -677,8 +679,10 @@ try {
       const replacement=service.github.addThread('recovery-view');service.github.addComment(replacement,'Replacement discovered after a missed webhook');
       await reading.restart();
       assert.equal(reading.document.metadata.thread.id,replacement.id);
+      await otherReading.restart();
+      assert.equal(otherReading.document.nodes[replacement.comments[0].id]?.body,replacement.comments[0].body,'An already-open reader adopts the complete replacement window on deliberate restart');
       assert.equal(Object.values(reading.document.nodes)[0].body,replacement.comments[0].body,'Demand reconciliation repairs a missing mapping without webhook delivery');
-    }finally{reading.dispose();service.github.fetch=realProvider;}
+    }finally{reading.dispose();otherReading.dispose();service.github.fetch=realProvider;}
     const discoveryConfig={...config,selector:{kind:'page',key:'current-before-creation'}};
     const creationReader=await signIn('discovery-reader');
     await json(await read('page',{config:discoveryConfig}));
@@ -752,6 +756,18 @@ try {
       assert.equal((await call('access',{config:registeredConfig,ids:[]},openCap)).status,401,'Open-hosted logout cleans the same registered actor');
     } finally { await open.dispose(); }
     report.checks.push({workflow:'open-hosting explicit registration, authorization return, verified identity, contribution, local preview and cleanup through the actual Worker',status:'passed'});
+    service.github.accessLifetime=1;
+    const restrictedRenewal=await signIn('restricted-renewal');service.github.accessLifetime=previousLifetime;
+    const rotationsBeforeDenial=service.github.refreshes;
+    service.github.fetch=async request=>new URL(request.url).pathname==='/login/oauth/access_token'?new Response('<html>Access to this site has been restricted.</html>',{status:403,headers:{'Content-Type':'text/html'}}):realProvider(request);
+    try{
+      const deniedRenewal=await json(await post('access',{config:coldConfig,ids:[]},restrictedRenewal),403);
+      assert.equal(deniedRenewal.error.code,'PROVIDER_DENIED');
+      const remembered=await json(await post('session',{repo:config.repo,origin:config.origin},restrictedRenewal));
+      assert.equal(remembered.principal,'U_restricted-renewal');assert.equal(remembered.needsAuthorization,false,'A generic temporary OAuth denial preserves the renewable account');
+      await json(await post('access',{config:coldConfig,ids:[]},restrictedRenewal),503);
+      assert.equal(service.github.refreshes,rotationsBeforeDenial,'Known provider cooldown performs no extra token exchange');
+    }finally{service.github.fetch=realProvider;}
     report.status = 'passed';
 }
 catch (error) {

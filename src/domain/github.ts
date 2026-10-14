@@ -82,8 +82,8 @@ async function githubText(url: string, init: RequestInit, maximum = 4 * 1024 * 1
           limit:headers.has('X-RateLimit-Limit')?Number(headers.get('X-RateLimit-Limit')):undefined,used:headers.has('X-RateLimit-Used')?Number(headers.get('X-RateLimit-Used')):undefined};
         // Failed responses remain bounded, and their useful diagnostic fields are retained.
         const body = await limitedText(response, response.ok ? maximum : 16384);
-        let envelope: { message?: unknown; error?: unknown; errors?: {type?: string;resource?: string;field?: string;code?: string}[] } = {};
-        try { envelope = JSON.parse(body); } catch { /* Non-JSON failure is classified by HTTP status. */ }
+        let envelope: { message?: unknown; error?: unknown; errors?: {type?: string;resource?: string;field?: string;code?: string}[] } = {},jsonBody=false;
+        try { const parsed=JSON.parse(body);jsonBody=true;if(parsed&&typeof parsed==='object'&&!Array.isArray(parsed))envelope=parsed; } catch { /* Non-JSON failure is classified by HTTP status. */ }
         const graphqlLimited = (Array.isArray(envelope.errors)?envelope.errors:[]).some(error => error.type === 'RATE_LIMITED');
         const secondary = remaining !== 0 && (graphqlLimited || response.status === 429 || response.status === 403 && (retry !== null || /secondary rate|abuse detection/i.test(String(envelope.message ?? ''))));
         const rateLimited=graphqlLimited||response.status===429||response.status===403&&(remaining===0||secondary);
@@ -96,14 +96,14 @@ async function githubText(url: string, init: RequestInit, maximum = 4 * 1024 * 1
         const secrets=init.body instanceof URLSearchParams?['client_secret','code','refresh_token','code_verifier'].map(key=>init.body instanceof URLSearchParams?init.body.get(key):null).filter((value):value is string=>Boolean(value)):[];
         const redact = (value: unknown) => typeof value === 'string' ? secrets.reduce((text,secret)=>text.replaceAll(secret,'<redacted>'),value).replace(/(?:gh[opsur]_[A-Za-z0-9_]+|Bearer\s+\S+)/g, '<redacted>').slice(0, 1000) : undefined;
         diagnostic.message = redact(envelope.message); diagnostic.oauthError = redact(envelope.error);
-        diagnostic.classification=rateLimited?(remaining===0?'primary_rate_limit':graphqlLimited||/secondary rate|abuse detection/i.test(String(envelope.message??''))?'secondary_rate_limit':'http_throttle'):oauthUnavailable?'oauth_unavailable':response.ok?'success':response.status===403?'provider_denied':'http_failure';
-        if(!response.ok&&!Object.keys(envelope).length){diagnostic.failureBytes=new TextEncoder().encode(body).length;diagnostic.failureFingerprint=await hash(body);diagnostic.failureKind=/access to this site has been restricted/i.test(body)?'site_restricted':'non_json';}
+        diagnostic.classification=rateLimited?(remaining===0?'primary_rate_limit':graphqlLimited||/secondary rate|abuse detection/i.test(String(envelope.message??''))?'secondary_rate_limit':'http_throttle'):oauthUnavailable?'oauth_unavailable':response.ok?(envelope.errors?.length?'graphql_error':envelope.error?'oauth_error':'success'):response.status===403?'provider_denied':'http_failure';
+        if(!response.ok&&!Object.keys(envelope).length){diagnostic.failureBytes=new TextEncoder().encode(body).length;diagnostic.failureFingerprint=await hash(body);diagnostic.failureKind=/access to this site has been restricted/i.test(body)?'site_restricted':jsonBody?'unrecognized_json':'non_json';}
         diagnostic.errors = (Array.isArray(envelope.errors)?envelope.errors:[]).slice(0, 10).map(({type,resource,field,code}) => ({type:redact(type),resource:redact(resource),field:redact(field),code:redact(code)}));
         const mutation = path === '/graphql' && typeof init.body === 'string' && String(JSON.parse(init.body).query ?? '').trimStart().startsWith('mutation');
         if (response.ok && !(graphqlLimited && !mutation)) return body;
         if (rateLimited) throw new AppError(429, 'RATE_LIMIT', 'GitHub is limiting requests. Try again later.', feedback.retryAfter,grant==='authorization_code'?'unknown':'not-issued',feedback.secondary?'secondary':'primary');
         if (response.status === 401) throw new AppError(401, 'GITHUB_AUTH', 'GitHub authorization is no longer valid. Sign in again.');
-        if (response.status === 403) {feedback.retryAfter??=60;feedback.unavailable=true;throw new AppError(403, 'PROVIDER_DENIED', 'GitHub temporarily refused this request. Try again later.',feedback.retryAfter);}
+        if (response.status === 403) {feedback.retryAfter??=60;feedback.unavailable=true;throw new AppError(403, 'PROVIDER_DENIED', 'GitHub temporarily refused this request. Try again later.',feedback.retryAfter,grant==='authorization_code'?'unknown':'not-issued');}
         if (response.status === 404) throw new AppError(404, 'NOT_FOUND', 'The GitHub resource is not accessible.');
         if ([400, 422].includes(response.status)) throw new AppError(400, 'BAD_INPUT', 'GitHub rejected the request. Check the content or repository settings.');
         throw new AppError(502, 'UPSTREAM', 'GitHub could not complete the request.', feedback.retryAfter, 'unknown');
