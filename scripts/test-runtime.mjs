@@ -286,6 +286,30 @@ try {
       assert.equal(service.github.calls.slice(beforeLatest).filter(call=>call.operation==='CommentCounts').length,0,'The confirmed provider count is reused after the held acquisition without another query');
       assert.equal(latestCount.observations[articleKey].observedAt,committed.patch.roots.count.observedAt,'The shared confirmed count preserves its actual observation age');
     } finally { releaseCount(); await delayedCount?.catch(() => {}); service.github.fetch = provider; }
+    // A fresh page can establish a newer provider count while an older count-only read is held.
+    const newerThread=service.github.addThread('page-count-overlap');
+    service.github.addComment(newerThread,'Before the overlapping acquisitions');
+    const overlapConfig={...config,selector:{kind:'discussion',number:newerThread.number}};
+    const overlapTarget={selector:overlapConfig.selector,window:{kind:'roots'}};
+    let countStarted, releaseOlder;
+    const olderStarted=new Promise(resolve=>{countStarted=resolve;}), olderHeld=new Promise(resolve=>{releaseOlder=resolve;});
+    service.github.fetch=async request=>{
+      const query=request.method==='POST'&&new URL(request.url).pathname==='/graphql'?(await request.clone().json()).query:'';
+      const response=await provider(request);
+      if(query.startsWith('query CommentCounts')){countStarted();await olderHeld;}
+      return response;
+    };
+    let olderCount;
+    try{
+      olderCount=read('counts',{...countInput,targets:[overlapTarget],fresh:true});
+      await olderStarted;
+      service.github.addComment(newerThread,'Published independently while the older count was held');
+      const newerPage=await json(await read('page',{config:overlapConfig,fresh:true}));
+      releaseOlder();
+      const recoveredCount=(await json(await olderCount)).observations[countKey(overlapTarget)];
+      assert.equal(recoveredCount.count,newerThread.comments.length,'A delayed count cannot reverse newer independently observed provider membership');
+      assert.equal(recoveredCount.observedAt,newerPage.window.count.observedAt,'The newer page acquisition remains the shared count owner');
+    }finally{releaseOlder();await olderCount?.catch(()=>{});service.github.fetch=provider;}
     report.checks.push({ workflow: 'authorize a future capability, contribute/replay, edit, reply, react, moderate and remove with independent provider effects', status: 'passed' });
     const uncertain = { type: 'comment', body: 'Committed before the connection was lost' }, uncertainKey = key();
     service.github.failAfterMutation = true;

@@ -296,7 +296,7 @@ export class PageModel {
         if (page?.replies) for (const [id, window] of Object.entries(page.replies)) {
             const old = current.replies[id] ?? emptyWindow();
             if (replacing || !current.replies[id] || current.replies[id].cursor === '') replies[id] = acquireWindow(id,old,window,true);
-            else { count(window.count);const added=window.ids.filter(child=>!old.ids.includes(child));replies[id]=observedIds&&added.length?{...old,ids:unique([...old.ids,...added]),cursor:window.cursor}:old; }
+            else { count(window.count);const added=window.ids.filter(child=>!old.ids.includes(child));replies[id]=observedIds&&added.length?{...old,ids:unique([...old.ids,...added])}:old; }
         }
         let roots = current.roots;
         if (page) {

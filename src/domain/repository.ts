@@ -131,15 +131,15 @@ export class RepositoryEngine {
         if(page.nodes[id])page.nodes[id]!.reactions={...page.nodes[id]!.reactions,...reactions};
         else if(page.metadata?.thread?.id===id)page.metadata.thread.reactions={...page.metadata.thread.reactions,...reactions};
       }
-      const updateWindow=(window:WindowPage['window'],delta:NonNullable<typeof patch.roots>|undefined,order='oldest',extend=false)=>{
+      const updateWindow=(window:WindowPage['window'],delta:NonNullable<typeof patch.roots>|undefined,order='oldest',extend=false,latest=order==='newest')=>{
         if(!delta)return;
         const complete=window.count?.count===window.ids.length;
         window.ids=window.ids.filter(id=>!delta.remove?.includes(id));
-        if(extend&&(complete||order==='newest'))for(const id of delta.add??[]){const node=patch.nodes?.[id];if(node&&'id'in node&&node.id===id){page.nodes[id]=node as import('../contracts/document.js').Comment;window.ids=order==='newest'?[id,...window.ids.filter(item=>item!==id)]:[...window.ids.filter(item=>item!==id),id];}}
+        if(extend&&(complete||latest))for(const id of delta.add??[]){const node=patch.nodes?.[id];if(node&&'id'in node&&node.id===id){page.nodes[id]=node as import('../contracts/document.js').Comment;window.ids=order==='newest'?[id,...window.ids.filter(item=>item!==id)]:[...window.ids.filter(item=>item!==id),id];}}
         if(delta.count)window.count=delta.count;
       };
-      updateWindow(page.window,read.kind==='replies'?patch.replies?.[read.parentId]:patch.roots,read.kind==='roots'?read.order:'oldest',read.kind==='roots'&&!read.cursor||read.kind==='replies'&&!read.cursor);
-      for(const [id,window]of Object.entries(page.replies??{}))updateWindow(window,patch.replies?.[id],'newest',true);
+      updateWindow(page.window,read.kind==='replies'?patch.replies?.[read.parentId]:patch.roots,read.kind==='roots'?read.order:'oldest',read.kind==='roots'&&!read.cursor||read.kind==='replies'&&!read.cursor,read.kind==='replies'||read.kind==='roots'&&read.order==='newest');
+      for(const [id,window]of Object.entries(page.replies??{}))updateWindow(window,patch.replies?.[id],'oldest',true,true);
       for(const [id,hint]of Object.entries(patch.contentHints??{}))if(page.nodes[id]?.body===hint.markdown)(page.contentHints??={})[id]=hint;
       if(patch.metadata&&page.metadata){const thread=patch.metadata.thread;page.metadata={...page.metadata,...patch.metadata,thread:thread===null?null:thread?{...page.metadata.thread!,...thread}:page.metadata.thread};}
       return page;
