@@ -66,11 +66,11 @@ export async function limitedText(response: Response, max = 4 * 1024 * 1024): Pr
 }
 /** One bounded transport for API, OAuth and pre-allocation admission. The
  * deadline owns body consumption as well as header acquisition. */
-async function githubText(url: string, init: RequestInit, maximum = 4 * 1024 * 1024, feedback: ProviderFeedback = {}, authority = 'registration'): Promise<string> {
+async function githubText(url: string, init: RequestInit, maximum = 4 * 1024 * 1024, feedback: ProviderFeedback = {}, authority = 'registration',requestId?:string): Promise<string> {
     const abort = new AbortController(), started = Date.now();
     const timer = setTimeout(() => abort.abort(), 15000);
     const path = new URL(url).pathname;
-    let diagnostic: Record<string, unknown> = { event: 'github_request', authority, path };
+    let diagnostic: Record<string, unknown> = { event: 'github_request', authority, path,requestId };
     try {
         const response = await fetch(new Request(url, { ...init, redirect: 'manual', signal: abort.signal }));
         const headers = response.headers;
@@ -88,11 +88,11 @@ async function githubText(url: string, init: RequestInit, maximum = 4 * 1024 * 1
             const seconds = retry ? Number(retry) || Math.ceil((Date.parse(retry) - Date.now()) / 1000) : remaining === 0 && reset > Date.now() ? Math.ceil((reset - Date.now()) / 1000) : 60;
             feedback.retryAfter = Math.min(3600, Math.max(1, seconds)); feedback.secondary = secondary;
         }
-        if (response.ok) return body;
         const redact = (value: unknown) => typeof value === 'string' ? value.replace(/(?:gh[opsur]_[A-Za-z0-9_]+|Bearer\s+\S+)/g, '<redacted>').slice(0, 1000) : undefined;
         diagnostic.message = redact(envelope.message); diagnostic.oauthError = redact(envelope.error);
         diagnostic.errors = (Array.isArray(envelope.errors)?envelope.errors:[]).slice(0, 10).map(({type,resource,field,code}) => ({type,resource,field,code}));
-        if (feedback.retryAfter) throw new AppError(429, 'RATE_LIMIT', 'GitHub is limiting requests. Try again later.', feedback.retryAfter);
+        if (response.ok) return body;
+        if (feedback.retryAfter) throw new AppError(429, 'RATE_LIMIT', 'GitHub is limiting requests. Try again later.', feedback.retryAfter,'not-issued',feedback.secondary?'secondary':'primary');
         if (response.status === 401) throw new AppError(401, 'GITHUB_AUTH', 'GitHub authorization is no longer valid. Sign in again.');
         if (response.status === 403) throw new AppError(403, 'PERMISSION', 'GitHub did not permit this operation.');
         if (response.status === 404) throw new AppError(404, 'NOT_FOUND', 'The GitHub resource is not accessible.');
@@ -121,15 +121,14 @@ export async function registerRepository(repo:string,category:string,config:Pick
   requireCondition(selected,403,'CATEGORY','The discussion category does not exist.');
   return {repositoryId:repository.id,installationId:installation.id,categoryId:selected.id};
 }
+interface Credentials {users:Map<string,string>;installation?:{token:string;expires:number;installationId:number}}
 export class GitHub {
-    #users=new Map<string,string>();
-    authorize(token:string,principal:string):void{if(this.#users.size>=512)this.#users.delete(this.#users.keys().next().value!);this.#users.set(token,principal);}
-    async #scopeFor(token:string):Promise<string>{return this.#users.has(token)?'user:'+this.#users.get(token):token===this.#installation?.token||token.split('.').length===3?'installation:'+this.installationId:'user-token:'+await hash(token);}
-    #installation: {
-        token: string;
-        expires:number;installationId:number;
-    }|undefined;
-    constructor(readonly repo:string,readonly repositoryId:string,readonly installationId:number,readonly categoryId:string,readonly config:PublicConfig,readonly keys:SecretConfig,readonly store:Store,readonly provider?:ProviderCoordination) { }
+    #credentials:Credentials;
+    authorize(token:string,principal:string):void{if(this.#credentials.users.size>=512)this.#credentials.users.delete(this.#credentials.users.keys().next().value!);this.#credentials.users.set(token,principal);}
+    isUser(token:string):boolean{return this.#credentials.users.has(token);}
+    async #scopeFor(token:string):Promise<string>{return this.#credentials.users.has(token)?'user:'+this.#credentials.users.get(token):token===this.#credentials.installation?.token||token.split('.').length===3?'installation:'+this.installationId:'user-token:'+await hash(token);}
+    constructor(readonly repo:string,readonly repositoryId:string,readonly installationId:number,readonly categoryId:string,readonly config:PublicConfig,readonly keys:SecretConfig,readonly store:Store,readonly provider?:ProviderCoordination,readonly requestId?:string,credentials?:Credentials) {this.#credentials=credentials??{users:new Map()};}
+    forRequest(requestId?:string):GitHub{return new GitHub(this.repo,this.repositoryId,this.installationId,this.categoryId,this.config,this.keys,this.store,this.provider,requestId,this.#credentials);}
     #names(): {
         owner: string;
         name: string;
@@ -149,12 +148,12 @@ export class GitHub {
             const operation=body&&typeof body==='object'&&'query'in body?String(body.query).match(/^(?:query|mutation)\s+(\w+)/)?.[1]:undefined;
             const init={ method, headers: { ...apiHeaders(token), ...(text ? { Accept: 'text/html' } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) };
             const scope=await this.#scopeFor(token),resource=path==='/graphql'?'graphql':'core';
-            const read=(feedback:ProviderFeedback)=>{console.info(JSON.stringify({event:'provider_operation',operation,path,authority:scope.startsWith('user')?'user':'installation'}));return githubText('https://api.github.com'+path,init,4*1024*1024,feedback,scope.startsWith('user')?'user':'installation');};
-            return this.provider?await admitted(this.provider,scope,resource,read):await read({});
+            const read=(feedback:ProviderFeedback)=>{console.info(JSON.stringify({event:'provider_operation',requestId:this.requestId,operation,path,authority:scope.startsWith('user')?'user':'installation'}));return githubText('https://api.github.com'+path,init,4*1024*1024,feedback,scope.startsWith('user')?'user':'installation',this.requestId);};
+            return this.provider?await admitted(this.provider,scope,resource,read,operation?.startsWith('Rank')?'background':'interactive'):await read({});
         }
         catch (error) {
-            if (error instanceof AppError && error.code === 'GITHUB_AUTH' && this.#installation?.token === token) {
-                this.#installation = undefined;
+            if (error instanceof AppError && error.code === 'GITHUB_AUTH' && this.#credentials.installation?.token === token) {
+                this.#credentials.installation = undefined;
                 this.store.delete('installation');
                 throw new AppError(503,'CONFIGURATION','The GitHub App credential was revoked. Check the installation or retry to renew it.');
             }
@@ -194,17 +193,17 @@ export class GitHub {
         return payload;
     }
     async installation(beforeRenew?: () => void): Promise<string> {
-        if (this.#installation && this.#installation.expires > this.store.now() + 300000)
-            return this.#installation.token;
+        if (this.#credentials.installation && this.#credentials.installation.expires > this.store.now() + 300000)
+            return this.#credentials.installation.token;
         return this.store.lock('installation', async () => {
-            if (this.#installation && this.#installation.expires > this.store.now() + 300000)
-                return this.#installation.token;
+            if (this.#credentials.installation && this.#credentials.installation.expires > this.store.now() + 300000)
+                return this.#credentials.installation.token;
             const recordKey = 'installation';
             const context = `${this.config.appId}:${this.repositoryId}`;
             try {
                 const record = await this.store.secret(recordKey, InstallationRecord, this.keys.sessionSecret, context);
                 if (record&&record.installationId===this.installationId&&record.expires> this.store.now() + 300000) {
-                    this.#installation = record;
+                    this.#credentials.installation = record;
                     return record.token;
                 }
             }
@@ -219,7 +218,7 @@ export class GitHub {
             const expires = Date.parse(result.expires_at);
             requireCondition(expires > this.store.now(), 502, 'UPSTREAM_SCHEMA', 'GitHub issued an expired installation token.');
             await this.store.putSecret(recordKey, InstallationRecord, {token:result.token,expires,installationId:this.installationId},this.keys.sessionSecret, context, expires);
-            this.#installation={token:result.token,expires,installationId:this.installationId};
+            this.#credentials.installation={token:result.token,expires,installationId:this.installationId};
             return result.token;
         });
     }
@@ -286,8 +285,9 @@ export class GitHub {
     /** One physical query acquires the selected document window and its scope. */
     async page(selected:SelectedDiscussion,request:{read:ReadIntent;selector:Selector;ttl:number;profiles:string[];html:boolean},token:string):Promise<WindowPage>{
         const intent=request.read,number=selected.number;
-        const order=intent.kind==='roots'?intent.order:'oldest',cursor='cursor'in intent?intent.cursor:'',parentId=intent.kind==='replies'?intent.parentId:undefined,
-          ids='ids'in intent?intent.ids:undefined,replyPrefetch='replyPrefetch'in intent?intent.replyPrefetch:0,root=intent.kind==='roots';
+        const observing=intent.kind==='observe';
+        const order=observing?'newest':intent.kind==='roots'?intent.order:'oldest',cursor='cursor'in intent?intent.cursor:'',parentId=intent.kind==='replies'?intent.parentId:undefined,
+          ids='ids'in intent?intent.ids:undefined,replyPrefetch='replyPrefetch'in intent?intent.replyPrefetch:0,root=intent.kind==='roots'||observing;
         const fields = COMMENT.replace(AUTHORITY,'').replace(GRAPH.reactions,PUBLIC_REACTIONS).replace('bodyHTML', 'bodyHTML @include(if:$html)');
         const comment = `${fields} discussion{${IDENTITY}} replies(last:$prefetch){${GRAPH.page} nodes @include(if:$previewReplies){${fields}}}`;
         const query = `query Page($owner:String!,$name:String!,$number:Int!,$first:Int,$last:Int,$after:String,$before:String,$prefetch:Int!,$previewReplies:Boolean!,$roots:Boolean!,$ids:[ID!]!,$selected:Boolean!,$parent:ID!,$reply:Boolean!,$replyBefore:String,$html:Boolean!){
@@ -324,6 +324,7 @@ export class GitHub {
             for (const item of raw.comments.nodes)
                 accept(item);
             acquired = window(raw.comments,count(raw.comments.totalCount),order);
+            if(order==='newest')acquired.ids.reverse();
         }
         if (ids) {
             requireCondition(data.nodes?.length === ids.length, 502, 'UPSTREAM_SCHEMA', 'GitHub omitted a requested comment.');
@@ -331,7 +332,7 @@ export class GitHub {
                 if (item) {
                     requireCondition(item.id === ids[i], 502, 'UPSTREAM_SCHEMA', 'GitHub returned another comment.');
                     accept(item);
-                    if (!acquired.ids.includes(item.id))
+                    if (!observing&&!acquired.ids.includes(item.id))
                         acquired.ids.push(item.id);
                 }
         }
@@ -478,7 +479,7 @@ export class GitHub {
         return this.#response('/markdown', token, 'POST', { mode: 'gfm', context: this.repo, text }, true);
     }
     async renew(refreshToken:string):Promise<import('./provider.js').Renewal>{
-      if(this.provider)return unwrap(await this.provider.renew(refreshToken));
+      if(this.provider)return unwrap(await this.provider.renew(refreshToken,this.requestId));
       return {token:await this.exchange({grant_type:'refresh_token',refresh_token:refreshToken}),observedAt:this.store.now()};
     }
     async exchange(parameters: Record<string, string>): Promise<G.OAuthToken> {
@@ -486,7 +487,7 @@ export class GitHub {
             const exchange=(feedback:ProviderFeedback)=>githubText('https://github.com/login/oauth/access_token', {
                 method: 'POST', headers: { Accept: 'application/json', 'User-Agent':'giscusflare' },
                 body: new URLSearchParams({ client_id: this.config.clientId, client_secret: this.keys.clientSecret, ...parameters }),
-            },16384,feedback,'oauth');
+            },16384,feedback,'oauth',this.requestId);
             const response=this.provider?await admitted(this.provider,'oauth:'+this.config.clientId,'oauth',exchange):await exchange({});
             const raw = parseJSON(response, 'upstream');
             if (v.is(v.object({ error: v.string() }), raw)) {

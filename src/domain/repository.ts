@@ -36,7 +36,7 @@ export class RepositoryEngine {
       const request=input as C.Input<C.Operation>,repo='config'in request?request.config.repo:request.repo;
       const old=this.store.get('identity:v3',S.ActorIdentity);
       if(!old||old.repo!==repo)this.store.put('identity:v3',S.ActorIdentity,{repo,repositoryId:registration.repositoryId});
-      const context={...this.#base(repo,registration),session:authority.session??'',browserCookie:authority.browserCookie??''};
+      const base=this.#base(repo,registration),client=base.client.forRequest(authority.requestId),context={...base,client,auth:new Auth(client.config,client.keys,repo,registration.repositoryId,base.policy,this.store,client),session:authority.session??'',browserCookie:authority.browserCookie??''};
       return await (this[name] as(input:C.Input<K>,context:RepositoryContext)=>Promise<Output<K>>).call(this,input,context);
     }) as Promise<Result<Output<K>>>;
   }
@@ -73,7 +73,7 @@ export class RepositoryEngine {
       const key=countKey(target),group=this.#groupSelector(repo,target.selector);
       const read=this.#reads.read<Lookup>('selection:'+base.policy.categoryId+':'+key,group,base.policy.countCacheMs,async()=>{
         missing.set(key,target);batch??=Promise.resolve().then(load);const value=(await batch).get(key)!;
-        if('code'in value)throw new AppError(value.status,value.code,value.message,value.retryAfter,value.phase);return value;
+        if('code'in value)throw new AppError(value.status,value.code,value.message,value.retryAfter,value.phase,value.rateKind);return value;
       },{fresh,retention:base.policy.outageRetentionMs,accept:lookup=>{if(lookup.selected){this.store.put(this.#mapping(target.selector,base.policy),S.Mapping,{id:lookup.selected.id,number:lookup.selected.number});this.#reads.identify(group,'discussion:'+lookup.selected.number);if(target.selector.kind==='page'&&target.window.kind==='roots')this.store.delete(this.#creationKey(target.selector.key,base.policy));}}});
       const number=target.selector.kind==='discussion'?target.selector.number:this.store.get(this.#mapping(target.selector,base.policy),S.Mapping)?.number;
       if(number)this.#reads.identify(group,'discussion:'+number);
@@ -118,7 +118,7 @@ export class RepositoryEngine {
         const lookup=value as Lookup;
         const serialized=key.slice(key.indexOf(':',10)+1);
         const observation=[patch.roots?.count,...Object.values(patch.replies??{}).map(window=>window.count)].find(count=>count&&countKey(count.target)===serialized);
-        if(observation)return {...lookup,count:observation.count,observedAt:observation.observedAt};
+        if(observation)return {...lookup,count:observation.count,observedAt:observation.observedAt,selected:observation.discussion?{...observation.discussion,repository:{id:this.#repositoryId!,nameWithOwner:w.repo,isPrivate:false},category:{id:this.#context!.policy.categoryId}}:null};
         if(patch.invalidatedCounts?.some(count=>countKey(count)===serialized))return undefined;
         return value;
       }
@@ -174,8 +174,8 @@ export class RepositoryEngine {
     const token=await this.#readCredential(base,origin);
     try{return await read(token);}
     catch(error){
-      if(base.session&&error instanceof AppError&&error.code==='GITHUB_AUTH'){
-        await base.auth.retire(base.session,origin,token);
+      if(base.session&&base.client.isUser(token)&&error instanceof AppError&&([401,403,404].includes(error.status)&&['GITHUB_AUTH','PERMISSION','NOT_FOUND'].includes(error.code)||error.status===429&&error.rateKind==='primary')){
+        if(error.code==='GITHUB_AUTH')await base.auth.retire(base.session,origin,token);
         return read(await base.client.installation());
       }
       throw error;

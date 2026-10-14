@@ -7,7 +7,7 @@ import type {Viewer,Person} from '../contracts/document.js';
 import type { OAuthToken } from '../contracts/github.js';
 import type { PublicConfig, RepositoryPolicy, SecretConfig } from '../contracts/config.js';
 import { parentOrigin } from './authorization.js';
-import { b64, equal, hash, random, unb64 } from './crypto.js';
+import { b64, decrypt, equal, hash, random, unb64 } from './crypto.js';
 import { AppError, requireCondition } from './errors.js';
 import { GitHub } from './github.js';
 import { Store } from './store.js';
@@ -92,14 +92,15 @@ export class Auth {
   }
   async #storedSession(key: string, origin: string): Promise<S.Session> {
     let data: S.Session | null;
-    try { data = await this.store.secret(key, S.Session, this.keys.sessionSecret, this.#purpose); }
-    catch { this.store.delete(key); throw new AppError(401, 'SESSION', 'Your session is invalid. Sign in again.'); }
+    const original=this.store.get(key,S.EncryptedRecord);
+    try { data = original?await decrypt(S.Session,original,this.keys.sessionSecret,this.#purpose+':'+key):null; }
+    catch { if(this.store.get(key,S.EncryptedRecord)===original)this.store.delete(key); throw new AppError(401, 'SESSION', 'Your session is invalid. Sign in again.'); }
     requireCondition(data && data.origin === origin && data.expires > this.store.now(), 401, 'SESSION', 'Your session expired or belongs to another website. Sign in again.');
     const ceiling=data.credentials?.refreshToken?data.credentials.refreshExpires:data.credentials?.accessExpires??this.store.now()+30*DAY;
     const expires=Math.min(this.store.now()+30*DAY,ceiling);
     if(expires-data.expires>DAY){
-      const expected=this.store.get(key,S.EncryptedRecord);
-      if(expected&&await this.store.putSecret(key,S.Session,{...data,expires},this.keys.sessionSecret,this.#purpose,expires,expected))data={...data,expires};
+      if(original&&await this.store.putSecret(key,S.Session,{...data,expires},this.keys.sessionSecret,this.#purpose,expires,original))data={...data,expires};
+      else return this.#storedSession(key,origin);
     }
     return data;
   }

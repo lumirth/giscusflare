@@ -205,7 +205,7 @@ export function createConversation(options: ConversationOptions): Conversation {
     page.providerHTML = options.content.delivery === 'stock' || options.content.delivery === 'github';
     page.own(() => counts.dispose());
     page.own(page.subscribe((_page, _writing, observation) => { if (observation) content.observe(observation, page.document.nodes); }));
-    if (options.bootstrap && options.bootstrap.expires > Date.now()) page.bootstrap(options.bootstrap.view);
+    if(options.bootstrap&&options.bootstrap.expires>Date.now())page.bootstrap(options.bootstrap.view);
     const fresh = (event: Event) => {
       if (initialized && !document.hidden && navigator.onLine !== false && session.signedIn && !session.principal) void session.verify();
       if ((event.type === 'online' ? policy.onReconnect : policy.onFocus) && initialized && !document.hidden && navigator.onLine !== false && !session.pending && !page.acquisition() && !interactions.active)

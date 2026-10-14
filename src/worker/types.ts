@@ -9,4 +9,4 @@ export interface Env extends ConfigBindings {
   AUTH_LIMITER: RateLimiter;
 }
 export interface RateLimiter { limit(input: { key: string }): Promise<{ success: boolean }> }
-export type AppEnv = { Bindings: Env; Variables: { config: PublicConfig; session: string; input: unknown } };
+export type AppEnv = { Bindings: Env; Variables: { config: PublicConfig; session: string; input: unknown; requestId:string } };

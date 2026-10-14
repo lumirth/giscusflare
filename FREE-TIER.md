@@ -22,7 +22,7 @@ Static Assets ordinarily serve scripts and styles without dynamic Worker request
 
 An iframe includes the first anonymous comment page. Subsequent pages, expanded replies, counts, authentication and contributions add requests. Native rendering loads through the API. A request served from the application’s public cache still reaches the Worker and counts toward its allowance.
 
-A reader sees their confirmed contribution immediately; other readers see it through subsequent reads, subject to public cache expiry. Account permissions use separate authenticated requests. Open tabs refresh on configured focus/reconnect events, not continuous polling. [API](docs/API.md) owns account separation, observation freshness and browser defaults.
+A reader sees their confirmed contribution immediately; it also updates retained shared facts for subsequent reads. Account permissions use separate authenticated requests. Visible idle tabs reconcile periodically and on configured focus/reconnect events; background refresh keeps existing content readable. Durable public reuse reduces repeated provider work but adds bounded SQLite reads and acquisition writes. [API](docs/API.md) owns account separation, observation freshness and browser defaults.
 
 Set `displayCacheMs` and `countCacheMs` per repository. Increase them when delayed public updates are acceptable. Reduce `fetching.replyPrefetch` to fetch less reply content initially. Readers can expand the remaining replies. [Configuration](docs/CONFIGURATION.md#cache-settings) and [browser options](docs/API.md#browser-construction-and-mounting) describe these settings.
 

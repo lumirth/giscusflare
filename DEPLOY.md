@@ -48,6 +48,12 @@ Store `GITHUB_CLIENT_SECRET`, `GITHUB_PRIVATE_KEY` and `SESSION_SECRET` as encry
 
 Deploy the configured API and open setup again. Choose an exact page key or explicit existing discussion number, then generate the script. Test anonymous reading, prepared preview and a real sign-in/contribution against GitHub. The setup/configuration check does not establish authenticated participation.
 
+## Receive GitHub changes
+
+Deploy the receiver before activating webhook delivery. Set `GITHUB_WEBHOOK_SECRET` as an encrypted API Worker secret and set the same secret in the GitHub App's webhook settings. Set the webhook URL to your service origin plus `/webhooks/github`, enable delivery, and subscribe to Discussion, Discussion comment and Repository events. Installation and installation-repository events also withdraw removed scope. Existing Discussions and Metadata permissions suffice.
+
+The receiver verifies the signature and configured immutable repository, installation and category identities, deduplicates deliveries and marks affected observations for demand reconciliation. Known deletions, hidden comments and scope withdrawal remove retained content immediately. Webhook delivery supplements ordinary reconciliation; it is not a second discussion store. Open-hosting registrations reconcile on demand.
+
 ## Update an existing deployment
 
 Follow [operations](docs/OPERATIONS.md#update-and-restore) for preserved bindings/secrets, version activation and rollback. Browser and API packages must agree on protocol 7; durable addresses, receipts and browser storage remain independent of that protocol version.

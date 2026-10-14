@@ -47,15 +47,11 @@ async function cachedIdentityBehavior({ browser, service, blog, report, capabili
       await surface.getByText('Try posting a comment or replying here.', { exact: true }).waitFor();
       const session = await hold('/api/v7/session', ordering === 'access-first');
       const access = await hold('/api/v7/access', ordering === 'session-first');
-      const publicPage = mode === 'native' ? await hold('/api/v7/page?*') : undefined;
+      const publicPage=mode==='native'?await hold('/api/v7/page?*'):undefined;
       await page.reload();
       if (mode === 'native') await nativeName();
       await expect.poll(() => session.arrived).toBeGreaterThan(0);
-      if (publicPage) {
-        await expect.poll(() => publicPage.arrived).toBeGreaterThan(0);
-        assert.equal(access.arrived, 0, 'Account startup waits for a public target, not an unverified cached identity');
-        publicPage.release();
-      }
+      if(publicPage){await expect.poll(()=>publicPage.arrived).toBeGreaterThan(0);assert.equal(access.arrived,0,'Account startup waits for the public target');publicPage.release();}
       await surface.getByText('Try posting a comment or replying here.', { exact: true }).waitFor();
       await expect.poll(() => access.arrived, { message: mode + ' access starts while session proof is held' }).toBeGreaterThan(0);
       if (mode === 'native') {

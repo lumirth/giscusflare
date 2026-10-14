@@ -42,7 +42,8 @@ export class ReadCache {
     return [...this.store.sql.exec('SELECT * FROM public_reads'+where,...(groups?[...groups,...groups]:[]))];
   }
   #advance(groups?:readonly string[]):void{
-    const affected=new Set(this.#rows(groups).map(row=>String(row.group_key)));
+    const pending=new Set(this.#pendingGroups.values());
+    const affected=new Set(this.#rows(groups).map(row=>String(row.group_key)).filter(group=>pending.has(group)));
     for(const group of this.#pendingGroups.values())if(!groups||groups.includes(group)||Boolean(this.#aliases.get(group)&&groups.includes(this.#aliases.get(group)!)))affected.add(group);
     for(const group of affected)this.#versions.set(group,(this.#versions.get(group)??0)+1);
   }
@@ -64,7 +65,7 @@ export class ReadCache {
       else this.#put(String(row.key),String(row.group_key),value,Number(row.expires),Number(row.retained),row.alias===null?null:String(row.alias));
     }
   }
-  seed(key: string, group: string, value: unknown, expires: number, retention: number, alias?: string): void { this.#put(key, group, value, expires, Math.max(expires, this.store.now() + retention), alias ?? null); }
+  seed(key: string, group: string, value: unknown, expires: number, retention: number, alias?: string): void { const existing=this.#get(key);if(existing&&Number((existing.value as {observedAt:number}).observedAt)>=Number((value as {observedAt:number}).observedAt))return;this.#put(key, group, value, expires, Math.max(expires, this.store.now() + retention), alias ?? null); }
   async read<T>(key: string, group: string, ttl: number, load: () => Promise<T>, options: { fresh?: boolean; retention?: number; accept?:(value:T)=>void } = {}): Promise<ReadValue<T>> {
     const cached = this.#get(key) as Observation & { value: T } | undefined;
     if (cached && !options.fresh && cached.expires > this.store.now()) return { value: cached.value, expires: cached.expires };

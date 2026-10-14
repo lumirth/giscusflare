@@ -80,6 +80,14 @@ try {
           }
           const hostFont = await page.getByRole('heading', { level: 1 }).evaluate(element => getComputedStyle(element).fontFamily);
           assert.match(hostFont, /^system-ui\b/, 'comments retain the host fixture typography when first mounted');
+          if(mode==='native'){
+            const refresh=await fixture.hold('/api/v7/page?*',async(route,gate)=>{const response=await platformFetch(route);await gate.wait();await route.fulfill({response});});
+            await page.evaluate(()=>{sessionStorage.setItem('__qualification_clock','65000');window.dispatchEvent(new Event('focus'));});
+            await expect.poll(()=>refresh.arrived).toBeGreaterThan(0);
+            await expect(surface.getByText('Try posting a comment or replying here.',{exact:true})).toBeVisible();
+            await expect(surface.locator('.gsc-loading')).toHaveCount(0);
+            await refresh.dispose();await page.evaluate(()=>sessionStorage.setItem('__qualification_clock','0'));
+          }
           const account = mode === 'native' ? await fixture.hold('/api/v7/access', async (route, gate) => { await gate.wait(); await platformClient(route); }) : undefined;
           await composer.getByRole('button', { name: 'Sign in with GitHub', exact: true }).click();
           const textarea = composer.locator('textarea'); await expect(textarea).toBeEditable();

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { randomBytes, createHash } from 'node:crypto';
+import { randomBytes, createHash,createHmac } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -563,6 +563,64 @@ try {
     await json(await post('logout', { repo: config.repo, origin: config.origin }, renamed));
     assert.equal((await post('access', { config, ids: [] }, renamed)).status, 401);
     report.checks.push({ workflow: 'ambiguous remote commit survives native restart and account rename without replay or ownership transfer; logout revokes', status: 'passed' });
+    // One supported reading/recovery journey, with independently authored provider changes.
+    const economyStart=service.github.calls.length;
+    const coldConfig={...config,selector:{kind:'page',key:'shared-reliable'}};
+    const coldThread=service.github.addThread('shared-reliable');service.github.addComment(coldThread,'Shared reading survives provider trouble');
+    const concurrent=await Promise.all(Array.from({length:12},()=>read('page',{config:coldConfig,read:{kind:'roots',order:'oldest',replyPrefetch:0},fresh:true}).then(response=>json(response))));
+    assert.ok(concurrent.every(page=>page.nodes[coldThread.comments[0].id]?.body===coldThread.comments[0].body));
+    assert.equal(service.github.calls.slice(economyStart).filter(call=>call.operation==='Page').length,1,'Concurrent readers share the necessary public acquisition');
+    const beforeDurable=service.github.calls.length;
+    await service.restart();
+    const sharedURL=origin+api+'page?'+new URLSearchParams({input:JSON.stringify({config:coldConfig,read:{kind:'roots',order:'oldest',replyPrefetch:0}})});
+    const retained=await json(await service.fetch(sharedURL,{headers:{'Cache-Control':'no-cache'}}));
+    assert.equal(retained.observedAt,concurrent[0].observedAt,'Restart retains original public acquisition age');
+    assert.equal(service.github.calls.length,beforeDurable,'Origin revalidation after restart needs no provider request');
+    const external=service.github.addComment(coldThread,'An external GitHub contribution');
+    const delivery={action:'created',installation:{id:123},repository:{node_id:'R_fixture',full_name:'example/comments',private:false},discussion:{number:coldThread.number,category:{node_id:'CAT_fixture'}},comment:{node_id:external.id}};
+    const notify=async(payload,event='discussion_comment',id=crypto.randomUUID())=>{
+      const body=JSON.stringify(payload),signature='sha256='+createHmac('sha256','fixture-webhook-secret').update(body).digest('hex');
+      return service.fetch(origin+'/webhooks/github',{method:'POST',headers:{'Content-Type':'application/json','X-Hub-Signature-256':signature,'X-GitHub-Event':event,'X-GitHub-Delivery':id},body});
+    };
+    await json(await notify(delivery));
+    const reconciled=await json(await read('page',{config:coldConfig,read:{kind:'roots',order:'oldest',replyPrefetch:0},fresh:true}));
+    assert.equal(reconciled.nodes[external.id].body,external.body,'A signed provider change is reconciled into actual public reading');
+    const beforeThrottle=service.github.calls.length,realProvider=service.github.fetch;
+    service.github.fetch=async request=>new URL(request.url).pathname==='/graphql'?Response.json({message:'Secondary rate limit'},{status:429,headers:{'Retry-After':'1','X-GitHub-Request-Id':'fixture-throttle'}}):realProvider(request);
+    try{
+      const fallback=await json(await read('page',{config:coldConfig,read:{kind:'roots',order:'oldest',replyPrefetch:0},fresh:true}));
+      assert.equal(fallback.observedAt,reconciled.observedAt,'A throttle retains reading without renewing its observation age');
+      await service.restart();
+      const coldFailure=await json(await read('page',{config:{...config,selector:{kind:'page',key:'throttled-cold'}},read:{kind:'roots',order:'oldest',replyPrefetch:0},fresh:true}),429);
+      assert.equal(coldFailure.error.code,'RATE_LIMIT');assert.ok(coldFailure.error.retryAfter>0&&coldFailure.requestId,'Cooldown and diagnostic correlation survive object restart');
+      assert.equal(service.github.calls.length,beforeThrottle,'Cooldown refuses unrelated acquisitions before they contact the provider');
+    }finally{service.github.fetch=realProvider;}
+    await new Promise(resolve=>setTimeout(resolve,1100));
+    const recoveredReading=await json(await read('page',{config:coldConfig,read:{kind:'roots',order:'oldest',replyPrefetch:0},fresh:true}));
+    assert.equal(recoveredReading.nodes[external.id].body,external.body);
+    // A temporary renewal refusal must preserve the actual single-use credential family.
+    const previousLifetime=service.github.accessLifetime;service.github.accessLifetime=1;
+    const renewing=await signIn('renewable-reader');service.github.accessLifetime=previousLifetime;
+    let refused=false;
+    service.github.fetch=async request=>{
+      if(new URL(request.url).pathname==='/login/oauth/access_token'&&new URLSearchParams(await request.clone().text()).get('grant_type')==='refresh_token'&&!refused){refused=true;return Response.json({error:'temporarily_unavailable'});}
+      return realProvider(request);
+    };
+    try{
+      await json(await post('access',{config:coldConfig,ids:[external.id]},renewing),503);
+      const remembered=await json(await post('session',{repo:config.repo,origin:config.origin},renewing));
+      assert.equal(remembered.principal,'U_renewable-reader');assert.equal(remembered.needsAuthorization,false,'Temporary refusal preserves renewable authorization');
+      const beforeRotation=service.github.refreshes;
+      const accounts=await Promise.all(Array.from({length:3},()=>post('access',{config:coldConfig,ids:[external.id]},renewing).then(response=>json(response))));
+      assert.ok(accounts.every(account=>account.principal==='U_renewable-reader'));
+      assert.equal(service.github.refreshes-beforeRotation,1,'Concurrent account recovery consumes one single-use provider refresh token');
+    }finally{service.github.fetch=realProvider;}
+    service.github.meta.isPrivate=true;
+    try{
+      await json(await notify({...delivery,action:'privatized',repository:{...delivery.repository,private:true}},'repository'));
+      await json(await read('page',{config:coldConfig,read:{kind:'roots',order:'oldest',replyPrefetch:0},fresh:true}),403);
+    }finally{service.github.meta.isPrivate=false;}
+    report.checks.push({workflow:'concurrent durable reading, event-assisted external updates, coordinated throttle across restart, safe withdrawal and quiet single-use authorization renewal',status:'passed'});
     const open = await nativeService({origin,blog,entry,contentEntry,repositories:{},openHosting:{origins:[blog],category:'Announcements'}});
     try {
       const call = (name,input,cap='',method='POST') => open.fetch(origin+api+name+(method==='GET'?'?'+new URLSearchParams({input:JSON.stringify(input)}):''),{method,headers:{Origin:origin,...(method==='POST'?{'Content-Type':'application/json'}:{}),...(cap?{Authorization:'Bearer '+cap}:{})},...(method==='POST'?{body:JSON.stringify(input)}:{})});

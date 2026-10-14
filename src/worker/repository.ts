@@ -9,17 +9,20 @@ import type * as C from '../contracts/rpc.js';
 import type {Env} from './types.js';
 /** The established immutable repository object owns coordination, not interpretation. */
 export class Repository extends DurableObject<Env>{
-  #engine:RepositoryEngine;#store:Store;#provider:ProviderGate;
-  constructor(ctx:DurableObjectState,env:Env){super(ctx,env);const transactionSync=<T>(action:()=>T)=>ctx.storage.transactionSync(action);this.#store=new Store(ctx.storage.sql,Date.now,transactionSync);this.#provider=new ProviderGate(this.#store);this.#engine=new RepositoryEngine(env,this.#store,{sql:ctx.storage.sql,transactionSync},{renew:async token=>this.#peer('oauth:'+env.GITHUB_CLIENT_ID).providerRenew(token),begin:async(scope,resource)=>this.#peer(scope).providerBegin(resource),finish:async(scope,permit,feedback)=>this.#peer(scope).providerFinish(permit,feedback)},work=>this.ctx.waitUntil(work));}
+  #repository?:RepositoryEngine;#store:Store;#provider:ProviderGate;
+  constructor(ctx:DurableObjectState,env:Env){super(ctx,env);const transactionSync=<T>(action:()=>T)=>ctx.storage.transactionSync(action);this.#store=new Store(ctx.storage.sql,Date.now,transactionSync);this.#provider=new ProviderGate(this.#store);}
+  get #engine():RepositoryEngine{
+    return this.#repository??=new RepositoryEngine(this.env,this.#store,{sql:this.ctx.storage.sql,transactionSync:action=>this.ctx.storage.transactionSync(action)},{renew:async(token,requestId)=>this.#peer('oauth:'+this.env.GITHUB_CLIENT_ID).providerRenew(token,requestId),begin:async(scope,resource,priority)=>this.#peer(scope).providerBegin(resource,priority),finish:async(scope,permit,feedback)=>this.#peer(scope).providerFinish(permit,feedback)},work=>this.ctx.waitUntil(work));
+  }
   #peer(scope:string){return this.env.REPOSITORY_STORE.get(this.env.REPOSITORY_STORE.idFromName('provider:'+this.env.GITHUB_APP_ID+':'+scope));}
-  async providerRenew(token:string):Promise<import('../domain/errors.js').Result<import('../domain/provider.js').Renewal>>{
+  async providerRenew(token:string,requestId?:string):Promise<import('../domain/errors.js').Result<import('../domain/provider.js').Renewal>>{
     const config=configuration(this.env),keys=secrets(this.env);
-    const client=new GitHub('authorization/renewal','R_authorization',1,'CAT_authorization',config,keys,this.#store,{renew:async value=>this.providerRenew(value),begin:async(scope,resource)=>this.#peer(scope).providerBegin(resource),finish:async(scope,permit,feedback)=>this.#peer(scope).providerFinish(permit,feedback)});
+    const client=new GitHub('authorization/renewal','R_authorization',1,'CAT_authorization',config,keys,this.#store,{renew:async value=>this.providerRenew(value),begin:async(scope,resource,priority)=>this.#peer(scope).providerBegin(resource,priority),finish:async(scope,permit,feedback)=>this.#peer(scope).providerFinish(permit,feedback)},requestId);
     return this.#provider.renew(token,keys.sessionSecret,'oauth:'+config.appId+':'+config.clientId,value=>client.exchange({grant_type:'refresh_token',refresh_token:value}));
   }
-  async providerBegin(resource:string){return this.#provider.begin(resource);}
+  async providerBegin(resource:string,priority?:'interactive'|'background'){return this.#provider.begin(resource,priority);}
   async providerFinish(permit:ProviderPermit,feedback:ProviderFeedback){await this.#provider.finish(permit,feedback);}
   async webhook(input:Parameters<RepositoryEngine['webhook']>[0],registration:Registration,repo:string){this.#engine.webhook(input,registration,repo);this.ctx.waitUntil(this.#store.schedule(this.ctx,this.#engine.rankingAlarm()));}
   async execute<K extends C.Operation>(operation:K,input:C.Input<K>,registration:Registration,authority:C.Authority={}){const output=await this.#engine.execute(operation,input,registration,authority);this.ctx.waitUntil(Promise.resolve().then(()=>this.#store.schedule(this.ctx,this.#engine.rankingAlarm())).catch(error=>console.error('Repository alarm maintenance failed.',error)));return output;}
-  override async alarm(){this.#store.prune();await this.#engine.continueRanking();await this.#store.schedule(this.ctx,this.#engine.rankingAlarm());}
+  override async alarm(){this.#store.prune();if([...this.#store.sql.exec("SELECT key FROM records WHERE key='identity:v3'")].length)await this.#engine.continueRanking();await this.#store.schedule(this.ctx,this.#repository?.rankingAlarm()??null);}
 }

@@ -39,4 +39,6 @@ A paused budget result needs a reset or inspected budget change. Upstream means 
 
 Add replacement App credentials and verify real sign-in before retiring the old credentials. Preserve SESSION_SECRET during routine updates; changing it invalidates encrypted operational records. Re-register after an installation/category change rather than adding runtime discovery work to every request.
 
-Log request counts, timings and error codes; exclude bodies, authorization headers, callback query strings and session tokens. The supplied deployment disables Workers observability; account-level logging is separate. See [security](../SECURITY.md#deployment-and-reports).
+The supplied deployments enable Workers observability. Provider logs include operation, authority kind, latency, GitHub request ID, bounded redacted error details and rate state. The API returns a request ID and retry interval for correlation. Logs exclude bodies, authorization headers, callback query strings and session tokens. See [security](../SECURITY.md#deployment-and-reports).
+
+Temporary rate limits or provider outages preserve renewable credentials. Renewal has one OAuth-client owner, records rotation before returning it, and lets repository sessions recover that result without replaying a single-use refresh token. Sessions slide with use for 30 days. An invalid or unresolvable renewal requires reconnecting the retained author; public reading remains available independently.

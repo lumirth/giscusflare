@@ -9,8 +9,8 @@ export interface ProviderPermit { id: string; resource: string }
 export interface ProviderFeedback { retryAfter?: number; remaining?: number; reset?: number; secondary?: boolean }
 export interface Renewal {token:v.InferOutput<typeof OAuthToken>;observedAt:number}
 export interface ProviderCoordination {
-  renew(refreshToken:string):Promise<Result<Renewal>>;
-  begin(scope: string, resource: string): Promise<Result<ProviderPermit>>;
+  renew(refreshToken:string,requestId?:string):Promise<Result<Renewal>>;
+  begin(scope: string, resource: string,priority?:'interactive'|'background'): Promise<Result<ProviderPermit>>;
   finish(scope: string, permit: ProviderPermit, feedback: ProviderFeedback): Promise<void>;
 }
 /** Allowance-scoped admission contains pressure; it never chooses another credential. */
@@ -34,7 +34,7 @@ export class ProviderGate {
               const observedAt=this.store.now(),next=await exchange(token);
               requireCondition(next.refresh_token&&next.refresh_token_expires_in,502,'UPSTREAM_SCHEMA','GitHub did not return complete rotating credentials.');
               const renewed={token:next,observedAt};
-              await this.store.putSecret(key,schema,renewed,secret,purpose,this.store.now()+30*86400000);
+              await this.store.putSecret(key,schema,renewed,secret,purpose,this.store.now()+(next.refresh_token_expires_in??15552000)*1000);
               this.store.delete(pending);return renewed;
             }catch(error){if(error instanceof AppError&&error.phase==='not-issued'&&[400,401,403,429,503].includes(error.status))this.store.delete(pending);throw error;}
           });
@@ -43,14 +43,15 @@ export class ProviderGate {
       });
     });
   }
-  begin(resource: string): Promise<Result<ProviderPermit>> {
+  begin(resource: string,priority:'interactive'|'background'='interactive'): Promise<Result<ProviderPermit>> {
     return result(async () => {
       const now = this.store.now();
-      const until = Math.max(this.store.get('cooldown:all', Deadline)?.until ?? 0, this.store.get('cooldown:' + resource, Deadline)?.until ?? 0);
-      if (until > now) throw new AppError(429, 'RATE_LIMIT', 'GitHub is limiting requests. Try again later.', Math.ceil((until - now) / 1000));
+      const shared=this.store.get('cooldown:all',Deadline)?.until??0,until=Math.max(shared,this.store.get('cooldown:'+resource,Deadline)?.until??0);
+      if (until > now) throw new AppError(429, 'RATE_LIMIT', 'GitHub is limiting requests. Try again later.', Math.ceil((until - now) / 1000),'not-issued',shared>now?'secondary':'primary');
       this.store.sql.exec('CREATE TABLE IF NOT EXISTS provider_permits (id TEXT PRIMARY KEY, expires INTEGER NOT NULL)');
       this.store.sql.exec('DELETE FROM provider_permits WHERE expires<=?', now);
       const active = Number([...this.store.sql.exec('SELECT COUNT(*) AS count FROM provider_permits')][0]?.count ?? 0);
+      if(priority==='background'&&active>=2)throw new AppError(429,'RANKING_BUDGET','Background acquisition is waiting for interactive requests.',2);
       if (active >= 8) throw new AppError(503, 'UPSTREAM', 'GitHub requests are busy. Try again shortly.', 2);
       const id = crypto.randomUUID();
       this.store.sql.exec('INSERT INTO provider_permits VALUES(?,?)', id, now + 30000);
@@ -68,8 +69,11 @@ export class ProviderGate {
     }
   }
 }
-export async function admitted<T>(coordination: ProviderCoordination, scope: string, resource: string, action: (feedback: ProviderFeedback) => Promise<T>): Promise<T> {
-  const permit = unwrap(await coordination.begin(scope, resource)), feedback: ProviderFeedback = {};
+export async function admitted<T>(coordination: ProviderCoordination, scope: string, resource: string, action: (feedback: ProviderFeedback) => Promise<T>,priority:'interactive'|'background'='interactive'): Promise<T> {
+  const permit = unwrap(await coordination.begin(scope, resource,priority)), feedback: ProviderFeedback = {};
   try { return await action(feedback); }
-  finally { await coordination.finish(scope, permit, feedback); }
+  finally {
+    try { await coordination.finish(scope, permit, feedback); }
+    catch { console.error(JSON.stringify({ event: 'provider_feedback_failed', scope, resource })); }
+  }
 }

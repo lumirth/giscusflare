@@ -50,10 +50,11 @@ operationRates.set(API_PREFIX+'/content','read');
 operationRates.set(API_PREFIX+'/registration','auth');
 const requireSession = (value: string): string => { requireCondition(value, 401, 'AUTH_REQUIRED', 'Sign in with GitHub to continue.'); return value; };
 app.onError((error, c) => {
-  const safe = failure(error), id = crypto.randomUUID();
+  const safe = failure(error), id = c.get('requestId')??crypto.randomUUID();
   console.error(JSON.stringify({event:'request_failed',id,code:safe.code,status:safe.status,phase:safe.phase,retryAfter:safe.retryAfter,path:c.req.path}));
   return security(json({ error: safe, requestId: id }, safe.status, safe.retryAfter ? { 'Retry-After': String(safe.retryAfter) } : {}));
 });
+app.use('*',async(c,next)=>{c.set('requestId',crypto.randomUUID());await next();});
 app.post('/webhooks/github',async c=>{
   const secret=c.env.GITHUB_WEBHOOK_SECRET;
   requireCondition(secret,503,'CONFIGURATION','Webhook verification is not configured.');
@@ -74,8 +75,9 @@ app.post('/webhooks/github',async c=>{
     const removed=payload.repositories_removed?.some(item=>item.node_id===registered.repositoryId);
     if(event==='installation_repositories'&&!removed)continue;
     const withdraw=Boolean(repository?.private||removed||event==='installation'&&['deleted','suspend'].includes(payload.action)||event==='repository'&&['deleted','privatized'].includes(payload.action));
-    if(payload.discussion&&payload.discussion.category.node_id!==registered.categoryId)continue;
-    await c.env.REPOSITORY_STORE.get(c.env.REPOSITORY_STORE.idFromName(`v3:${config.appId}:${registered.repositoryId}`)).webhook({delivery,event,action:payload.action,number:payload.discussion?.number,comment:payload.comment?.node_id,withdraw,deleted:event==='discussion'&&payload.action==='deleted'},registered,repo);
+    const movedOut=Boolean(payload.discussion&&payload.discussion.category.node_id!==registered.categoryId);
+    if(movedOut&&!(event==='discussion'&&payload.action==='category_changed'))continue;
+    await c.env.REPOSITORY_STORE.get(c.env.REPOSITORY_STORE.idFromName(`v3:${config.appId}:${registered.repositoryId}`)).webhook({delivery,event,action:payload.action,number:payload.discussion?.number,comment:payload.comment?.node_id,withdraw,deleted:movedOut||event==='discussion'&&payload.action==='deleted'},registered,repo);
   }
   return json({accepted:true});
 });
@@ -98,7 +100,7 @@ const widget = async (c:import('hono').Context<AppEnv>, pathLang?: string) => {
   const url = new URL(rawURL), query = R.queryObject(url);
   if (pathLang) { requireCondition(!query.lang || query.lang === pathLang, 400, 'BAD_INPUT', 'The path and query specify different languages.'); query.lang = pathLang; }
   const input = parse(R.WidgetQuery, query), p = authorizePresentation(configuration(env),input);
-  const response=await publicRead(c,{config:input},async()=>unwrap(await invoke(env,'page',{config:R.selection(input),read:{kind:'roots',order:p.defaultCommentOrder,cursor:'',replyPrefetch:5},fresh:false,providerHTML:true})),(view,expires)=>widgetHTML(input,p,{view,expires}));
+  const response=await publicRead(c,{config:input},async()=>unwrap(await invoke(env,'page',{config:R.selection(input),read:{kind:'roots',order:p.defaultCommentOrder,cursor:'',replyPrefetch:5},fresh:false,providerHTML:true},{requestId:c.get('requestId')})),(view,expires)=>widgetHTML(input,p,{view,expires}));
   response.headers.set('Cache-Control','no-store');return response;
 };
 app.get('/widget', rateLimit('read'), c => widget(c));
@@ -111,7 +113,7 @@ app.get('/auth/window', rateLimit('auth'), c => {
 app.get(C.operations.authCallback.path, rateLimit('auth'), async c => {
   const query = parse(C.operations.authCallback.request, R.queryObject(new URL(c.req.url))), state = stateParts(query.state);
   policy(c.get('config'), state.repo);
-  const result = unwrap(await invoke(c.env,'authCallback', {...state,code:query.code||'',denied:Boolean(query.error)},{browserCookie:cookie(c.req.raw,cookieName(c.get('config').origin,state.attempt))}));
+  const result = unwrap(await invoke(c.env,'authCallback', {...state,code:query.code||'',denied:Boolean(query.error)},{browserCookie:cookie(c.req.raw,cookieName(c.get('config').origin,state.attempt)),requestId:c.get('requestId')}));
   const response = authHTML('Returning to comments…', '/auth-complete.js', result);
   response.headers.append('Set-Cookie', cookieHeader(c.get('config').origin, state.attempt, '', true));
   return security(response);
@@ -148,7 +150,7 @@ for (const name of Object.keys(C.operations) as (keyof typeof C.operations)[]) {
     const request=parse(operation.request,c.get('input'));
     const run = async () => {
       const session = operation.authenticated ? requireSession(c.get('session')) : c.get('session');
-      return unwrap(await invoke(c.env,name,request as C.Input<typeof name>,{session}));
+      return unwrap(await invoke(c.env,name,request as C.Input<typeof name>,{session,requestId:c.get('requestId')}));
     };
     if (operation.cache) return publicRead(c, request, run as () => Promise<ReadValue<unknown>>);
     if('config'in request)authorizeWidget(c.get('config'),request.config);else if('origin'in request)parentOrigin(policy(c.get('config'),request.repo),request.origin);
@@ -170,7 +172,7 @@ app.post(API_PREFIX+'/content',async c=>{
   for(const input of raw.inputs)requireCondition(input.repo===raw.config.repo&&input.pageURL===raw.config.pageURL,403,'ORIGIN','Content must belong to the selected page.');
   const results:ContentBatchResult['results']=raw.inputs.map(({html})=>({html}));
   let positions=raw.inputs.flatMap((input,index)=>['github','stock'].includes(raw.content)&&!input.html?[index]:[]);
-  const interpreted=positions.length?unwrap(await invoke(c.env,'interpret',{config:raw.config,inputs:positions.map(index=>raw.inputs[index]!)})):{results:[]};
+  const interpreted=positions.length?unwrap(await invoke(c.env,'interpret',{config:raw.config,inputs:positions.map(index=>raw.inputs[index]!)},{requestId:c.get('requestId')})):{results:[]};
   positions.forEach((position,index)=>{results[position]=interpreted.results[index]||{};});
   if(raw.content==='github')return json({results});
   requireCondition(c.env.CONTENT,503,'CONFIGURATION','This service needs a content profile binding.');
@@ -183,7 +185,7 @@ app.post(API_PREFIX+'/content',async c=>{
 });
 app.post(C.operations.authPrepare.path, async c => {
   const request=parse(C.operations.authPrepare.request,c.get('input')),browserCookie=random();parentOrigin(policy(c.get('config'),request.repo),request.origin);
-  const result = unwrap(await invoke(c.env,'authPrepare',request,{browserCookie}));
+  const result = unwrap(await invoke(c.env,'authPrepare',request,{browserCookie,requestId:c.get('requestId')}));
   return json(result, 200, { 'Set-Cookie': cookieHeader(c.get('config').origin, result.attempt, browserCookie) });
 });
 app.all(API_PREFIX+'/*', () => { throw new AppError(404, 'NOT_FOUND', 'API route not found.'); });

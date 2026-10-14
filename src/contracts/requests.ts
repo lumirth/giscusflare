@@ -52,7 +52,7 @@ const IDs=v.pipe(v.array(NodeID),v.maxLength(100));
 export const ReadIntent=v.variant('kind',[
   v.strictObject({kind:v.literal('roots'),order:v.optional(Order,'oldest'),cursor:v.optional(Cursor,''),replyPrefetch:ReplyPrefetch}),
   v.strictObject({kind:v.literal('replies'),parentId:NodeID,cursor:v.optional(Cursor,'')}),
-  v.strictObject({kind:v.literal('observe'),ids:IDs}),
+  v.strictObject({kind:v.literal('observe'),ids:IDs,replyPrefetch:ReplyPrefetch}),
   v.strictObject({kind:v.literal('selected'),ids:IDs,replyPrefetch:ReplyPrefetch}),
 ]);
 export type ReadIntent=v.InferOutput<typeof ReadIntent>;
