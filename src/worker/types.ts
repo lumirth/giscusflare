@@ -3,7 +3,7 @@ import type { RepositoryEngine } from '../domain/repository.js';
 export interface Env extends ConfigBindings {
   CONTENT?:{fetch(request:Request):Promise<Response>};
   ASSETS: { fetch(request: Request): Promise<Response> };
-  REPOSITORY_STORE: { idFromName(name: string): unknown; get(id: unknown): Pick<RepositoryEngine,'execute'> };
+  REPOSITORY_STORE: { idFromName(name: string): unknown; get(id: unknown): Pick<RepositoryEngine,'execute'> & Pick<import('./repository.js').Repository,'webhook'> & Pick<import('./repository.js').Repository,'providerBegin'|'providerFinish'|'providerRenew'> };
   READ_LIMITER: RateLimiter;
   WRITE_LIMITER: RateLimiter;
   AUTH_LIMITER: RateLimiter;

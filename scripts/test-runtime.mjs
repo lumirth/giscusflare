@@ -283,8 +283,8 @@ try {
       const beforeLatest = service.github.calls.length, latestStarted = Date.now();
       const latestCount = await json(await read('counts',countInput,cap));
       assert.equal(latestCount.observations[articleKey].count,discussion.comments.length,'A new uncached count observes the actual provider effect after an older held query');
-      assert.equal(service.github.calls.slice(beforeLatest).filter(call=>call.operation==='CommentCounts').length,1,'The uncached count performs its one necessary provider query');
-      assert.ok(latestCount.observations[articleKey].observedAt>=latestStarted,'The new provider query carries its actual observation age');
+      assert.equal(service.github.calls.slice(beforeLatest).filter(call=>call.operation==='CommentCounts').length,0,'The confirmed provider count is reused after the held acquisition without another query');
+      assert.equal(latestCount.observations[articleKey].observedAt,committed.patch.roots.count.observedAt,'The shared confirmed count preserves its actual observation age');
     } finally { releaseCount(); await delayedCount?.catch(() => {}); service.github.fetch = provider; }
     report.checks.push({ workflow: 'authorize a future capability, contribute/replay, edit, reply, react, moderate and remove with independent provider effects', status: 'passed' });
     const uncertain = { type: 'comment', body: 'Committed before the connection was lost' }, uncertainKey = key();

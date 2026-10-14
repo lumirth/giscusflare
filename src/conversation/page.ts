@@ -320,7 +320,7 @@ export class PageModel {
         if (conflicted) this.#reconcile([...conflictingIds]);
         return { contentHints };
     }
-    #acquire(parentId: string, purpose: AcquisitionPurpose, observedIds?: string[]): Promise<boolean> {
+    #acquire(parentId: string, purpose: AcquisitionPurpose, observedIds?: string[],freshObservation=false): Promise<boolean> {
         this.signal.throwIfAborted();
         const continuing = purpose === 'continue', observing = purpose === 'revalidate';
         const current = this.#reads.get(parentId);
@@ -364,7 +364,7 @@ export class PageModel {
                     ids = this.ranking.ids.slice(Number(cursor) || 0, (Number(cursor) || 0) + 20);
                 }
                 baseline = this.document;acceptance = this.#accepted;countAfter = this.counts.revision;
-                const fresh = observing || ['restart','change-order'].includes(purpose);
+                const fresh = observing&&freshObservation||['restart','change-order'].includes(purpose);
                 const read = observing ? {kind: 'observe', ids} : parentId ? {kind: 'replies', parentId, cursor} : ids ? {kind: 'selected', ids, replyPrefetch: this.replyPrefetch} : {kind: 'roots', order: this.order, cursor, replyPrefetch: this.replyPrefetch};
                 const page = await this.#request<WindowPage>('page', {read, fresh}, signal);
                 signal.throwIfAborted();
@@ -389,7 +389,11 @@ export class PageModel {
             } catch (error) {
                 if (!signal.aborted) {
                     if (purpose === 'change-order' || continuing && [400, 404, 410].includes(Number(Object(error).status))) this.continuity = { status: 'restart-required', reason: message(error) };
-                    if (!observing || !this.ready) this.error = message(error);
+                    if(observing&&[403,404].includes(Number(Object(error).status))&&['PUBLIC_ONLY','NOT_FOUND','CATEGORY','PERMISSION'].includes(String(Object(error).code))){
+                        this.document={nodes:{},roots:emptyWindow(),replies:{},metadata:{...this.document.metadata,thread:null,unavailable:true}};
+                        this.continuity={status:'restart-required',reason:message(error)};
+                        this.error=message(error);
+                    }else if (!observing || !this.ready) this.error = message(error);
                     this.notify();
                 }
                 return false;
@@ -405,7 +409,7 @@ export class PageModel {
     async restart(): Promise<void> { await this.#acquire('', this.ready ? 'restart' : 'initial'); }
     async loadMore(): Promise<void> { await this.#acquire('', 'continue'); }
     revalidate(staleAfterMs = 0, observedIds?: string[]): Promise<boolean> {
-        return !this.ready || this.acquisition() || Date.now() - this.lastRefresh < staleAfterMs ? Promise.resolve(false) : this.#acquire('', 'revalidate', observedIds);
+        return !this.ready || this.acquisition() || Date.now() - this.lastRefresh < staleAfterMs ? Promise.resolve(false) : this.#acquire('', 'revalidate', observedIds,staleAfterMs===0);
     }
     async setOrder(order: CommentOrder): Promise<void> {
         if (JSON.stringify(this.order) === JSON.stringify(order)) return;

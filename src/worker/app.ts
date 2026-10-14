@@ -1,5 +1,6 @@
 import type { ReadValue } from '../contracts/results.js';
 import * as v from 'valibot';
+import {bodyBytes} from '../domain/body.js';
 import {encrypt,decrypt,hash} from '../domain/crypto.js';
 import {registerRepository} from '../domain/github.js';
 import type {Registration} from '../domain/repository.js';
@@ -50,8 +51,33 @@ operationRates.set(API_PREFIX+'/registration','auth');
 const requireSession = (value: string): string => { requireCondition(value, 401, 'AUTH_REQUIRED', 'Sign in with GitHub to continue.'); return value; };
 app.onError((error, c) => {
   const safe = failure(error), id = crypto.randomUUID();
-  if (!(error instanceof AppError)) console.error(JSON.stringify({ event: 'internal_error', id }));
+  console.error(JSON.stringify({event:'request_failed',id,code:safe.code,status:safe.status,phase:safe.phase,retryAfter:safe.retryAfter,path:c.req.path}));
   return security(json({ error: safe, requestId: id }, safe.status, safe.retryAfter ? { 'Retry-After': String(safe.retryAfter) } : {}));
+});
+app.post('/webhooks/github',async c=>{
+  const secret=c.env.GITHUB_WEBHOOK_SECRET;
+  requireCondition(secret,503,'CONFIGURATION','Webhook verification is not configured.');
+  const signature=c.req.header('X-Hub-Signature-256')??'',delivery=c.req.header('X-GitHub-Delivery')??'',event=c.req.header('X-GitHub-Event')??'';
+  requireCondition(/^sha256=[a-f0-9]{64}$/.test(signature)&&/^[A-Za-z0-9-]{1,100}$/.test(delivery),403,'PERMISSION','Invalid webhook proof.');
+  const bytes=await bodyBytes(c.req.raw.body,1024*1024,new AppError(400,'BAD_INPUT','A webhook body is required.'),new AppError(413,'BODY_TOO_LARGE','Webhook body is too large.'));
+  const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(secret),{name:'HMAC',hash:'SHA-256'},false,['verify']);
+  const proof=Uint8Array.from(signature.slice(7).match(/../g)!,pair=>parseInt(pair,16));
+  requireCondition(await crypto.subtle.verify('HMAC',key,proof,bytes),403,'PERMISSION','Invalid webhook proof.');
+  if(event==='ping')return json({accepted:true});
+  if(!['discussion','discussion_comment','repository','installation','installation_repositories'].includes(event))return json({accepted:false});
+  const payload=parse(v.object({action:v.string(),installation:v.object({id:PositiveInteger}),repository:v.optional(v.object({node_id:NodeID,full_name:RepositoryName,private:v.boolean()})),repositories:v.optional(v.array(v.object({node_id:NodeID,full_name:RepositoryName}))),repositories_removed:v.optional(v.array(v.object({node_id:NodeID,full_name:RepositoryName}))),discussion:v.optional(v.object({number:PositiveInteger,category:v.object({node_id:NodeID})})),comment:v.optional(v.object({node_id:NodeID}))}),JSON.parse(new TextDecoder().decode(bytes)));
+  const config=configuration(c.env);
+  for(const [repo,registered]of Object.entries(config.repositories)){
+    if(registered.installationId!==payload.installation.id)continue;
+    const repository=payload.repository;
+    if(repository&&repository.node_id!==registered.repositoryId)continue;
+    const removed=payload.repositories_removed?.some(item=>item.node_id===registered.repositoryId);
+    if(event==='installation_repositories'&&!removed)continue;
+    const withdraw=Boolean(repository?.private||removed||event==='installation'&&['deleted','suspend'].includes(payload.action)||event==='repository'&&['deleted','privatized'].includes(payload.action));
+    if(payload.discussion&&payload.discussion.category.node_id!==registered.categoryId)continue;
+    await c.env.REPOSITORY_STORE.get(c.env.REPOSITORY_STORE.idFromName(`v3:${config.appId}:${registered.repositoryId}`)).webhook({delivery,event,action:payload.action,number:payload.discussion?.number,comment:payload.comment?.node_id,withdraw,deleted:event==='discussion'&&payload.action==='deleted'},registered,repo);
+  }
+  return json({accepted:true});
 });
 app.get(API_PREFIX+'/setup',c=>{
   let configured=false;

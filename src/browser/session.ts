@@ -120,12 +120,12 @@ export class BrowserSession implements Transport {
   }
   #context() { const {repo,origin,registration} = this.config; return {repo,origin,...(registration ? {registration} : {})}; }
   request<T>(path: string, body: unknown, signal?: AbortSignal, method: 'GET' | 'POST' = 'POST'): Promise<T> {
-    return this.#request(path, body, signal, method, ['counts', 'ranking', 'content', 'page'].includes(path) ? '' : this.#token);
+    return this.#request(path, body, signal, method, ['counts', 'ranking', 'content'].includes(path) ? '' : this.#token);
   }
   async #request<T>(path: string, body: unknown, signal: AbortSignal | undefined, method: 'GET' | 'POST', token: string): Promise<T> {
     if (this.lifetime.aborted) throw new ApiError('This session has been disposed.', 0, 'SESSION');
     let data:T;
-    try { data = await requestJSON<T>(this.service, path, body, {method, bearer:token, cache:'no-store', signal:signal ? AbortSignal.any([this.lifetime,signal]) : this.lifetime, failurePhase:path === 'contribute' ? 'unknown' : 'not-issued'}); }
+    try { data = await requestJSON<T>(this.service, path, body, {method, bearer:token, cache:['page','counts'].includes(path)?'default':'no-store', signal:signal ? AbortSignal.any([this.lifetime,signal]) : this.lifetime, failurePhase:path === 'contribute' ? 'unknown' : 'not-issued'}); }
     catch (error) {
       if (error instanceof ApiError && token && this.#token === token && !this.lifetime.aborted) {
         if (error.status === 401 && ['SESSION','AUTH_REQUIRED'].includes(error.code) && !path.startsWith('auth/')) { this.setSession('');this.host.saveSession?.(''); }

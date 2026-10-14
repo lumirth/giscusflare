@@ -8,7 +8,7 @@ export interface FetchPolicy {
 export const defaultFetchPolicy: Readonly<FetchPolicy> = Object.freeze({
   onFocus: true,
   onReconnect: true,
-  staleAfterMs: 60_000,
+  staleAfterMs: 30_000,
   replyPrefetch: 5,
 });
 export function fetchPolicy(

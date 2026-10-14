@@ -211,6 +211,8 @@ export function createConversation(options: ConversationOptions): Conversation {
       if ((event.type === 'online' ? policy.onReconnect : policy.onFocus) && initialized && !document.hidden && navigator.onLine !== false && !session.pending && !page.acquisition() && !interactions.active)
         void page.revalidate(policy.staleAfterMs);
     };
+    const poll=policy.onFocus?setInterval(()=>fresh(new Event('poll')),15000):undefined;
+    page.own(()=>{if(poll!==undefined)clearInterval(poll);});
     const events = { signal: lifetime.signal };
     window.addEventListener('focus', fresh, events);
     window.addEventListener('online', fresh, events);
