@@ -322,7 +322,9 @@ try {
     assert.equal((await json(await post('identity', { repo:config.repo,origin:config.origin }, cap))).profile.login, 'renamed-reader', 'Fresh identity display is independent of discussion reading and capability issuance');
     assert.equal((await json(await contribute(uncertain, renamed, uncertainKey), 409)).error.code, 'WRITE_UNCERTAIN');
     service.github.setLogin('visitor', 'reader');
-    const other = await signIn('visitor');
+    // The other author uses the supported App setting with non-expiring user tokens.
+    const ordinaryLifetime=service.github.accessLifetime;service.github.accessLifetime=null;
+    const other = await signIn('visitor');service.github.accessLifetime=ordinaryLifetime;
     assert.equal((await json(await contribute(uncertain, other, uncertainKey), 409)).error.code, 'CONFLICT');
     assert.equal(discussion.comments.filter(comment => comment.body === uncertain.body).length, 1);
     // Portable phase uses the extracted public package and real repository effects, without DOM or renderer fixtures.
@@ -627,13 +629,17 @@ try {
     const renewing=await signIn('renewable-reader');service.github.accessLifetime=previousLifetime;
     let refused=false;
     service.github.fetch=async request=>{
-      if(new URL(request.url).pathname==='/login/oauth/access_token'&&new URLSearchParams(await request.clone().text()).get('grant_type')==='refresh_token'&&!refused){refused=true;return Response.json({error:'temporarily_unavailable'});}
+      if(new URL(request.url).pathname==='/login/oauth/access_token'&&new URLSearchParams(await request.clone().text()).get('grant_type')==='refresh_token'&&!refused){refused=true;return Response.json({error:'temporarily_unavailable'},{headers:{'Retry-After':'1'}});}
       return realProvider(request);
     };
     try{
       await json(await post('access',{config:coldConfig,ids:[external.id]},renewing),503);
       const remembered=await json(await post('session',{repo:config.repo,origin:config.origin},renewing));
       assert.equal(remembered.principal,'U_renewable-reader');assert.equal(remembered.needsAuthorization,false,'Temporary refusal preserves renewable authorization');
+      await json(await post('access',{config:coldConfig,ids:[external.id]},renewing),503);
+      const publicDuringRenewal=await json(await read('page',{config:coldConfig,read:{kind:'roots',order:'oldest',replyPrefetch:0}}));
+      assert.equal(publicDuringRenewal.nodes[external.id].body,external.body,'OAuth cooldown leaves public reading available');
+      await new Promise(resolve=>setTimeout(resolve,1100));
       const beforeRotation=service.github.refreshes;
       const accounts=await Promise.all(Array.from({length:3},()=>post('access',{config:coldConfig,ids:[external.id]},renewing).then(response=>json(response))));
       assert.ok(accounts.every(account=>account.principal==='U_renewable-reader'));

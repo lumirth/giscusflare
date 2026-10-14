@@ -8,12 +8,13 @@ import type { OAuthToken } from '../contracts/github.js';
 import type { PublicConfig, RepositoryPolicy, SecretConfig } from '../contracts/config.js';
 import { parentOrigin } from './authorization.js';
 import { b64, decrypt, equal, hash, random, unb64 } from './crypto.js';
-import { AppError, requireCondition } from './errors.js';
+import { AppError, failure, requireCondition } from './errors.js';
 import { GitHub } from './github.js';
 import { Store } from './store.js';
 const DAY = 86400000, TEN_MINUTES = 600000;
 export type AuthorizedSession=S.Session&{credentials:NonNullable<S.Session['credentials']>};
-export type CallbackResult = { status: 'ready' | 'denied'; attempt: string; repo: string; returnURL: string; mode: 'popup' | 'redirect'; openerOrigin: string };
+export type CallbackResult = { attempt: string; repo: string; returnURL: string; mode: 'popup' | 'redirect'; openerOrigin: string } &
+  ({status:'ready'|'denied'}|{status:'waiting';retryAfter:number;expires:number}|{status:'failed';message:string});
 export function stateValue(repo:string,attempt:string,registration?:string):string{return b64(new TextEncoder().encode(repo))+'.'+attempt+(registration?'.'+b64(new TextEncoder().encode(registration)):'');}
 export function stateParts(state:string):R.AuthStartQuery {
   const match=/^([A-Za-z0-9_-]{1,200})\.([A-Za-z0-9_-]{43})(?:\.([A-Za-z0-9_-]{1,8192}))?$/.exec(state);
@@ -28,7 +29,7 @@ export class Auth {
     this.#purpose = `${config.appId}:${config.clientId}:${repositoryId}`;
   }
   #fields(data: OAuthToken,now=this.store.now()): NonNullable<S.Session['credentials']> {
-    return { accessToken: data.access_token, accessExpires: now + (data.expires_in ? data.expires_in * 1000 : Number.MAX_SAFE_INTEGER),
+    return { accessToken: data.access_token, accessExpires: data.expires_in ? now + data.expires_in * 1000 : Number.MAX_SAFE_INTEGER,
       refreshToken: data.refresh_token || null, refreshExpires: data.refresh_token_expires_in ? now + data.refresh_token_expires_in * 1000 : 0 };
   }
   async prepare(request: C.Input<'authPrepare'>,browserCookie:string): Promise<{ attempt: string; authorizeURL: string }> {
@@ -40,9 +41,12 @@ export class Auth {
     requireCondition(!this.store.get('session:' + request.proof, S.EncryptedRecord), 409, 'OAUTH', 'This session already exists. Start a new sign-in.');
     requireCondition(!this.store.get('auth:' + attempt, S.EncryptedRecord), 409, 'OAUTH', 'This sign-in is already being prepared. Start again.');
     requireCondition(new URL(request.returnURL).origin===origin,403,'ORIGIN','The return URL belongs to another website.');
+    const expires=Math.min(request.expires??now+TEN_MINUTES,now+TEN_MINUTES);
+    requireCondition(expires>now,401,'OAUTH','This sign-in expired. Return to the comments and start again.');
+    await this.github.authorizationAvailable();
     const url=new URL(request.returnURL); url.hash = ''; url.searchParams.delete('giscus');
     const record: S.OAuthAttempt = { origin, returnURL: url.toString(), mode: request.mode, openerOrigin,
-      sessionID: request.proof, githubVerifier, cookieHash: await hash(browserCookie), created: now, expires: now + TEN_MINUTES,
+      sessionID: request.proof, githubVerifier, cookieHash: await hash(browserCookie), created: now, expires,
       status: 'pending' };
     await this.store.putSecret('auth:' + attempt, S.OAuthAttempt, record, this.keys.sessionSecret, this.#purpose, record.expires);
     const authorize = new URL('https://github.com/login/oauth/authorize');
@@ -68,14 +72,25 @@ export class Auth {
       const attempt = await this.#attempt(input.attempt);
       requireCondition(attempt, 401, 'OAUTH', 'This sign-in attempt expired or was already used. Start again.');
       requireCondition(browserCookie && equal(await hash(browserCookie), attempt.cookieHash), 401, 'OAUTH', 'Sign-in must finish in the browser that started it.');
-      requireCondition(attempt.status === 'pending', 409, 'OAUTH', 'This sign-in callback was already used.');
-      const view = (status: 'ready' | 'denied'): CallbackResult => ({ status, attempt: input.attempt, repo: this.repo, returnURL: attempt.returnURL, mode: attempt.mode, openerOrigin: attempt.openerOrigin || this.config.origin });
-      if (input.denied) { this.store.delete('auth:' + input.attempt); return view('denied'); }
-      requireCondition(input.code, 400, 'OAUTH', 'GitHub did not return an authorization code.');
-      attempt.status = 'exchanging'; await this.#saveAttempt(input.attempt, attempt);
+      const context = { attempt: input.attempt, repo: this.repo, returnURL: attempt.returnURL, mode: attempt.mode, openerOrigin: attempt.openerOrigin || this.config.origin };
+      if (input.denied) { this.store.delete('auth:' + input.attempt); return {...context,status:'denied'}; }
+      // A persisted marker means a single-use code may already have been consumed.
+      if(attempt.status==='exchanging'){
+        this.store.delete('auth:'+input.attempt);
+        return {...context,status:'failed',message:'Sign-in was interrupted. Return to the comments and start again.'};
+      }
       try {
-        const token = await this.github.exchange({ code: input.code, code_verifier: attempt.githubVerifier, redirect_uri: this.config.origin + '/auth/callback' });
-        const identity=await this.github.identity(token.access_token),principal=identity.id,fields=this.#fields(token);
+        if(attempt.status==='pending'){
+          requireCondition(attempt.code||input.code,400,'OAUTH','GitHub did not return an authorization code.');
+          attempt.code ??= input.code;
+          attempt.status='exchanging';await this.#saveAttempt(input.attempt,attempt);
+          const observedAt=this.store.now();
+          const token=await this.github.exchange({code:attempt.code,code_verifier:attempt.githubVerifier,redirect_uri:this.config.origin+'/auth/callback'});
+          attempt.credentials=this.#fields(token,observedAt);attempt.status='exchanged';delete attempt.code;
+          await this.#saveAttempt(input.attempt,attempt);
+        }
+        requireCondition(attempt.credentials,401,'OAUTH','This sign-in is incomplete. Start again.');
+        const fields=attempt.credentials,identity=await this.github.identity(fields.accessToken),principal=identity.id;
         const session = { principal, credentials: fields, origin: attempt.origin,
           expires: Math.min(this.store.now() + 30 * DAY, fields.refreshToken ? fields.refreshExpires : fields.accessExpires) };
         await this.store.lock('session:' + attempt.sessionID, async () => {
@@ -84,9 +99,24 @@ export class Auth {
           await this.store.consumeSecret('auth:' + input.attempt, 'session:' + attempt.sessionID, S.Session, session, this.keys.sessionSecret, this.#purpose, session.expires);
           this.remember(identity);
         });
-        return view('ready');
+        return {...context,status:'ready'};
       } catch (error) {
-        this.store.delete('auth:' + input.attempt); throw error;
+        const safe=failure(error);
+        const resumable=error instanceof AppError&&
+          (attempt.status==='exchanging'&&safe.phase==='not-issued'&&[429,503].includes(safe.status)||attempt.status==='exchanged'&&[429,502,503].includes(safe.status));
+        console.warn(JSON.stringify({event:resumable?'auth_deferred':'auth_failed',requestId:this.github.requestId,stage:attempt.status==='exchanged'?'identity':'exchange',...safe}));
+        if(resumable){
+          const retryAfter=safe.retryAfter??60;
+          if(this.store.now()+retryAfter*1000>=attempt.expires){
+            this.store.delete('auth:'+input.attempt);
+            return {...context,status:'failed',message:'GitHub sign-in is temporarily unavailable. Return to the comments and try again later.'};
+          }
+          if(attempt.status==='exchanging')attempt.status='pending';
+          await this.#saveAttempt(input.attempt,attempt);
+          return {...context,status:'waiting',retryAfter,expires:attempt.expires};
+        }
+        this.store.delete('auth:'+input.attempt);
+        return {...context,status:'failed',message:safe.message};
       }
     });
   }

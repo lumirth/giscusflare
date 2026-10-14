@@ -4,6 +4,10 @@ body { margin: 0; min-height: 100svh; display: grid; place-items: center; }
 .auth-page p { margin: 1rem 0; }
 .auth-page a { color: light-dark(#0969da, #58a6ff); text-underline-offset: .15em; }
 .auth-page a:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
+.auth-page > a { display: block; margin-top: 1rem; }
+.auth-page button { display: block; margin: 1rem auto; padding: .5rem 1rem; font: inherit; color: inherit; background: light-dark(#f6f8fa, #21262d); border: 1px solid light-dark(#d0d7de, #30363d); border-radius: 6px; cursor: pointer; }
+.auth-page button:disabled { opacity: .6; cursor: default; }
+.auth-page button:focus-visible { outline: 2px solid light-dark(#0969da, #58a6ff); outline-offset: 3px; }
 .auth-loading { width: 48px; height: 48px; margin: auto; background: center / contain no-repeat url("https://github.githubassets.com/images/mona-loading-default.gif"); }
 @media (prefers-color-scheme: dark) { .auth-loading { background-image: url("https://github.githubassets.com/images/mona-loading-dark.gif"); } }
 @media (prefers-reduced-motion: reduce) { .auth-loading { display: none; } }

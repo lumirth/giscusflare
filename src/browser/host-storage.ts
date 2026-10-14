@@ -7,8 +7,8 @@ import { writingTargetKey, type SavedWriting } from '../conversation/writing.js'
 type Pending = Login & { fragment?: string; scroll?: number; composer?: string };
 type Initialization = import('./runtime.js').ConversationInitialization & {availableWriting?: readonly SavedWriting[]};
 const capability = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9_-]{43}$/.test(value);
-const pending = (value: unknown): value is Pending => {
-  if (!validLogin(value)) return false;
+const pending = (value: unknown, recovering=false): value is Pending => {
+  if (!value || typeof value!=='object' || !validLogin(recovering?{...value,status:'failed'}:value)) return false;
   const stored = value as Pending;
   return (stored.fragment === undefined || typeof stored.fragment === 'string') &&
     (stored.scroll === undefined || Number.isFinite(stored.scroll) && stored.scroll >= 0) &&
@@ -119,7 +119,7 @@ export function hostStorage(service: string, repo: string, recovery: WritingStor
       if (owned.has(id)) publish(scope(), id, null);
       else { const pending = retaining.get(id);if (pending) pending.record = null; }
     },
-    clearPending(attempt?: string) { const saved = read('pending');if (attempt === undefined || pending(saved) && saved.attempt === attempt) write('pending', null); },
+    clearPending(attempt?: string) { const saved = read('pending');if (attempt === undefined || pending(saved,true) && saved.attempt === attempt) write('pending', null); },
     pendingLogin(login: Login & {composer?: string}) { write('pending', {...login, fragment:location.hash, scroll:window.scrollY,...position()}); },
     dispose() { controller.abort(); },
     returning(): { handoff: Login; position: Pending } | undefined {
@@ -128,7 +128,7 @@ export function hostStorage(service: string, repo: string, recovery: WritingStor
         const bytes = Uint8Array.from(atob(location.hash.slice(9).replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
         const value = JSON.parse(new TextDecoder().decode(bytes));
         const stored = read('pending'), url = new URL(location.href);
-        const matched = value.repo === repo && capability(value.attempt) && ['ready','denied'].includes(value.status) && pending(stored) && stored.attempt === value.attempt;
+        const matched = value.repo === repo && capability(value.attempt) && ['ready','denied','failed'].includes(value.status) && pending(stored,value.status!=='ready') && stored.attempt === value.attempt;
         url.hash = matched ? stored.fragment || '' : '';
         history.replaceState(history.state, '', url);
         if (matched) return { handoff: { capability: stored.capability, attempt: stored.attempt, created: stored.created, version: 5, status: value.status }, position: stored };
