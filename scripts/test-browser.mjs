@@ -110,10 +110,14 @@ try {
           const originalRoot = roots.filter({ hasText: 'Try posting a comment or replying here.' });
           await originalRoot.getByRole('button', { name: '+1: 1', exact: true }).click();
           await expect(originalRoot.getByRole('button', { name: '+1: 2', exact: true })).toHaveAttribute('aria-pressed', 'true');
+          await expect(originalRoot.getByRole('button', { name: '+1: 2', exact: true })).toHaveAttribute('aria-busy', 'false');
           assert.deepEqual(await roots.evaluateAll(cards => cards.map(card => card.id)), captured, 'A score correction does not move the reader through a new traversal');
           await surface.getByRole('button', { name: 'Oldest', exact: true }).click();
+          await expect(roots.nth(1)).toContainText('Hono');
           await surface.getByRole('button', { name: 'popular', exact: true }).click();
           await expect(roots.first()).toContainText('Try posting a comment or replying here.');
+          await expect(roots.nth(1)).toContainText('Conversation 21');
+          await expect(originalRoot.getByRole('button', { name: '+1: 2', exact: true })).toHaveAttribute('aria-pressed', 'true');
           await originalRoot.getByRole('button', { name: '+1: 2', exact: true }).click();
           await expect(originalRoot.getByRole('button', { name: '+1: 1', exact: true })).toHaveAttribute('aria-pressed', 'false');
           await surface.getByRole('button', { name: 'Oldest', exact: true }).click();
