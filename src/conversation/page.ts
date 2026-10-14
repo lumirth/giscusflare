@@ -296,7 +296,15 @@ export class PageModel {
         if (page?.replies) for (const [id, window] of Object.entries(page.replies)) {
             const old = current.replies[id] ?? emptyWindow();
             if (replacing || !current.replies[id] || current.replies[id].cursor === '') replies[id] = acquireWindow(id,old,window,true);
-            else { count(window.count);const added=window.ids.filter(child=>!old.ids.includes(child));replies[id]=observedIds&&added.length?{...old,ids:unique([...old.ids,...added])}:old; }
+            else {
+                count(window.count);
+                const added=window.ids.filter(child=>!old.ids.includes(child));
+                if(observedIds&&added.length){
+                    const ids=unique([...old.ids,...added]);
+                    const gap=old.cursor===null&&window.count&&window.count.count>ids.length;
+                    replies[id]={...old,ids,cursor:gap?window.cursor:old.cursor};
+                }else replies[id]=old;
+            }
         }
         let roots = current.roots;
         if (page) {
