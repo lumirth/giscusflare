@@ -7,7 +7,7 @@ import type {Viewer,Person} from '../contracts/document.js';
 import type { OAuthToken } from '../contracts/github.js';
 import type { PublicConfig, RepositoryPolicy, SecretConfig } from '../contracts/config.js';
 import { parentOrigin } from './authorization.js';
-import { b64, equal, hash, random, unb64 } from './crypto.js';
+import { b64, decrypt, equal, hash, random, unb64 } from './crypto.js';
 import { AppError, requireCondition } from './errors.js';
 import { GitHub } from './github.js';
 import { Store } from './store.js';
@@ -27,9 +27,8 @@ export class Auth {
   constructor(readonly config: PublicConfig, readonly keys: SecretConfig, readonly repo: string, repositoryId: string, readonly policy: RepositoryPolicy, readonly store: Store, readonly github: GitHub) {
     this.#purpose = `${config.appId}:${config.clientId}:${repositoryId}`;
   }
-  #fields(data: OAuthToken): NonNullable<S.Session['credentials']> {
-    const now = this.store.now();
-    return { accessToken: data.access_token, accessExpires: now + (data.expires_in ? data.expires_in * 1000 : 30 * DAY),
+  #fields(data: OAuthToken,now=this.store.now()): NonNullable<S.Session['credentials']> {
+    return { accessToken: data.access_token, accessExpires: now + (data.expires_in ? data.expires_in * 1000 : Number.MAX_SAFE_INTEGER),
       refreshToken: data.refresh_token || null, refreshExpires: data.refresh_token_expires_in ? now + data.refresh_token_expires_in * 1000 : 0 };
   }
   async prepare(request: C.Input<'authPrepare'>,browserCookie:string): Promise<{ attempt: string; authorizeURL: string }> {
@@ -93,9 +92,16 @@ export class Auth {
   }
   async #storedSession(key: string, origin: string): Promise<S.Session> {
     let data: S.Session | null;
-    try { data = await this.store.secret(key, S.Session, this.keys.sessionSecret, this.#purpose); }
-    catch { this.store.delete(key); throw new AppError(401, 'SESSION', 'Your session is invalid. Sign in again.'); }
+    const original=this.store.get(key,S.EncryptedRecord);
+    try { data = original?await decrypt(S.Session,original,this.keys.sessionSecret,this.#purpose+':'+key):null; }
+    catch { if(this.store.get(key,S.EncryptedRecord)===original)this.store.delete(key); throw new AppError(401, 'SESSION', 'Your session is invalid. Sign in again.'); }
     requireCondition(data && data.origin === origin && data.expires > this.store.now(), 401, 'SESSION', 'Your session expired or belongs to another website. Sign in again.');
+    const ceiling=data.credentials?.refreshToken?data.credentials.refreshExpires:data.credentials?.accessExpires??this.store.now()+30*DAY;
+    const expires=Math.min(this.store.now()+30*DAY,ceiling);
+    if(expires-data.expires>DAY){
+      if(original&&await this.store.putSecret(key,S.Session,{...data,expires},this.keys.sessionSecret,this.#purpose,expires,original))data={...data,expires};
+      else return this.#storedSession(key,origin);
+    }
     return data;
   }
   async identity(capability:string,origin:string,required=false):Promise<S.Session|null>{
@@ -114,17 +120,27 @@ export class Auth {
         const refreshToken=credentials.refreshToken;
         const expected=this.store.get(key,S.EncryptedRecord);
         requireCondition(expected,401,'SESSION','Your local session expired. Sign in again.');
-        const retired=await this.store.putSecret(key,S.Session,{...data,credentials:null},this.keys.sessionSecret,this.#purpose,data.expires,expected);
+        const retired=this.github.provider?expected:await this.store.putSecret(key,S.Session,{...data,credentials:null},this.keys.sessionSecret,this.#purpose,data.expires,expected);
         requireCondition(retired,401,'SESSION','Your local session ended. Sign in again.');
         requireCondition(refreshToken&&credentials.refreshExpires>this.store.now(),401,'GITHUB_AUTH','Your GitHub authorization expired. Sign in again.');
         try{
-          const refreshed=await this.github.exchange({grant_type:'refresh_token',refresh_token:refreshToken});
+          const renewal=await this.github.renew(refreshToken),refreshed=renewal.token;
           requireCondition(refreshed.refresh_token&&refreshed.refresh_token_expires_in,502,'UPSTREAM_SCHEMA','GitHub did not return complete rotating credentials.');
           requireCondition(data.expires>this.store.now(),401,'SESSION','Your local session expired. Sign in again.');
-          credentials=this.#fields(refreshed);data={...data,credentials};
+          credentials=this.#fields(refreshed,renewal.observedAt);data={...data,credentials,expires:Math.min(this.store.now()+30*DAY,credentials.refreshExpires)};
           requireCondition(await this.store.putSecret(key,S.Session,data,this.keys.sessionSecret,this.#purpose,data.expires,retired),401,'SESSION','Your local session ended. Sign in again.');
-        }catch(error){if(error instanceof AppError&&error.code==='SESSION')throw error;throw new AppError(401,'GITHUB_AUTH','Your GitHub authorization could not be renewed. Sign in again.');}
+        }catch(error){
+          if(error instanceof AppError&&error.code==='SESSION')throw error;
+          if(error instanceof AppError&&error.phase==='not-issued'&&(error.status===429||error.status>=500)){
+            if(!this.github.provider)requireCondition(await this.store.putSecret(key,S.Session,data,this.keys.sessionSecret,this.#purpose,data.expires,retired),401,'SESSION','Your local session ended. Sign in again.');
+            console.info(JSON.stringify({event:'authorization_renewal',outcome:'retryable',code:error.code}));throw error;
+          }
+          if(this.github.provider)await this.store.putSecret(key,S.Session,{...data,credentials:null},this.keys.sessionSecret,this.#purpose,data.expires,retired);
+          console.warn(JSON.stringify({event:'authorization_renewal',outcome:'reconnect',code:error instanceof AppError?error.code:'INTERNAL'}));
+          throw new AppError(401,'GITHUB_AUTH','Your GitHub authorization could not be renewed. Sign in again.');
+        }
       }
+      this.github.authorize(credentials.accessToken,data.principal);
       return {...data,credentials};
     });
   }

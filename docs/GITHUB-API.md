@@ -1,6 +1,6 @@
 # GitHub API use
 
-Use this reference when changing GitHub queries or investigating API usage. giscusflare uses one registered installation credential owner for public reads and the reader's App-issued authority for account access and contributions. Both the configured repository policy and GitHub permissions apply.
+Use this reference when changing GitHub queries or investigating API usage. Anonymous acquisition uses the registered installation credential. Signed-in acquisition can use an already usable user credential, while account access and contributions always use that user's authority. Public observations are shared independently of the credential that acquired them; configured public repository and category scope apply to every acquisition.
 
 ## Comment operations
 
@@ -21,7 +21,7 @@ Read [GitHub's Discussions guide](https://docs.github.com/en/graphql/guides/usin
 
 Display queries fetch a bounded page of comment content and a small reply preview. Ranking fetches score inputs separately, then loads comment content for the selected IDs. Profiles reuse inputs they have in common.
 
-Public acquisition combines repository validation, current metadata and the requested window under installation authority. Account access needs its own narrow user-token query; a genuinely missing display profile needs a separate identity query. Contributions resolve selection and target authority before the mutation; mutation fields establish completion without a whole-discussion refresh. [API](API.md#http-protocol) owns the request/result shapes and replay behavior.
+Public acquisition combines repository validation, current metadata and the requested window. A user-specific access refusal or primary allowance exhaustion can fall back once to installation authority. Secondary throttling never triggers credential cycling. Public reading does not wait for user-token renewal. Account access needs its own narrow user-token query; a genuinely missing display profile needs a separate identity query. Contributions resolve selection and target authority before the mutation; mutation fields establish completion without a whole-discussion refresh. [API](API.md#http-protocol) owns the request/result shapes and replay behavior.
 
 GitHub Markdown interpretation acquires one installation token per batch and calls the Markdown endpoint for each missing HTML input, without participation authorization or another repository-head query. Host-prepared content uses the internal producer without GitHub work. Installation/category discovery belongs to registration; token renewal, page resolution, first discussion creation and ranking can still add calls. Measure cold credential renewal separately from a warm token or cached result; there is no universal one-call or two-call cost promise.
 
@@ -29,7 +29,7 @@ GitHub's point cost, returned nodes, resource limits and response bytes are diff
 
 GitHub connections require `first` or `last` between 1 and 100. Count-only connections request one without selecting member nodes. Zero reply prefetch likewise suppresses child nodes while observing the actual total; a nonempty unobserved window has an empty cursor, and an empty window has no cursor. An explicit reply read fetches its own last-50 window; its reply cursor is never applied to the root connection. See [pagination requirements](https://docs.github.com/en/graphql/guides/using-pagination-in-the-graphql-api).
 
-Treat partial GraphQL errors as incomplete reads. Keep known comments until a complete discovery pass confirms membership changes. When GitHub throttles a request, wait until its retry time before continuing.
+Treat partial GraphQL errors as incomplete reads. Keep known comments until a complete discovery pass confirms membership changes. Provider admission and cooldowns are durable and shared at installation, immutable user or OAuth-client allowance scope. Primary limits pause their resource; secondary limits pause that credential scope. Ranking yields admission to interactive work. HTTP and GraphQL errors retain bounded, redacted diagnostics, including GitHub request IDs and rate headers.
 
 GitHub documents [GraphQL rate and resource limits](https://docs.github.com/en/graphql/overview/rate-limits-and-query-limits-for-the-graphql-api). Cache lifetime and ranking allowances are configured by the service operator, as described in [configuration](CONFIGURATION.md).
 

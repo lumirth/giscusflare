@@ -66,6 +66,8 @@ export class PageModel {
     error = '';
     viewerError = '';
     notice = '';
+    #lastRefreshAttempt=0;
+    #lastViewerRefresh=0;
     lastRefresh = 0;
     ranking: OrderResult | null = null;
     replyPrefetch = 5;
@@ -93,6 +95,7 @@ export class PageModel {
         this.#order = typeof order === 'string' ? order : Object.freeze({ ...order });
         this.signal.addEventListener('abort', () => { stopCounts(); this.#identity.abort(); this.#cancelReads(); this.#listeners.clear(); }, { once: true });
     }
+    #visibleIds():string[]{return unique(this.document.roots.ids.flatMap(id=>[id,...(this.document.replies[id]?.ids??[])]));}
     #countScope(target: CountTarget): boolean {
         return countKey({selector:this.config.selector,window:target.window}) === countKey(target) && (target.window.kind === 'roots' || Boolean(this.document.nodes[target.window.parentId]));
     }
@@ -169,7 +172,7 @@ export class PageModel {
         if ((!this.#principal() && !this.transport.signedIn) || !this.targetReady || this.transport.needsAuthorization || this.signal.aborted) return;
         if (this.#access) return missingOnly || observedIds ? this.#access.then(() => { if (!this.viewerError) return this.refreshViewer(missingOnly, observedIds); }) : this.#access;
         const identity = this.#identity, signal = AbortSignal.any([this.signal, identity.signal]);
-        const ids = (observedIds ? unique(observedIds).filter(id => this.document.nodes[id]) : Object.keys(this.document.nodes)).filter(id => !missingOnly || !this.#viewer?.permissions[id] || !this.#viewer.reactions[id]);
+        const ids = (observedIds ? unique(observedIds).filter(id => this.document.nodes[id]) : this.#visibleIds()).filter(id => !missingOnly || !this.#viewer?.permissions[id] || !this.#viewer.reactions[id]);
         if (missingOnly && this.#viewer?.principal && !ids.length && (!this.document.metadata.thread || this.#viewer.availability?.target === this.document.metadata.thread.id)) return;
         const work = Promise.resolve().then(async () => {
             for (let offset = 0; offset < Math.max(1, ids.length); offset += 100) {
@@ -177,6 +180,7 @@ export class PageModel {
                 const access = await this.#request<AccessResult>('access', { ids: ids.slice(offset, offset + 100) }, signal, 'POST');
                 if (signal.aborted) return;
                 this.#acceptAccount(access, false, acceptance, reading.metadata.thread?.id ?? null);
+                this.#lastViewerRefresh=Date.now();
                 const availability = access.availability, thread = availability.thread;
                 const content = access.principal === this.#principal() && thread && thread.id === this.document.metadata.thread?.id
                     ? this.#accept({patch:{metadata:{thread,archived:availability.archived},observedAt:access.observedAt},baseline:reading,acceptance}) : undefined;
@@ -217,6 +221,7 @@ export class PageModel {
         const { page, patch, parentId = '', replacing = false, observedIds } = input;
         const effect = Boolean(input.effect && !input.replayed), created = effect && patch?.metadataObservedAt !== undefined;
         const baseline = input.baseline ?? this.document, current = this.document, acceptance = input.acceptance ?? this.#accepted;
+        const previousRootCount=current.roots.count?.count;
         const countAfter = input.countAfter ?? this.counts.revision;
         const countFresh = input.countFresh ?? !page;
         const observedAt = page?.observedAt ?? patch?.observedAt;
@@ -284,18 +289,35 @@ export class PageModel {
         const acquireWindow = (key: string, old: Window, acquired: Window, replace: boolean): Window => {
             const added = replace ? old.ids.filter(id => !((key ? baseline.replies[key] : baseline.roots)?.ids ?? []).includes(id)) : [];
             const ids = replace ? unique([...acquired.ids, ...added]) : unique(key ? [...acquired.ids, ...old.ids] : [...old.ids, ...acquired.ids]);
+            if(key)ids.sort((a,b)=>Date.parse(nodes[a]?.createdAt??'')-Date.parse(nodes[b]?.createdAt??''));
             count(acquired.count);
             return this.#window({ids,cursor:acquired.cursor},key);
         };
         if (page?.replies) for (const [id, window] of Object.entries(page.replies)) {
             const old = current.replies[id] ?? emptyWindow();
             if (replacing || !current.replies[id] || current.replies[id].cursor === '') replies[id] = acquireWindow(id,old,window,true);
-            else { count(window.count); replies[id] = old; }
+            else {
+                count(window.count);
+                const added=window.ids.filter(child=>!old.ids.includes(child));
+                if(observedIds&&added.length){
+                    const ids=unique([...old.ids,...added]);
+                    const gap=old.cursor===null&&window.count&&window.count.count>ids.length;
+                    replies[id]={...old,ids,cursor:gap?window.cursor:old.cursor};
+                }else replies[id]=old;
+            }
         }
         let roots = current.roots;
         if (page) {
             if (parentId) replies[parentId] = acquireWindow(parentId, replies[parentId] ?? emptyWindow(), page.window, false);
-            else if (observedIds) count(page.window.count);
+            else if (observedIds) {
+                count(page.window.count);
+                const newRoots=page.window.ids.filter(id=>nodes[id]&&!nodes[id]!.parentId&&!roots.ids.includes(id));
+                if(newRoots.length){
+                    const complete=roots.cursor===null&&page.window.count?.count===roots.ids.length+newRoots.length;
+                    if(complete&&typeof this.order==='string')roots={...roots,ids:this.order==='newest'?[...newRoots,...roots.ids]:[...roots.ids,...newRoots.reverse()]};
+                    else if(page.window.count&&(previousRootCount===undefined||page.window.count.count>previousRootCount))this.notice='New comments are available.';
+                }
+            }
             else roots = acquireWindow('', roots, page.window, replacing);
         }
         const membership = (change: WindowDelta): WindowDelta => ({ ...change, ...(change.remove ? {remove: change.remove.filter(id => observedAt >= (this.#facts.get('exists:' + id)?.age ?? -Infinity) && !(observedAt === this.#facts.get('exists:' + id)?.age && this.#facts.get('exists:' + id)!.accepted > acceptance))} : {}) });
@@ -304,10 +326,6 @@ export class PageModel {
         roots = this.#window({ids:roots.ids.filter(id=>nodes[id]),cursor:roots.cursor});
         for (const [id, window] of Object.entries(replies)) {
             if (!nodes[id]) delete replies[id]; else replies[id] = this.#window({ids:window.ids.filter(child=>nodes[child]),cursor:window.cursor},id);
-        }
-        if (replacing) {
-            const retained = new Set([...roots.ids, ...Object.entries(replies).flatMap(([parent, window]) => [parent, ...window.ids]), ...Object.keys(current.nodes).filter(id => current.nodes[id] !== baseline.nodes[id])]);
-            for (const id of Object.keys(nodes)) if (!retained.has(id)) delete nodes[id];
         }
         this.document = { nodes, roots, replies, metadata };
         this.#resumeReactions();
@@ -320,7 +338,7 @@ export class PageModel {
         if (conflicted) this.#reconcile([...conflictingIds]);
         return { contentHints };
     }
-    #acquire(parentId: string, purpose: AcquisitionPurpose, observedIds?: string[]): Promise<boolean> {
+    #acquire(parentId: string, purpose: AcquisitionPurpose, observedIds?: string[],freshObservation=false): Promise<boolean> {
         this.signal.throwIfAborted();
         const continuing = purpose === 'continue', observing = purpose === 'revalidate';
         const current = this.#reads.get(parentId);
@@ -338,7 +356,7 @@ export class PageModel {
                 let ids: string[] | undefined, loaded: string[] = [];
                 if (observing) {
                     // Observe a bounded portion of the existing document, never start a new traversal.
-                    loaded = Object.keys(this.document.nodes);
+                    loaded = this.#visibleIds();
                     ids = observedIds ? unique(observedIds).filter(id => this.document.nodes[id]).slice(0, 100)
                         : [...loaded.slice(this.#observationOffset), ...loaded.slice(0, this.#observationOffset)].slice(0, 100);
                     authorityIds = ids;
@@ -364,8 +382,8 @@ export class PageModel {
                     ids = this.ranking.ids.slice(Number(cursor) || 0, (Number(cursor) || 0) + 20);
                 }
                 baseline = this.document;acceptance = this.#accepted;countAfter = this.counts.revision;
-                const fresh = observing || ['restart','change-order'].includes(purpose);
-                const read = observing ? {kind: 'observe', ids} : parentId ? {kind: 'replies', parentId, cursor} : ids ? {kind: 'selected', ids, replyPrefetch: this.replyPrefetch} : {kind: 'roots', order: this.order, cursor, replyPrefetch: this.replyPrefetch};
+                const fresh = observing&&freshObservation||['restart','change-order'].includes(purpose);
+                const read = observing ? {kind: 'observe', ids,replyPrefetch:this.replyPrefetch} : parentId ? {kind: 'replies', parentId, cursor} : ids ? {kind: 'selected', ids, replyPrefetch: this.replyPrefetch} : {kind: 'roots', order: this.order, cursor, replyPrefetch: this.replyPrefetch};
                 const page = await this.#request<WindowPage>('page', {read, fresh}, signal);
                 signal.throwIfAborted();
                 if (!observing && ids && this.ranking?.status === 'ready') page.window.cursor = Number(cursor) + ids.length < this.ranking.ids.length ? String(Number(cursor) + ids.length) : null;
@@ -383,18 +401,23 @@ export class PageModel {
                         this.#observationOffset = loaded.length ? (this.#observationOffset + ids!.length) % loaded.length : 0;
                     }
                 }
+                if(observing)authorityIds=Object.keys(page.nodes).slice(0,100);
                 if (observing) this.lastRefresh = Math.max(this.lastRefresh, page.observedAt);
                 this.#emit(undefined, observing ? undefined : content);
                 return true;
             } catch (error) {
                 if (!signal.aborted) {
                     if (purpose === 'change-order' || continuing && [400, 404, 410].includes(Number(Object(error).status))) this.continuity = { status: 'restart-required', reason: message(error) };
-                    if (!observing || !this.ready) this.error = message(error);
+                    if(observing&&[403,404].includes(Number(Object(error).status))&&['PUBLIC_ONLY','NOT_FOUND','CATEGORY','PERMISSION'].includes(String(Object(error).code))){
+                        this.document={nodes:{},roots:emptyWindow(),replies:{},metadata:{...this.document.metadata,thread:null,unavailable:true}};
+                        this.continuity={status:'restart-required',reason:message(error)};
+                        this.error=message(error);
+                    }else if (!observing || !this.ready) this.error = message(error);
                     this.notify();
                 }
                 return false;
             } finally {
-                if (this.#reads.get(parentId)?.abort === abort) { this.#reads.delete(parentId); void this.refreshViewer(!observing, observing ? authorityIds : undefined); this.notify(); }
+                if (this.#reads.get(parentId)?.abort === abort) { this.#reads.delete(parentId); void this.refreshViewer(!observing||Date.now()-this.#lastViewerRefresh<60000, observing ? authorityIds : undefined); this.notify(); }
             }
         });
         this.#reads.set(parentId, { state: { purpose, started: Date.now() }, abort, work });
@@ -405,7 +428,8 @@ export class PageModel {
     async restart(): Promise<void> { await this.#acquire('', this.ready ? 'restart' : 'initial'); }
     async loadMore(): Promise<void> { await this.#acquire('', 'continue'); }
     revalidate(staleAfterMs = 0, observedIds?: string[]): Promise<boolean> {
-        return !this.ready || this.acquisition() || Date.now() - this.lastRefresh < staleAfterMs ? Promise.resolve(false) : this.#acquire('', 'revalidate', observedIds);
+        if(!this.ready||this.acquisition()||Date.now()-this.lastRefresh<staleAfterMs||staleAfterMs>0&&Date.now()-this.#lastRefreshAttempt<15000)return Promise.resolve(false);
+        this.#lastRefreshAttempt=Date.now();return this.#acquire('', 'revalidate', observedIds,staleAfterMs===0);
     }
     async setOrder(order: CommentOrder): Promise<void> {
         if (JSON.stringify(this.order) === JSON.stringify(order)) return;

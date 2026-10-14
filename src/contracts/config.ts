@@ -22,6 +22,7 @@ export const RepositoryPolicy = v.strictObject({
   maxReplyPrefetch: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(100)), 20),
   displayCacheMs: v.optional(v.pipe(v.number(),v.integer(),v.minValue(0),v.maxValue(3600000)),60000),
   countCacheMs: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(3600000)), 300000),
+  outageRetentionMs: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(86400000)), 3600000),
   defaultCommentOrder: v.optional(Order, 'oldest'),
   customThemeOrigins: v.optional(v.pipe(v.array(Origin), v.maxLength(20)), []),
 });
@@ -44,7 +45,7 @@ export const SecretConfig = v.strictObject({
 export type RepositoryPolicy = v.InferOutput<typeof RepositoryPolicy>;
 export type PublicConfig = v.InferOutput<typeof PublicConfig>;
 export type SecretConfig = v.InferOutput<typeof SecretConfig>;
-export interface ConfigBindings { PUBLIC_ORIGIN: string; GITHUB_APP_ID: string; GITHUB_CLIENT_ID: string; REPOSITORIES: unknown; GITHUB_CLIENT_SECRET: string; GITHUB_PRIVATE_KEY: string; SESSION_SECRET: string; OPEN_HOSTING?:unknown; RANKING_BUDGET?:unknown }
+export interface ConfigBindings { PUBLIC_ORIGIN: string; GITHUB_APP_ID: string; GITHUB_CLIENT_ID: string; REPOSITORIES: unknown; GITHUB_CLIENT_SECRET: string; GITHUB_PRIVATE_KEY: string; SESSION_SECRET: string; OPEN_HOSTING?:unknown; RANKING_BUDGET?:unknown; GITHUB_WEBHOOK_SECRET?:string }
 const cache = new WeakMap<object, PublicConfig>();
 export function configuration(env: ConfigBindings): PublicConfig {
   // Cache the parsed deployment settings, not pending requests.

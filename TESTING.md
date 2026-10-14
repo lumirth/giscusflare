@@ -28,6 +28,7 @@ The retained journeys demonstrate these outcomes through the production Worker a
 | Interrupted contributions | Provider effects survive lost responses and workerd restart; retained author/body/destination/receipt identity prevents duplicate publication |
 | Changed custom content | Published edits receive separate anonymous readback; controlled website interpretation preserves usable installed content, rejects late older output and recovers through visible Retry |
 | Independent authority | Real session revocation preserves protected writing; transport failure during identity/account acquisition preserves reading and local drafts |
+| Shared reading and recovery | Concurrent readers share acquisition; workerd restart preserves original-age observations and cooldown; signed external changes reconcile; temporary OAuth refusal preserves a single-use renewal for concurrent recovery; private scope withdraws reading |
 | Safe rich reading | The stock producer and browser keep authored code/tables/task lists readable while rejecting executable provider markup |
 
 Typechecks, builds and extracted consumer compilation are separate evidence. These workflows do not qualify every custom producer or renderer. Custom manifest-mismatch/failed-resource paths, physical-device behavior and production permissions/capacity need their own bounded acceptance when those environments are changed or released.

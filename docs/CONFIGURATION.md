@@ -47,8 +47,11 @@ Set these per repository:
 | --- | --- | --- |
 | `displayCacheMs` | `60000` | Public comment and reply cache lifetime in milliseconds |
 | `countCacheMs` | `300000` | Count-observation reuse lifetime in milliseconds |
+| `outageRetentionMs` | `3600000` | Public observation retention from acquisition, from 0 to 86400000 milliseconds; never shorter than its fresh lifetime |
 
-Public count observations reuse the edge response and shared browser capability; actor selection deduplicates active work. Both settings accept 0 to 3600000 milliseconds. Zero disables that cache. For example, `"displayCacheMs": 180000` caches public comments for three minutes. Readers still see their own successful changes immediately.
+Public page, count and selection observations share a durable repository owner, bounded to 8 MiB. Concurrent acquisition of the same observation coalesces. Display and count settings accept 0 to 3600000 milliseconds; zero disables retained reuse for that observation. For example, `"displayCacheMs": 180000` permits three minutes of fresh reuse. By default, expired observations remain usable for up to one hour from acquisition while demand refreshes them in the background. Returned timestamps preserve their original age. Confirmed contributions update shared facts immediately; receiving cached data does not extend freshness.
+
+Signed GitHub webhooks mark affected observations for reconciliation and withdraw known private, removed or hidden content. Deploy the [webhook receiver](../DEPLOY.md#receive-github-changes) for configured repositories. Open-hosting registrations continue to reconcile on demand. Browsers refresh visible, idle conversations periodically and on focus; existing comments remain readable during refresh. A real document reload retains normal initial loading.
 
 See [Cloudflare usage](../FREE-TIER.md#reads-contributions-and-freshness) to choose lifetimes for your traffic.
 

@@ -47,7 +47,7 @@ export async function nativeService({ origin, blog, seed = true, assets = public
             ratelimits: Object.fromEntries(deployment.ratelimits.map(({ name, simple }, i) => [name, { namespace_id: String(84101 + i), simple }])),
             bindings: {
                 PUBLIC_ORIGIN: origin, GITHUB_APP_ID: '12345', GITHUB_CLIENT_ID: 'Iv1.fixture',
-                GITHUB_CLIENT_SECRET: 'fixture-client-secret', GITHUB_PRIVATE_KEY: privateKey.export({ type: 'pkcs1', format: 'pem' }).toString(),
+                GITHUB_WEBHOOK_SECRET:'fixture-webhook-secret', GITHUB_CLIENT_SECRET: 'fixture-client-secret', GITHUB_PRIVATE_KEY: privateKey.export({ type: 'pkcs1', format: 'pem' }).toString(),
                 SESSION_SECRET: randomBytes(32).toString('base64url'),
                 ...(openHosting ? {OPEN_HOSTING:openHosting} : {}),
                 REPOSITORIES: repositories || { 'example/comments': { repositoryId: 'R_fixture', installationId: 123, categoryId: 'CAT_fixture', origins: [blog], category: 'Announcements', defaultCommentOrder: 'oldest', customThemeOrigins: ['https://themes.example'] } },

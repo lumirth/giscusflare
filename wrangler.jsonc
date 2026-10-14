@@ -12,7 +12,8 @@
       "/auth/*",
       "/widget",
       "/*/widget",
-      "/healthz"
+      "/healthz",
+      "/webhooks/*"
     ]
   },
   "durable_objects": {
@@ -61,7 +62,7 @@
     "REPOSITORIES": {}
   },
   "observability": {
-    "enabled": false
+    "enabled": true
   },
   "build": {
     "command": "node scripts/wrangler-build.mjs"

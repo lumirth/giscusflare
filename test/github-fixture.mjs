@@ -17,7 +17,7 @@ function connection(nodes, { first = 20, last = null, after = null, before = nul
 async function sha256(value) { return btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
 export class FakeGitHub {
   constructor({seed = false, now = () => Date.now(), oauthUser = 'reader'} = {}) {
-    this.oauthUser=oauthUser;
+    this.oauthUser=oauthUser;this.accessLifetime=28800;this.grants=0;this.accessTokens=new Map();this.refreshTokens=new Map();
     this.principals=new Map(['reader','visitor','maintainer'].map(login=>[login,{id:'U_'+login,login}]));
     this.now=now; this.calls=[]; this.discussions=[]; this.nextComment=1; this.failNext=null; this.corruptNext=null; this.failAfterMutation=false; this.hideSearch=false; this.refreshes=0; this.installations=0;
     this.meta={id:'R_fixture',nameWithOwner:'example/comments',isPrivate:false,isArchived:false,discussionCategories:{nodes:[{id:'CAT_fixture',name:'Announcements',isAnswerable:false}]}};
@@ -31,6 +31,11 @@ export class FakeGitHub {
       d.comments.at(-1).votes.THUMBS_UP=['visitor','maintainer'];
     }
     this.fetch=this.fetch.bind(this);
+  }
+  grant(principal){
+    const id=++this.grants,access_token='ghu_'+principal+'_'+id,refresh_token='ghr_'+principal+'_'+id;
+    this.accessTokens.set(access_token,{principal,expires:this.now()+this.accessLifetime*1000});this.refreshTokens.set(refresh_token,{principal,access:access_token});
+    return {access_token,expires_in:this.accessLifetime,refresh_token,refresh_token_expires_in:15552000};
   }
   profile(principal) {
     if(!this.principals.has(principal))this.principals.set(principal,{id:'U_'+principal,login:principal});
@@ -60,18 +65,19 @@ export class FakeGitHub {
   async fetch(request) {
     const url=new URL(request.url),token=(request.headers.get('Authorization')||'').replace(/^Bearer /,'');
     const payload=request.method==='POST'?await request.text():'';
-    const user=token.startsWith('ghu_')?token.slice(4).replace(/_refreshed$/,''):'';
+    const credential=this.accessTokens.get(token),user=credential?.principal??'';
     check(request.redirect==='manual','manual redirect handling');check(request.headers.has('User-Agent'),'User-Agent');
     check(['https://api.github.com','https://github.com'].includes(url.origin),'only fixed upstream hosts');
     const call={path:url.pathname,method:request.method,token};this.calls.push(call);
     if(this.failNext){const fail=this.failNext;this.failNext=null;if(fail==='network')throw new TypeError('simulated disconnect');return response({message:'PRIVATE_UPSTREAM_DETAILS'},fail);}
     if(url.pathname==='/login/oauth/access_token'){
       const p=new URLSearchParams(payload);check(p.get('client_secret')==='fixture-client-secret','correct OAuth secret');
-      if(p.get('grant_type')==='refresh_token'){this.refreshes++;check(p.get('refresh_token')?.startsWith('ghr_'),'refresh token');const principal=p.get('refresh_token').slice(4).replace(/_rotated$/,'');return response({access_token:'ghu_'+principal+'_refreshed',expires_in:28800,refresh_token:'ghr_'+principal+'_rotated',refresh_token_expires_in:15552000});}
+      if(p.get('grant_type')==='refresh_token'){this.refreshes++;const old=this.refreshTokens.get(p.get('refresh_token'));if(!old)return response({error:'bad_refresh_token'});this.refreshTokens.delete(p.get('refresh_token'));this.accessTokens.delete(old.access);return response(this.grant(old.principal));}
       const code=p.get('code');if(code==='bad')return response({error:'bad_verification_code'});
       check(code?.startsWith('fixture_')&&await sha256(p.get('code_verifier')||'')===code.slice(8),'independent PKCE proof');
-      return response({access_token:'ghu_'+this.oauthUser,expires_in:28800,refresh_token:'ghr_'+this.oauthUser,refresh_token_expires_in:15552000});
+      return response(this.grant(this.oauthUser));
     }
+    if(token.startsWith('ghu_')&&(!credential||credential.expires<=this.now()))return response({message:'Bad credentials'},401);
     check(url.origin==='https://api.github.com','REST/GraphQL host');check(/^Bearer \S+$/.test(request.headers.get('Authorization')||''),'authorization');
     if(url.pathname==='/repos/'+this.meta.nameWithOwner+'/installation'){check(token.split('.').length===3,'app JWT');return response({id:123});}
     if(url.pathname==='/app/installations/123/access_tokens'){const b=JSON.parse(payload);check(b.repositories.join()===this.meta.nameWithOwner.split('/')[1]&&(b.permissions.discussions==='write'||b.permissions.metadata==='read'),'restricted app permission scope');this.installations++;return response({token:'ghs_fixture',expires_at:new Date(this.now()+3600000).toISOString(),repositories:[{node_id:this.meta.id,full_name:this.meta.nameWithOwner,private:this.meta.isPrivate}]});}

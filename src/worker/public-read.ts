@@ -22,9 +22,11 @@ export async function publicRead(c:Context<AppEnv>, input:{repo:string;origin:st
   const fresh='fresh'in input&&input.fresh===true;
   const respond=async()=>{
     const {value,expires} = await read(), response = render(value,expires);
-    const remaining = Math.max(0, Math.floor((expires - Date.now()) / 1000));
+    const remaining = Math.max(0, Math.min(15,Math.floor((expires - Date.now()) / 1000)));
     response.headers.set('Cache-Control', remaining && !fresh ? 'public, max-age=' + remaining : 'no-store');
     response.headers.set('X-Giscusflare-Expires', String(expires));
+    response.headers.set('X-Giscusflare-Edge-Expires', String(Math.min(expires,Date.now()+15000)));
+    response.headers.set('X-Giscusflare-Cache',expires>Date.now()?'current':'retained');
     return response;
   };
 
@@ -43,7 +45,7 @@ export async function publicRead(c:Context<AppEnv>, input:{repo:string;origin:st
   url.searchParams.set('policy',await policyKey(config));
   const key=new Request(url,{method:'GET'});
   const found=await cache.match(key);
-  if(found&&Number(found.headers.get('X-Giscusflare-Expires'))>Date.now())return new Response(found.body,found);
+  if(found&&Number(found.headers.get('X-Giscusflare-Edge-Expires'))>Date.now())return new Response(found.body,found);
   const response=await respond();
   if(response.ok&&Number(response.headers.get('X-Giscusflare-Expires'))>Date.now()&&response.headers.get('Cache-Control')?.startsWith('public,')){
     c.executionCtx.waitUntil(cache.put(key,response.clone()).catch(()=>undefined));

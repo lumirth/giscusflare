@@ -2,7 +2,7 @@ import {API_PREFIX} from '../contracts/protocol.js';
 
 /** Session and count owners share HTTP mechanics, never authority or observation state. */
 export class ApiError extends Error {
-  constructor(message: string, readonly status: number, readonly code: string, readonly phase: 'not-issued' | 'unknown' = 'not-issued') { super(message); }
+  constructor(message: string, readonly status: number, readonly code: string, readonly phase: 'not-issued' | 'unknown' = 'not-issued',readonly retryAfter?:number,readonly requestId?:string) { super(message); }
 }
 export function validateService(service: string): void {
   const url = new URL(service);
@@ -26,8 +26,8 @@ export async function requestJSON<T>(service: string, path: string, input: unkno
   let data: unknown; try { data = await response.json(); }
   catch { throw new ApiError('The comments service returned an invalid response.', response.status, 'UPSTREAM', phase); }
   if (!response.ok) {
-    const error = data && typeof data === 'object' ? (data as {error?: {message?: unknown;code?: unknown;phase?: unknown}}).error : undefined;
-    throw new ApiError(typeof error?.message === 'string' ? error.message : 'Request failed.', response.status, typeof error?.code === 'string' ? error.code : 'UPSTREAM', error?.phase === 'not-issued' || error?.phase === 'unknown' ? error.phase : phase);
+    const error = data && typeof data === 'object' ? (data as {error?: {message?: unknown;code?: unknown;phase?: unknown;retryAfter?:unknown}}).error : undefined;
+    throw new ApiError(typeof error?.message === 'string' ? error.message : 'Request failed.', response.status, typeof error?.code === 'string' ? error.code : 'UPSTREAM', error?.phase === 'not-issued' || error?.phase === 'unknown' ? error.phase : phase,typeof error?.retryAfter==='number'?error.retryAfter:undefined,typeof (data as {requestId?:unknown})?.requestId==='string'?(data as {requestId:string}).requestId:undefined);
   }
   return data as T;
 }

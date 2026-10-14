@@ -27,4 +27,4 @@ type Request<K extends Operation>=v.InferOutput<(typeof operations)[K&keyof type
 export type Input<K extends Operation>=
   K extends 'interpret'?{config:R.Selection;inputs:ContentInputData[]}:
   K extends 'authCallback'?R.AuthStartQuery&{code:string;denied:boolean}:Request<K>;
-export interface Authority {session?:string;browserCookie?:string}
+export interface Authority {session?:string;browserCookie?:string;requestId?:string}

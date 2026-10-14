@@ -1,6 +1,6 @@
 # System design
 
-GitHub owns canonical Markdown, discussions and provider permissions. Deployment registration establishes immutable repository, installation and category identities. The API applies website policy and routes authority; the Repository Durable Object owns credential renewal, sessions, immutable effect receipts and ranking coordination. Interpretation executes in a separate content Worker without commenter credentials.
+GitHub owns canonical Markdown, discussions and provider permissions. Deployment registration establishes immutable repository, installation and category identities. The API applies website policy and routes authority; repository actors own shared public observations, sessions, immutable effect receipts and ranking. Allowance actors in the same Durable Object namespace coordinate provider admission, cooldown and OAuth rotation across repositories. Interpretation executes in a separate content Worker without commenter credentials.
 
 ```mermaid
 flowchart LR
@@ -20,6 +20,8 @@ flowchart LR
 Reading, identity, participation, content and writing recovery have independent availability. The presentation shell appears immediately; slow body preparation or account verification must not block public reading or local drafting. Account changes retire principal-bound work while retaining the public traversal. [API reading](API.md#reading-document) and [session initialization](API.md#browser-session-and-initialization) define the projections.
 
 Observation acceptance compares field ownership and original acquisition age, so delayed broad reads cannot replace newer narrow facts. Reading, count-only requests and effects feed the same count owner; cached reuse and replay preserve age. The [API reference](API.md#reading-document) owns count shapes and traversal semantics.
+
+Public observations are bounded, disposable and durable across actor restart. Expiry schedules reconciliation; it does not erase readable facts. Confirmed effects patch shared facts and fence obsolete acquisition. Verified webhook changes invalidate the affected scope; demand reconciliation also repairs missed events. Private viewer state stays separate from public observations.
 
 The content owner batches canonical inputs and binds installed bodies; presentations do not create another acquisition/cache layer. Detached preparation and installed-resource lifetimes are separate, keeping the current body usable during replacement. [Content contracts](API.md#content-and-counts) define commit, manifest and failure behavior; [extending](EXTENDING.md) shows a site-owned producer and consumer.
 
